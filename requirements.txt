@@ -1,0 +1,41 @@
+# UiWUE — shared Python environment (Python 3.12)
+# Setup steps: docs/SOFTWARE_STACK.md
+
+# --- Core data ---
+numpy>=2.0
+pandas>=2.2
+pyarrow>=17
+scipy>=1.13
+openpyxl>=3.1
+
+# --- Images and 3D ---
+tifffile>=2024.8
+opencv-python>=4.10
+scikit-image>=0.24
+open3d>=0.19
+pyvista>=0.44
+
+# --- Statistics and ML ---
+statsmodels>=0.14
+scikit-learn>=1.5
+
+# --- App: web (Dash) ---
+dash>=3.0
+dash-bootstrap-components>=2.0
+plotly>=6.0
+kaleido>=1.0
+
+# --- App: desktop (PyQt) ---
+PyQt6>=6.7
+PyQt6-WebEngine>=6.7
+pyqtgraph>=0.13
+pyvistaqt>=0.11
+
+# --- Notebooks and plots ---
+matplotlib>=3.9
+jupyterlab>=4.2
+
+# --- Dev ---
+pytest>=8.0
+ruff>=0.6
+tqdm>=4.66

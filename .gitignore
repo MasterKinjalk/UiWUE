@@ -1,0 +1,27 @@
+# Data never goes in git (ADA 2025 is hundreds of GB)
+data/
+*.tif
+*.tiff
+*.ply
+*.pcd
+*.npy
+*.npz
+*.parquet
+*.zip
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.claude/
