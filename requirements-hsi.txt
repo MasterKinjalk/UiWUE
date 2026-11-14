@@ -1,0 +1,9 @@
+# Extra dependencies for the hyperspectral module only (owner: Sam).
+# Install on top of the shared environment:  uv pip install -r requirements-hsi.txt
+# hyperio reads the ADA JP2 cubes; torch runs the authors' plant-mask model (models/model.pt2).
+# First check: rasterio must open an hsi_000.jp2 here. If it cannot (missing JPEG 2000 driver),
+# run the extraction in the authors' conda environment instead (ada2025/environment/environment.yml).
+hyperio @ git+https://github.com/unklar/hyperio
+rasterio>=1.4
+spectral>=0.23
+torch>=2.0

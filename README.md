@@ -9,6 +9,7 @@ sugar beet, not only machine-learning models.
 
 ## Start here
 
-1. Set up your environment: [docs/SOFTWARE_STACK.md](docs/SOFTWARE_STACK.md)
-2. Add your work plan: [plan/](plan/README.md)
-3. Wait for the master plan before building.
+1. Read the master plan: [plan/Master-Plan.md](plan/Master-Plan.md) (who builds what, the table contract, the deadline)
+2. Set up your environment: [docs/SOFTWARE_STACK.md](docs/SOFTWARE_STACK.md)
+3. Run the app: `cd app && python app.py`, then open <http://127.0.0.1:8050>
+4. Before pushing a table: `python -m uiwue.core.validate` and `python -m pytest -q`
