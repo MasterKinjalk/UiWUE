@@ -1,0 +1,3 @@
+column,label,unit,direction,description
+diurnal_score_ref,Thermal stress score (vs control bed),z,1,"leaf minus control-bed leaf temperature, as a z-score against the plant's own 30 Aug–2 Sep values at the same time of day"
+diurnal_score_local,Thermal stress score (no control bed),z,1,"leaf minus air temperature above a line in VPD fitted on healthy plants (24 Aug–2 Sep), as a z-score against the plant's own baseline"

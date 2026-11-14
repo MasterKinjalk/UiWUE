@@ -1,0 +1,8 @@
+column,label,unit,direction,description
+thermal_leaf_t,Leaf temperature,°C,1,"median of the coolest half of the pixels (authors' rule), median over frames"
+thermal_leaf_t_p10,"Leaf temperature, coolest 10 %",°C,1,10th percentile of the image; a stricter leaf estimate
+thermal_bg_t,Background temperature,°C,0,"75th percentile of the image: mostly pots and soil, which also warm as they dry"
+thermal_leaf_t_r160,Leaf temperature at 160 x 120,°C,1,same rule on the image averaged to 160 x 120 pixels (cheaper camera)
+thermal_leaf_t_r80,Leaf temperature at 80 x 60,°C,1,same rule on the image averaged to 80 x 60 pixels (cheaper camera)
+thermal_leaf_air_dt,Leaf minus air temperature,°C,1,leaf temperature minus the W1-end air sensor at the capture time
+thermal_leaf_ref_dt,Leaf minus control-bed leaf,°C,1,leaf temperature minus the median leaf temperature of the control-bed plants in the same run (other controls for a control plant); cancels weather
