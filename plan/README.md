@@ -21,3 +21,5 @@ Plans so far:
 
 - [Kinjalk — Challenge 3, 3D phenotyping](Kinjalk-Work-Plan.md)
 - [Yuming — Challenge 4, diurnal and environmental modeling](Yuming-Work-Plan.md) (overlaps Sam's challenge 4; see its question 1)
+- [Sam — Challenges 2 & 4, spectral/thermal physiology and diurnal modeling](Sam-Work-Plan.md) (detailed notes and first-pass results: [docs/Sam-Analysis-Notes.md](../docs/Sam-Analysis-Notes.md))
+
