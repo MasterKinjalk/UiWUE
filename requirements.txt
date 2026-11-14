@@ -10,6 +10,8 @@ openpyxl>=3.1
 
 # --- Images and 3D ---
 tifffile>=2024.8
+imagecodecs>=2024.6
+plyfile>=1.0
 opencv-python>=4.10
 scikit-image>=0.24
 open3d>=0.19
@@ -25,12 +27,6 @@ dash-bootstrap-components>=2.0
 plotly>=6.0
 kaleido>=1.0
 
-# --- App: desktop (PyQt) ---
-PyQt6>=6.7
-PyQt6-WebEngine>=6.7
-pyqtgraph>=0.13
-pyvistaqt>=0.11
-
 # --- Notebooks and plots ---
 matplotlib>=3.9
 jupyterlab>=4.2
@@ -39,3 +35,5 @@ jupyterlab>=4.2
 pytest>=8.0
 ruff>=0.6
 tqdm>=4.66
+joblib>=1.4
+requests>=2.31

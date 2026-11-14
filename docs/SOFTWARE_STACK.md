@@ -15,7 +15,9 @@ runs on every machine.
 | Statistics | statsmodels, scikit-learn | mixed models, regression, baselines |
 | Charts | plotly | all interactive charts, including 3D scatter |
 | Web app | dash, dash-bootstrap-components | multi-page app in the browser |
-| Desktop app | PyQt6, PyQt6-WebEngine, pyqtgraph, pyvistaqt | desktop shell, fast native 2D / 3D views |
+| 3D in the app | plotly `Scatter3d`, `Mesh3d`, `Surface` | point clouds and surfaces in the browser (WebGL) |
+| Files | imagecodecs, plyfile, requests | compressed TIFF, PLY point clouds, dataset download |
+| Parallel | joblib | batch processing across runs |
 | Figure export | kaleido | Plotly figures to PNG / SVG for slides |
 | Notebooks | jupyterlab, matplotlib | exploration |
 | Dev | pytest, ruff, tqdm | tests, lint + format, progress bars |
@@ -25,22 +27,30 @@ Hyperspectral files are read with `hyperio` from the
 `requirements.txt`; whoever owns the hyperspectral challenge should add the
 install line once confirmed.
 
-## App framework: recommendation for the master plan
+## App framework: Dash + Plotly web app
 
-**Dash + Plotly as the main app. PyQt6 as an optional desktop shell.**
+Decided 2026-11-14: the app is a Dash web app. PyQt is dropped from
+`requirements.txt`.
 
-- Dash is multi-page. Each person owns one file in `pages/` and nobody blocks
-  anybody else. This matters most with four people and two days.
+- Dash is multi-page. Each person owns one file in `app/pages/` and nobody
+  blocks anybody else. This matters most with four people and two days.
 - Plotly figures are plain Python objects. The same figure works in a notebook,
   in Dash, and as an exported image for slides.
 - A biologist opens a browser tab. Nothing to install on the demo machine
   beyond the environment.
-- PyQt6 can wrap the Dash app in a desktop window with `QWebEngineView`, so we
-  can still ship a desktop app without writing the interface twice.
-- Use native PyQt views (`pyvistaqt`, `pyqtgraph`) only where Plotly is too
-  slow, for example a point cloud above roughly 200,000 points.
 
-This is a recommendation, not a decision. The master plan decides.
+### 3D in Dash
+
+Dash shows 3D through Plotly's WebGL traces inside `dcc.Graph`:
+
+- `Scatter3d` for point clouds, `Mesh3d` for planes and hulls, `Surface` for
+  height maps. Rotate, zoom and hover work out of the box.
+- One ADA depth frame is at most 38,304 points, which `Scatter3d` handles
+  easily. Keep one cloud under roughly 200,000 points; downsample above that.
+- Send clouds to the browser as cached arrays (`.npz`), not raw TIFFs, and
+  update the figure from a callback when the date slider moves.
+- Open3D and PyVista are for processing (plane fits, clustering, normals).
+  Their own viewers open desktop windows and are not used inside the app.
 
 ## Setup
 
@@ -90,14 +100,14 @@ pip install -r requirements.txt
 ### Check the install
 
 ```bash
-python -c "import open3d, dash, plotly, PyQt6, pyvista, statsmodels, cv2, tifffile; print('ok')"
+python -c "import open3d, dash, plotly, pyvista, statsmodels, cv2, tifffile; print('ok')"
 ```
 
 ## Versions
 
 `requirements.txt` gives minimum versions. On 2026-11-14 it resolved on
 Python 3.12 for Windows, macOS (Intel and Apple Silicon) and Linux to, among
-others: open3d 0.20.0, dash 4.5.0, plotly 7.1.0, PyQt6 6.12.1, pyvista 0.49.2,
+others: open3d 0.20.0, dash 4.5.0, plotly 7.1.0, pyvista 0.49.2,
 pandas 3.1.1, numpy 2.5.4, statsmodels 0.15.0. This was a dependency
 resolution check only; a full install has not been run yet.
 
