@@ -1,0 +1,2 @@
+column,label,unit,direction,description
+detect_stress_prob,Stress probability,0-1,1,Out-of-fold P(deficit) from a leave-one-plant-out logistic model on all sensors' baseline-delta traits.
