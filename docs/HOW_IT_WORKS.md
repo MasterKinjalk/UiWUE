@@ -1385,6 +1385,32 @@ python app/app.py                   # http://127.0.0.1:8050
 Determinism: bootstrap seed 20250903; RANSAC seed 0; fusion and model seeds fixed in their
 configs.
 
+**Your own data** (`src/uiwue/pipeline.py`, page `/new-run`, the `New run` tile on Home). One
+command runs the steps above on any folder in the ADA 2025 layout and writes to a workspace of its
+own, `runs/user/<name>/`, never to `derived/`:
+
+```bash
+python -m uiwue.pipeline --data-dir D:/my_trial --name my-trial          # every step with input
+python -m uiwue.pipeline --data-dir D:/my_trial --dry-run                # what is found, what would run
+python -m uiwue.pipeline --data-dir D:/my_trial --ml mask depth fusion   # the learned models (GPU)
+python app/app.py --runs                                                 # the same from the page
+```
+
+- **Steps:** environment, thermal, leaf clip, RGB, 3D structure (+ team table), detection, daily
+  rhythm, 3D statistics (E1 to E5), table check. Each is the module's own command line in a child
+  process with `UIWUE_DERIVED=<workspace>/derived` (`uiwue.core.DERIVED` reads it). A step whose
+  input is missing is skipped; a failed step stops only the steps that need its table.
+- **Models are opt-in:** `--ml mask` (Mask2Former plant mask in the 3D step), `--ml depth` (Prompt
+  Depth Anything), `--ml fusion` (frozen embeddings, then the trained fusion model on plants it was
+  not trained on). Off unless named, on the command line and on the page.
+- **The page** checks a folder, shows the steps and the command, and lists the runs. Its `Start`
+  button works only when the app was started with `--runs` (`UIWUE_RUNS=1`), so the demo app
+  cannot start a run. `View` starts a second app on a run's tables on port 8061 and up
+  (`UIWUE_DERIVED`, `UIWUE_CLOUDS`, `UIWUE_RUN_NAME`); the first app keeps the committed tables.
+- **Limits:** the folder must use the trial's layout, beds (W1 control, W2 and W3 deficit) and
+  calendar (day 0 = 3 Sep 2025); the hyperspectral module is not a step (it needs the black
+  reference); the environment step downloads one DWD file into `<data>/external/`.
+
 ---
 
 ## 13. UiWUE against the paper, point by point

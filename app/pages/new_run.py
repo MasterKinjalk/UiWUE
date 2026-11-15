@@ -77,10 +77,14 @@ def tiles(found):
             beds = ", ".join(f"{b} {n}" for b, n in f["beds"].items())
             out.append(
                 stat(
-                    name, f"{f['plants']}", "plants", "gray", sub=_span(f),
+                    name,
+                    f"{f['plants']}",
+                    "plants",
+                    "gray",
+                    sub=_span(f),
                     hover=f"{where}: {f['plants']} plants ({beds}), {f['plant_days']:,} plant-days"
                     + (f", {f['zipped']} zipped" if f["zipped"] else ""),
-                )  # fmt: skip
+                )
             )
         else:
             out.append(stat(name, "found", "", "gray", hover=where))
@@ -99,7 +103,11 @@ def notes(folder, found):
         out.append(chip("no control bed", "No W1 plants: every comparison is against the control bed W1", "caveat"))
     if other := pl.other_beds(found):
         out.append(
-            chip("other beds", f"{', '.join(other)}: only W1, W2 and W3 are compared; these plants are left out", "caveat")
+            chip(
+                "other beds",
+                f"{', '.join(other)}: only W1, W2 and W3 are compared; these plants are left out",
+                "caveat",
+            )
         )
     return out
 
@@ -133,9 +141,15 @@ def checks(id, options, value, label, hover, cls=""):
         [
             html.Legend(label, title=hover, className="uw-kicker nr-legend"),
             dbc.Checklist(
-                id=id, options=options, value=value, inline=True, className=f"uw-seg nr-seg {cls}".strip(),
-                inputClassName="btn-check", labelClassName="uw-seg-btn", labelCheckedClassName="uw-seg-on",
-            ),  # fmt: skip
+                id=id,
+                options=options,
+                value=value,
+                inline=True,
+                className=f"uw-seg nr-seg {cls}".strip(),
+                inputClassName="btn-check",
+                labelClassName="uw-seg-btn",
+                labelCheckedClassName="uw-seg-on",
+            ),
         ],
         className="nr-field",
     )
@@ -182,15 +196,22 @@ def open_viewer(st, wait=45) -> int | None:
     if port is None:
         return None
     env = os.environ | dict(
-        UIWUE_DERIVED=str(ws / "derived"), UIWUE_CLOUDS=str(ws / "threed" / "clouds"), UIWUE_DATA=st["data_dir"],
+        UIWUE_DERIVED=str(ws / "derived"),
+        UIWUE_CLOUDS=str(ws / "threed" / "clouds"),
+        UIWUE_DATA=st["data_dir"],
         UIWUE_RUN_NAME=st["name"],
-    )  # fmt: skip
+    )
     env.pop("UIWUE_RUNS", None)  # a viewer starts no runs
     flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    proc = subprocess.Popen(  # noqa: S603
-        [sys.executable, str(REPO / "app" / "app.py"), "--port", str(port)], cwd=REPO, env=env,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
-    )  # fmt: skip
+    proc = subprocess.Popen(
+        [sys.executable, str(REPO / "app" / "app.py"), "--port", str(port)],
+        cwd=REPO,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+    )
     (ws / "viewer.json").write_text(json.dumps(dict(port=port, pid=proc.pid)))
     t0 = time.time()
     while time.time() - t0 < wait and proc.poll() is None:
@@ -228,25 +249,34 @@ def run_card(st, first=False):
     if st["alive"]:
         actions.append(
             html.Button(
-                "Stop", id={"type": "nr-stop", "name": st["name"]}, n_clicks=0, title="Stop this run and its steps",
+                "Stop",
+                id={"type": "nr-stop", "name": st["name"]},
+                n_clicks=0,
+                title="Stop this run and its steps",
                 className="uw-btn uw-btn-outline",
-            )  # fmt: skip
+            )
         )
     elif has_tables(st):
         if port := viewer_port(st["workspace"]):
             actions.append(
                 html.A(
-                    "Open", href=f"http://127.0.0.1:{port}/", target="_blank", rel="noopener",
-                    title=f"This run's pages, in a second app on port {port}", className="uw-btn uw-btn-primary",
-                )  # fmt: skip
+                    "Open",
+                    href=f"http://127.0.0.1:{port}/",
+                    target="_blank",
+                    rel="noopener",
+                    title=f"This run's pages, in a second app on port {port}",
+                    className="uw-btn uw-btn-primary",
+                )
             )
         else:
             actions.append(
                 html.Button(
-                    "View", id={"type": "nr-view", "name": st["name"]}, n_clicks=0,
+                    "View",
+                    id={"type": "nr-view", "name": st["name"]},
+                    n_clicks=0,
                     title="Start a second app on this run's tables; this app keeps the committed ones",
                     className="uw-btn uw-btn-outline",
-                )  # fmt: skip
+                )
             )
     ml = [chip("GPU", "Used: " + ", ".join(pl.ML_ABOUT[m][0] for m in st["ml"]), "rule")] if st.get("ml") else []
     return html.Div(
@@ -263,7 +293,9 @@ def run_card(st, first=False):
             ),
             html.Div(
                 [
-                    html.Span([html.B(f"{done} / {len(ran)}"), " steps"], title="Steps finished of the steps with input"),
+                    html.Span(
+                        [html.B(f"{done} / {len(ran)}"), " steps"], title="Steps finished of the steps with input"
+                    ),
                     html.Span(_when(st["started"]), title="Started"),
                     html.Span(_took(took), title="Time in finished steps"),
                 ],
@@ -291,11 +323,16 @@ def _signature(runs):
     return json.dumps(
         [
             (
-                st["name"], st["state"], st["alive"], [(s["key"], s["state"]) for s in st["steps"]],
-                viewer_port(st["workspace"]), has_tables(st), pl.log_tail(st["workspace"], 6) if i == 0 else "",
+                st["name"],
+                st["state"],
+                st["alive"],
+                [(s["key"], s["state"]) for s in st["steps"]],
+                viewer_port(st["workspace"]),
+                has_tables(st),
+                pl.log_tail(st["workspace"], 6) if i == 0 else "",
             )
             for i, st in enumerate(runs)
-        ]  # fmt: skip
+        ]
     )
 
 
@@ -317,13 +354,20 @@ def layout(folder=None, **_):
             field(
                 "Folder",
                 dbc.Input(
-                    id="nr-folder", type="text", value=folder, debounce=True, placeholder="D:\\trial\\data",
-                    className="nr-input nr-input-wide", autoComplete="off",
-                ),  # fmt: skip
+                    id="nr-folder",
+                    type="text",
+                    value=folder,
+                    debounce=True,
+                    placeholder="D:\\trial\\data",
+                    className="nr-input nr-input-wide",
+                    autoComplete="off",
+                ),
                 "A folder on the machine this app runs on. It is read, never changed (the Environment step adds one "
                 "weather file under external/).",
             ),
-            html.Button("Check", id="nr-check", n_clicks=0, title="Look for each input", className="uw-btn uw-btn-outline"),
+            html.Button(
+                "Check", id="nr-check", n_clicks=0, title="Look for each input", className="uw-btn uw-btn-outline"
+            ),
             html.Div(notes(folder, found), id="nr-notes", className="nr-notes"),
         ],
         className="nr-pick",
@@ -332,35 +376,62 @@ def layout(folder=None, **_):
     steps = panel(
         "Steps",
         checks(
-            "nr-steps", step_options(found), core, "Analysis",
+            "nr-steps",
+            step_options(found),
+            core,
+            "Analysis",
             "Each step is one module's own command, run in order. A step is off when the folder lacks its input.",
-        ),  # fmt: skip
+        ),
         checks(
-            "nr-ml", ml_options(found), [], "Models",
-            "The learned models. Off until switched on; they need a GPU and their weights on this machine.", "nr-seg-ml",
-        ),  # fmt: skip
+            "nr-ml",
+            ml_options(found),
+            [],
+            "Models",
+            "The learned models. Off until switched on; they need a GPU and their weights on this machine.",
+            "nr-seg-ml",
+        ),
         details(
             "Options",
             html.Div(
                 [
                     field(
                         "Name",
-                        dbc.Input(id="nr-name", type="text", value=Path(folder).name if folder else "", debounce=True,
-                                  className="nr-input", autoComplete="off"),
+                        dbc.Input(
+                            id="nr-name",
+                            type="text",
+                            value=Path(folder).name if folder else "",
+                            debounce=True,
+                            className="nr-input",
+                            autoComplete="off",
+                        ),
                         "The workspace, runs/user/<name>. A name already in use resumes that run.",
-                    ),  # fmt: skip
+                    ),
                     field(
                         "Plants",
-                        dbc.Input(id="nr-plants", type="text", value="", debounce=True, placeholder="all",
-                                  className="nr-input", autoComplete="off"),
+                        dbc.Input(
+                            id="nr-plants",
+                            type="text",
+                            value="",
+                            debounce=True,
+                            placeholder="all",
+                            className="nr-input",
+                            autoComplete="off",
+                        ),
                         "Full IDs such as W1_A2 W2_J5, to run a few plants only. Empty: every plant found.",
-                    ),  # fmt: skip
+                    ),
                     field(
                         "Jobs",
-                        dbc.Input(id="nr-jobs", type="number", value=pl.default_jobs(), min=1, max=64, step=1,
-                                  className="nr-input nr-input-num"),
+                        dbc.Input(
+                            id="nr-jobs",
+                            type="number",
+                            value=pl.default_jobs(),
+                            min=1,
+                            max=64,
+                            step=1,
+                            className="nr-input nr-input-num",
+                        ),
                         "Processes the RGB and 3D steps use at once",
-                    ),  # fmt: skip
+                    ),
                 ],
                 className="nr-options",
             ),
@@ -369,9 +440,13 @@ def layout(folder=None, **_):
         html.Div(
             [
                 html.Button(
-                    "Start", id="nr-start", n_clicks=0, disabled=True, className="uw-btn uw-btn-primary",
+                    "Start",
+                    id="nr-start",
+                    n_clicks=0,
+                    disabled=True,
+                    className="uw-btn uw-btn-primary",
                     title="Run the steps in a process of their own, into runs/user/<name>" if on else OFF_HOVER,
-                ),  # fmt: skip
+                ),
                 html.Div(id="nr-note", className="nr-notes", **{"aria-live": "polite"}),
             ],
             className="nr-start",

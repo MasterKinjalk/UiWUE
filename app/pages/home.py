@@ -439,8 +439,12 @@ def own_data():
             html.Span("Your data", title=p.get("description"), className="uw-kicker"),
             dcc.Link(
                 [
-                    html.Span("NR", className="uw-disc", style={"background": C["slate-600"]}, **{"aria-hidden": "true"}),
-                    html.Span([html.B(p["name"]), html.Span("your folder, the same steps", className="uw-pagetile-blurb")]),
+                    html.Span(
+                        "NR", className="uw-disc", style={"background": C["slate-600"]}, **{"aria-hidden": "true"}
+                    ),
+                    html.Span(
+                        [html.B(p["name"]), html.Span("your folder, the same steps", className="uw-pagetile-blurb")]
+                    ),
                 ],
                 href=p["relative_path"],
                 title=p.get("description") or p["name"],

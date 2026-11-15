@@ -63,7 +63,7 @@ def test_the_models_are_off_unless_named(folder, runs_dir, monkeypatch, tmp_path
     assert "--plant-model" not in text and "--depth-model" not in text and "uiwue.fusion" not in text
     w = dict(mask=tmp_path / "m", depth=tmp_path / "d", fusion=tmp_path / "f", imagebind=tmp_path / "i")
     monkeypatch.setattr(pl, "weights", lambda: w)
-    monkeypatch.setattr(pl, "ml_python", lambda: "python-ml")
+    monkeypatch.setattr(pl, "ml_python", lambda model="mask": "python-ml")
     steps = {s["key"]: s for s in pl.plan(folder, "t", ml=["mask", "fusion"], plants=["W1_A2"])}
     assert steps["threed"]["ml"] and f"--plant-model {w['mask']}" in steps["threed"]["cmds"][0]
     assert "--depth-model" not in steps["threed"]["cmds"][0] and "--plants W1_A2" in steps["threed"]["cmds"][0]
@@ -88,7 +88,12 @@ def test_every_output_path_is_inside_the_workspace(folder, runs_dir):
 def test_uiwue_derived_moves_the_tables_and_the_default_is_the_repo():
     code = "import uiwue.core as c; print(c.DERIVED)"
     env = {k: v for k, v in os.environ.items() if k != "UIWUE_DERIVED"} | {"PYTHONPATH": str(ROOT / "src")}
-    out = lambda e: subprocess.run([sys.executable, "-c", code], env=e, capture_output=True, text=True).stdout.strip()  # noqa: E731
+
+    def out(e):
+        return subprocess.run(
+            [sys.executable, "-c", code], env=e, capture_output=True, text=True, check=False
+        ).stdout.strip()
+
     assert Path(out(env)) == ROOT / "derived"
     assert Path(out(env | {"UIWUE_DERIVED": str(ROOT / "elsewhere")})) == ROOT / "elsewhere"
 
@@ -96,7 +101,7 @@ def test_uiwue_derived_moves_the_tables_and_the_default_is_the_repo():
 def test_run_writes_status_step_by_step_and_a_failure_only_stops_what_needs_it(folder, runs_dir, monkeypatch):
     calls = []
 
-    def fake(argv, cwd, env, stdout, stderr):
+    def fake(argv, cwd, env, stdout, stderr, check):
         module = argv[2]
         calls.append(module)
         derived = Path(env["UIWUE_DERIVED"])
@@ -109,9 +114,16 @@ def test_run_writes_status_step_by_step_and_a_failure_only_stops_what_needs_it(f
     st = pl.run(folder, "t")
     state = {s["key"]: s["state"] for s in st["steps"]}
     assert state == dict(
-        env="skipped", thermal="done", truth="skipped", rgb="done", threed="failed", detect="done", diurnal="done",
-        canopy="skipped", check="done",
-    )  # fmt: skip
+        env="skipped",
+        thermal="done",
+        truth="skipped",
+        rgb="done",
+        threed="failed",
+        detect="done",
+        diurnal="done",
+        canopy="skipped",
+        check="done",
+    )
     assert "uiwue.threed.contract" not in calls  # the step's second command waits for the first
     assert st["state"] == "partial" and st["finished"]
     ws = pl.workspace("t")
@@ -132,6 +144,8 @@ def test_a_run_whose_process_is_gone_reads_as_stopped(runs_dir):
 
 
 def test_the_command_line_is_what_start_runs(folder):
-    assert pl.command_line(folder, "t", pl.CORE, [], [], None) == f"python -m uiwue.pipeline --data-dir {folder} --name t"
+    assert (
+        pl.command_line(folder, "t", pl.CORE, [], [], None) == f"python -m uiwue.pipeline --data-dir {folder} --name t"
+    )
     line = pl.command_line("D:/my trial", "t", ["thermal", "detect"], ["mask"], ["W1_A2"], 4)
     assert line.endswith('--data-dir "D:/my trial" --name t --steps thermal detect --ml mask --plants W1_A2 --jobs 4')

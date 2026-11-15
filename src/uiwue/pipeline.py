@@ -41,6 +41,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 
 from uiwue.core import REPO
@@ -103,9 +104,7 @@ def scan(data_dir) -> dict:
     d = Path(data_dir)
     out = {k: _scan_plants(d / k, zips=k == "rgb") for k in ("thermal", "depth", "rgb", "hsi")}
     out["air"] = dict(found=(d / "air_readings.parquet").is_file())
-    out["clip"] = dict(
-        found=(d / "leaf_readings.parquet").is_file() and (d / "metadata_rwc_par_en.xlsx").is_file()
-    )
+    out["clip"] = dict(found=(d / "leaf_readings.parquet").is_file() and (d / "metadata_rwc_par_en.xlsx").is_file())
     out["light"] = dict(found=(d / "metadata_rwc_par_en.xlsx").is_file())
     for k, (name, where) in INPUTS.items():
         out[k] |= dict(name=name, where=where)
@@ -119,16 +118,33 @@ def other_beds(found: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------- the learned models
-def ml_python() -> str | None:
-    """The interpreter for the model steps: UIWUE_ML_PYTHON, this one when it has torch, else .venv-ml."""
+ML_NEEDS = {  # the packages each model's step imports
+    "mask": ("torch", "transformers"),
+    "depth": ("torch", "transformers"),
+    "fusion": ("torch", "torchgeo"),
+}
+
+
+@lru_cache
+def _has(python: str, modules: tuple) -> bool:
+    """Whether an interpreter can import every module (asked once per interpreter; this one is asked directly)."""
+    if python == sys.executable:
+        return all(importlib.util.find_spec(m) is not None for m in modules)
+    code = f"import importlib.util as u, sys; sys.exit(any(u.find_spec(m) is None for m in {modules!r}))"
+    try:
+        return subprocess.run([python, "-c", code], capture_output=True, timeout=60, check=False).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def ml_python(model: str = "mask") -> str | None:
+    """The interpreter for a model's step: UIWUE_ML_PYTHON, else the first of this one, .venv-ml and the fusion
+    worktree's .venv that has the model's packages (``ML_NEEDS``)."""
     if os.environ.get("UIWUE_ML_PYTHON"):
         return os.environ["UIWUE_ML_PYTHON"]
-    if importlib.util.find_spec("torch") is not None:
-        return sys.executable
-    for p in (REPO / ".venv-ml" / "Scripts" / "python.exe", REPO / ".venv-ml" / "bin" / "python"):
-        if p.exists():
-            return str(p)
-    return None
+    venvs = [REPO / ".venv-ml", REPO / ".worktrees" / "fusion" / ".venv"]
+    found = [str(p) for v in venvs for p in (v / "Scripts" / "python.exe", v / "bin" / "python") if p.exists()]
+    return next((p for p in (sys.executable, *found) if _has(p, ML_NEEDS[model])), None)
 
 
 def _first(*paths) -> Path | None:
@@ -138,7 +154,9 @@ def _first(*paths) -> Path | None:
 def weights() -> dict:
     """Where each model's weights are, None when they are not on this machine."""
     fusion = _first(
-        os.environ.get("UIWUE_FUSION_RUNS"), REPO / "runs" / "fusion", REPO / ".worktrees" / "fusion" / "runs" / "fusion"
+        os.environ.get("UIWUE_FUSION_RUNS"),
+        REPO / "runs" / "fusion",
+        REPO / ".worktrees" / "fusion" / "runs" / "fusion",
     )
     if fusion is not None and not (fusion / "fusion" / "fold0.pt").exists():
         fusion = None
@@ -156,11 +174,11 @@ def weights() -> dict:
 
 def ml_ready(found: dict) -> dict:
     """{model: reason it cannot run, or None when it can}."""
-    w, py = weights(), ml_python()
+    w = weights()
     out = {}
     for key in ML:
-        if py is None:
-            out[key] = "no Python with torch (set UIWUE_ML_PYTHON)"
+        if ml_python(key) is None:
+            out[key] = f"no Python with {' and '.join(ML_NEEDS[key])} (set UIWUE_ML_PYTHON)"
         elif w[key] is None:
             out[key] = "weights not on this machine"
         elif key == "fusion" and w["imagebind"] is None:
@@ -192,41 +210,72 @@ class Step:
 T = "derived/{}/traits_runs.parquet"
 STEPS = (
     Step(
-        "env", "Environment", ("air", "light"), writes="env/env_runs",
+        "env",
+        "Environment",
+        ("air", "light"),
+        writes="env/env_runs",
         about="Air temperature, humidity, VPD and light at every flyover (uiwue.env). Downloads one DWD weather "
         "file (1.5 MB) into <data>/external/ on its first run.",
     ),
     Step(
-        "thermal", "Thermal", ("thermal", "air"), writes="thermal/traits_runs",
+        "thermal",
+        "Thermal",
+        ("thermal", "air"),
+        writes="thermal/traits_runs",
         about="Leaf temperature per run, against the air and against the control bed (uiwue.thermal).",
     ),
     Step(
-        "truth", "Leaf clip", ("clip",), tables=(("derived/env/env_runs.parquet",),), writes="truth/turgor_runs, plants",
+        "truth",
+        "Leaf clip",
+        ("clip",),
+        tables=(("derived/env/env_runs.parquet",),),
+        writes="truth/turgor_runs, plants",
         about="Leaf-clip turgor, water content and symptom dates: the ground truth (uiwue.truth).",
     ),
-    Step("rgb", "RGB", ("rgb",), writes="rgb/traits_runs", about="Greenness and cover from the centre frame (uiwue.rgb)."),
     Step(
-        "threed", "3D structure", ("depth",), writes="threed/traits_runs, clouds",
+        "rgb", "RGB", ("rgb",), writes="rgb/traits_runs", about="Greenness and cover from the centre frame (uiwue.rgb)."
+    ),
+    Step(
+        "threed",
+        "3D structure",
+        ("depth",),
+        writes="threed/traits_runs, clouds",
         about="Height, leaf area and volume from the depth camera, with one cloud per run (uiwue.threed). "
         "The slowest step without a model.",
     ),
     Step(
-        "detect", "Detection", (), any_of=("thermal", "rgb", "depth"),
+        "detect",
+        "Detection",
+        (),
+        any_of=("thermal", "rgb", "depth"),
         tables=((T.format("thermal"), T.format("rgb"), T.format("threed")),),
         writes="detect/onsets, benchmark, scores_runs",
         about="First day each signal separates deficit from control, the sensor benchmark and the stress "
         "probability (uiwue.detect).",
     ),
     Step(
-        "diurnal", "Daily rhythm", ("thermal",), tables=((T.format("thermal"),),), writes="diurnal/scores_runs, schedules",
+        "diurnal",
+        "Daily rhythm",
+        ("thermal",),
+        tables=((T.format("thermal"),),),
+        writes="diurnal/scores_runs, schedules",
         about="Thermal scores by time of day, the alert rules and the best flyover (uiwue.diurnal).",
     ),
     Step(
-        "canopy", "3D statistics", ("depth",), tables=(("threed/traits_runs.parquet",),), writes="threed/results",
+        "canopy",
+        "3D statistics",
+        ("depth",),
+        tables=(("threed/traits_runs.parquet",),),
+        writes="threed/results",
         about="Noise floor, bed baseline, collapse and recovery of the 3D traits (uiwue.threed.experiments E1 to E5).",
     ),
     Step(
-        "fusion", "Fusion score", (), any_of=("thermal", "rgb", "depth"), writes="detect/fusion_external_*", ml=True,
+        "fusion",
+        "Fusion score",
+        (),
+        any_of=("thermal", "rgb", "depth"),
+        writes="detect/fusion_external_*",
+        ml=True,
         about="Embeds RGB, thermal and depth with the frozen encoders and scores every run with the trained "
         "fusion model (uiwue.fusion). Plants the model was trained on are left out. GPU.",
     ),
@@ -269,7 +318,7 @@ def commands(step: Step, data_dir: Path, ws: Path, ml=(), plants=(), jobs=None, 
     """The step's command lines (argument lists; ``python`` stands for the interpreter that runs it)."""
     d, jobs = str(data_dir), str(jobs or default_jobs())
     some = ["--plants", *plants] if plants else []
-    mod = lambda m, *a: ["python", "-m", m, *a]  # noqa: E731
+    mod = lambda m, *a: ["python", "-m", m, *a]
     w = weights()
     if step.key == "env":
         return [mod("uiwue.env", "--data-dir", d)]
@@ -294,11 +343,20 @@ def commands(step: Step, data_dir: Path, ws: Path, ml=(), plants=(), jobs=None, 
     if step.key == "canopy":
         return [
             mod(
-                "uiwue.threed.experiments", "--exp", "E1", "E2", "E3", "E4", "E5",
-                "--runs", str(ws / "threed" / "traits_runs.parquet"),
-                "--frames", str(ws / "threed" / "traits_frames.parquet"),
-                "--out", str(ws / "derived" / "threed" / "results"),
-            )  # fmt: skip
+                "uiwue.threed.experiments",
+                "--exp",
+                "E1",
+                "E2",
+                "E3",
+                "E4",
+                "E5",
+                "--runs",
+                str(ws / "threed" / "traits_runs.parquet"),
+                "--frames",
+                str(ws / "threed" / "traits_frames.parquet"),
+                "--out",
+                str(ws / "derived" / "threed" / "results"),
+            )
         ]
     if step.key == "fusion":
         sensors = [k for k in ("rgb", "thermal", "depth") if found is None or found[k]["found"]]
@@ -306,10 +364,20 @@ def commands(step: Step, data_dir: Path, ws: Path, ml=(), plants=(), jobs=None, 
         return [
             mod("uiwue.fusion.embed", "--data-dir", d, "--sensors", *sensors, "--cache", cache, *some),
             mod(
-                "uiwue.fusion.predict", "--cache", cache, "--model", "fusion", "--runs-dir", str(w["fusion"]),
-                "--data-dir", d, "--size-traits", str(ws / "derived" / "threed" / "traits_runs.parquet"),
-                "--out", str(ws / "derived" / "detect"),
-            ),  # fmt: skip
+                "uiwue.fusion.predict",
+                "--cache",
+                cache,
+                "--model",
+                "fusion",
+                "--runs-dir",
+                str(w["fusion"]),
+                "--data-dir",
+                d,
+                "--size-traits",
+                str(ws / "derived" / "threed" / "traits_runs.parquet"),
+                "--out",
+                str(ws / "derived" / "detect"),
+            ),
         ]
     if step.key == "check":
         return [mod("uiwue.core.validate")]
@@ -330,18 +398,29 @@ def plan(data_dir, name, steps=None, ml=(), plants=(), jobs=None, found=None) ->
         cmds = [] if why else commands(s, data_dir, ws, ml, plants, jobs, found)
         out.append(
             dict(
-                key=s.key, label=s.label, state="skipped" if why else "pending", why=why or "",
-                cmds=[" ".join(c) for c in cmds], argv=cmds, ml=s.ml or (s.key == "threed" and bool(set(ml) & {"mask", "depth"})),
+                key=s.key,
+                label=s.label,
+                state="skipped" if why else "pending",
+                why=why or "",
+                cmds=[" ".join(c) for c in cmds],
+                argv=cmds,
+                ml=s.ml or (s.key == "threed" and bool(set(ml) & {"mask", "depth"})),
                 seconds=None,
-            )  # fmt: skip
+            )
         )
     return out
 
 
 def command_line(data_dir, name, steps=None, ml=(), plants=(), jobs=None) -> str:
     """The one command that does what the page's Start button does."""
-    q = lambda s: f'"{s}"' if " " in str(s) else str(s)  # noqa: E731
-    parts = ["python -m uiwue.pipeline", "--data-dir", q(data_dir or "<folder>"), "--name", q(safe_name(name) or "<name>")]
+    q = lambda s: f'"{s}"' if " " in str(s) else str(s)
+    parts = [
+        "python -m uiwue.pipeline",
+        "--data-dir",
+        q(data_dir or "<folder>"),
+        "--name",
+        q(safe_name(name) or "<name>"),
+    ]
     if steps is not None and tuple(k for k in CORE if k in steps) != CORE:
         parts += ["--steps", *[k for k in CORE if k in steps]]
     if ml:
@@ -444,10 +523,17 @@ def run(data_dir, name, steps=None, ml=(), plants=(), jobs=None) -> dict:
     found = scan(data_dir)
     todo = plan(data_dir, name, steps, ml, plants, jobs, found)
     st = dict(
-        name=safe_name(name), data_dir=str(data_dir), started=datetime.now(UTC).isoformat(timespec="seconds"),
-        finished=None, state="running", pid=os.getpid(), ml=[m for m in ML if m in ml], plants=list(plants or ()),
-        jobs=jobs or default_jobs(), steps=[{k: v for k, v in s.items() if k != "argv"} for s in todo],
-    )  # fmt: skip
+        name=safe_name(name),
+        data_dir=str(data_dir),
+        started=datetime.now(UTC).isoformat(timespec="seconds"),
+        finished=None,
+        state="running",
+        pid=os.getpid(),
+        ml=[m for m in ML if m in ml],
+        plants=list(plants or ()),
+        jobs=jobs or default_jobs(),
+        steps=[{k: v for k, v in s.items() if k != "argv"} for s in todo],
+    )
     status, beat, log = ws / "status.json", ws / "beat", ws / "log.txt"
     stop = threading.Event()
 
@@ -459,7 +545,7 @@ def run(data_dir, name, steps=None, ml=(), plants=(), jobs=None) -> dict:
     beat.touch()
     _write_json(status, st)
     threading.Thread(target=heartbeat, daemon=True).start()
-    env, py_ml = child_env(data_dir, ws), ml_python()
+    env = child_env(data_dir, ws)
     try:
         with log.open("a", encoding="utf-8") as out:
             out.write(f"\n===== {st['started']}  {st['name']}  <-  {data_dir}\n")
@@ -473,11 +559,15 @@ def run(data_dir, name, steps=None, ml=(), plants=(), jobs=None) -> dict:
                 row["state"], t0 = "running", time.time()
                 _write_json(status, st)
                 code = 0
+                model = "fusion" if s["key"] == "fusion" else next((m for m in st["ml"] if m != "fusion"), "mask")
+                exe = (ml_python(model) if s["ml"] else None) or sys.executable
                 for argv in s["argv"]:
-                    exe = py_ml if s["ml"] and py_ml else sys.executable
                     out.write(f"\n--- {s['label']}: {' '.join(argv)}\n")
                     out.flush()
-                    code = subprocess.run([exe, *argv[1:]], cwd=REPO, env=env, stdout=out, stderr=subprocess.STDOUT).returncode  # noqa: S603
+                    done = subprocess.run(
+                        [exe, *argv[1:]], cwd=REPO, env=env, stdout=out, stderr=subprocess.STDOUT, check=False
+                    )
+                    code = done.returncode
                     if code:
                         break
                 row.update(state="failed" if code else "done", seconds=round(time.time() - t0, 1))
@@ -518,10 +608,16 @@ def start(data_dir, name, steps=None, ml=(), plants=(), jobs=None) -> Path:
         env.pop(k, None)
     flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     (ws / "status.json").unlink(missing_ok=True)  # the new process writes a fresh one
-    subprocess.Popen(  # noqa: S603
-        argv, cwd=REPO, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        creationflags=flags, start_new_session=os.name != "nt",
-    )  # fmt: skip
+    subprocess.Popen(
+        argv,
+        cwd=REPO,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+        start_new_session=os.name != "nt",
+    )
     return ws
 
 
@@ -533,7 +629,7 @@ def stop(name) -> bool:
         return False
     pid = int(st["pid"])
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)  # noqa: S603, S607
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
     else:
         import signal
 
@@ -550,7 +646,9 @@ def stop(name) -> bool:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-dir", required=True, type=Path, help="a folder in the ADA 2025 layout")
-    ap.add_argument("--name", help="the workspace, runs/user/<name> (default: the folder's name); a name in use resumes")
+    ap.add_argument(
+        "--name", help="the workspace, runs/user/<name> (default: the folder's name); a name in use resumes"
+    )
     ap.add_argument("--steps", nargs="*", choices=CORE, help="default: every step whose input is found")
     ap.add_argument("--ml", nargs="*", default=[], choices=ML, help="learned models to use (GPU); none by default")
     ap.add_argument("--plants", nargs="*", default=[], help="full IDs such as W1_A2 (default: all found)")
