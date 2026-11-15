@@ -60,7 +60,7 @@ def test_fill_small_holes_stays_within_the_local_rim_range():
     ramp = np.tile(np.linspace(0.42, 0.52, 20, dtype=np.float32), (20, 1))
     d[130:150, 150:170] = ramp  # tilted patch with a hole in it
     d[137:142, 157:163] = 0
-    f, mask = fill_small_holes(d)
+    f, mask = fill_small_holes(d, max_rim_span=np.inf)  # rim-span limit off: checks the values only
     assert mask.sum() == 24 + 30 + 30
     valid = np.where(mask, np.nan, d)
     win = np.lib.stride_tricks.sliding_window_view(np.pad(valid, 3, constant_values=np.nan), (7, 7))
@@ -69,6 +69,27 @@ def test_fill_small_holes_stays_within_the_local_rim_range():
     tol = 2e-4  # 0.2 mm
     assert (f[r, c] >= lo[r, c] - tol).all() and (f[r, c] <= hi[r, c] + tol).all()
     assert np.allclose(f[40:45, 30:36], 0.30, atol=1e-3)
+
+
+def test_fill_small_holes_skips_holes_on_depth_edges():
+    # A hole whose rim spans a depth edge (leaf over soil, leaf over leaf) is a gap, not a
+    # saturated leaf interior: inpainting would bridge it with a steep fake surface.
+    d = flat(0.40)
+    d[:, : W // 2] = 0.30  # 100 mm step
+    step = np.s_[80:84, W // 2 - 3 : W // 2 + 3]
+    d[step] = 0  # hole across the step
+    d[40:45, 30:36] = 0  # hole inside the upper level
+    ramp = np.tile(np.linspace(0.42, 0.44, 20, dtype=np.float32), (20, 1))  # about 1 mm per px
+    d[130:150, 150:170] = ramp
+    tilt = np.s_[137:142, 157:163]
+    d[tilt] = 0  # hole inside a gently tilted surface: rim span 7.4 mm
+    f, mask = fill_small_holes(d)
+    assert not mask[step].any() and (f[step] == 0).all()
+    assert mask[40:45, 30:36].all() and np.allclose(f[40:45, 30:36], 0.30, atol=1e-3)
+    assert mask[tilt].all() and f[tilt].min() >= 0.42 - 2e-4 and f[tilt].max() <= 0.44 + 2e-4
+    # the limit compares the rim span (max - min of the valid 8-neighbours of the hole)
+    assert fill_small_holes(d, max_rim_span=0.008)[1][tilt].all()
+    assert not fill_small_holes(d, max_rim_span=0.007)[1][tilt].any()
 
 
 def test_build_cloud_unprojects_along_rays():
