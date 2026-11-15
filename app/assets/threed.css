@@ -1,29 +1,141 @@
-/* Styles for the 3D phenotyping pages (app/pages/threed_*.py). Loaded by Dash from app/assets/. */
+/* 3D canopy page (app/pages/threed.py). Token variables only (design/tokens.css); shared parts are in uiwue.css. */
 
-/* dbc.RadioItems shown as a joined button group (hour buttons on the 3D Browser) */
-.radio-group .form-check {
-  padding-left: 0;
-  margin: 0;
+.td-picker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2) var(--uw-space-3); }
+.td-context { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+
+/* hero: the then/now stage, the plant rail, the day strip */
+.td-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: var(--uw-space-3) var(--uw-space-5);
+  align-items: stretch;
 }
-.radio-group .btn-group > .form-check:not(:last-child) > .btn {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+.td-stage { min-width: 0; align-self: start; display: flex; flex-direction: column; gap: var(--uw-space-3); }
+.td-toggle { display: none; }
+.td-views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--uw-space-3); }
+.td-view {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--uw-rule);
+  border-radius: var(--uw-radius-lg);
+  background: var(--uw-surface);
 }
-.radio-group .btn-group > .form-check:not(:first-child) > .btn {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  margin-left: -1px;
+.td-view-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--uw-space-2);
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: var(--uw-space-3) var(--uw-space-4) 0;
+  background: var(--uw-surface-2);
+}
+.td-view-head.td-base { background: var(--uw-mint); }
+.td-view-head.td-dry { background: var(--uw-sand); }
+.td-which { min-width: 40px; color: var(--uw-slate-600); }
+.td-dry .td-which { color: var(--uw-amber-900); }
+.td-day-num { font-family: var(--uw-font-display); font-size: 21px; line-height: 26px; font-weight: 700; color: var(--uw-ink-display); }
+.td-date, .td-run { font-size: 13px; line-height: 18px; color: var(--uw-ink-muted); }
+.td-run { cursor: help; }
+.td-canvas { position: relative; aspect-ratio: 1.04; }
+.td-loading, .td-graph, .td-graph .dash-graph { height: 100%; }
+.td-empty-wrap { position: absolute; inset: var(--uw-space-4); display: flex; align-items: center; justify-content: center; background: var(--uw-surface); }
+.td-empty-wrap:empty { display: none; }
+.td-empty { align-items: center; justify-content: center; width: 100%; min-height: 96px; box-sizing: border-box; }
+.td-nothing { display: inline-block; flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 2px dashed var(--uw-gray-500); }
+.td-nothing-scan { border-radius: 50%; }
+
+/* day strip (DESIGN 5): baseline mint, no water sand, NOW navy, no usable scan dashed */
+.td-days { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--uw-space-2); min-width: 0; }
+.td-days > .uw-icon-btn { flex: none; }
+.td-strip { flex: 1 1 auto; min-width: 0; display: flex; gap: var(--uw-space-1); overflow-x: auto; padding: 2px; }
+.td-cell {
+  flex: 1 0 38px;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  border: 1px solid transparent;
+  border-radius: var(--uw-radius-sm);
+  background: var(--uw-surface-2);
+  color: var(--uw-ink-display);
+  font: inherit;
+  cursor: pointer;
+}
+.td-cell b { font-family: var(--uw-font-display); font-size: 17px; line-height: 20px; }
+.td-cell span { font-size: 12px; line-height: 14px; color: var(--uw-ink-muted); white-space: nowrap; }
+.td-cell.td-base { background: var(--uw-mint); }
+.td-cell.td-dry { background: var(--uw-sand); }
+.td-cell:hover { border-color: var(--uw-teal-700); }
+.td-cell.td-on { background: var(--uw-navy); border-color: var(--uw-navy); color: var(--uw-surface); }
+.td-cell.td-on span { color: var(--uw-surface); }
+.td-cell.td-noscan { background: var(--uw-surface); border: 2px dashed var(--uw-rule); color: var(--uw-ink-muted); cursor: not-allowed; }
+.td-cell:focus-visible { outline: 2px solid var(--uw-navy); outline-offset: 2px; }
+.uw-legend.td-legend { grid-column: 1 / -1; padding-top: 0; }
+.td-sw-base { background: var(--uw-mint); }
+.td-sw-dry { background: var(--uw-sand); }
+.td-ramp-key { display: inline-flex; align-items: center; gap: var(--uw-space-2); cursor: help; }
+.td-ramp { width: 120px; height: 12px; border-radius: var(--uw-radius-sm); }
+
+/* rail: the selected plant */
+.td-rail { min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-3); }
+.td-card { gap: var(--uw-space-2); }
+.td-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--uw-space-1) var(--uw-space-3); }
+.td-when { padding-top: 0; }
+.td-readouts { display: flex; flex-direction: column; }
+.td-readout { display: flex; align-items: center; gap: var(--uw-space-2); min-height: 44px; border-bottom: 1px solid var(--uw-rule); }
+.td-readout:last-child { border-bottom: 0; }
+.td-readout .uw-chip { padding: 0 var(--uw-space-2); }
+.td-trait { font-weight: 700; color: var(--uw-ink); }
+.td-side { flex: 1 1 auto; min-height: 200px; display: flex; flex-direction: column; padding: var(--uw-space-3) var(--uw-space-4); }
+.td-side-graph { flex: 1 1 auto; min-height: 150px; position: relative; }
+.td-side-graph .dash-graph { position: absolute; inset: 0; }
+.td-chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-1) var(--uw-space-2); min-height: 28px; }
+.td-chart-head h3 { margin: 0; font-family: var(--uw-font-sans); font-size: 15px; line-height: 21px; font-weight: 700; color: var(--uw-ink); }
+
+/* the evidence below: every plant against its peak, and the bed gap by day, one column per trait */
+.td-collapse { margin-top: var(--uw-space-5); }
+.td-pair-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--uw-space-4) var(--uw-space-6); }
+.td-trait-col { min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-2); }
+.td-sub { color: var(--uw-slate-600); cursor: help; padding-top: var(--uw-space-1); }
+.td-key-item { display: inline-flex; align-items: center; gap: var(--uw-space-2); font-size: 13px; color: var(--uw-ink-muted); }
+.td-key { display: inline-block; width: 22px; height: 3px; border-radius: 2px; }
+.td-keys { display: inline-flex; flex-wrap: wrap; gap: var(--uw-space-1) var(--uw-space-4); margin-left: auto; }
+.td-key-dry { background: var(--uw-amber-700); }
+.td-key-ctrl { background: var(--uw-teal-700); }
+/* band key: the middle-half band (the chart's BAND tint) with the median line through it */
+.td-key-band { position: relative; height: 12px; border-radius: 2px; }
+.td-key-band.td-key-dry { background: color-mix(in srgb, var(--uw-amber-700) 18%, transparent); }
+.td-key-band.td-key-ctrl { background: color-mix(in srgb, var(--uw-teal-700) 14%, transparent); }
+.td-key-band::after { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 3px; border-radius: 2px; }
+.td-key-band.td-key-dry::after { background: var(--uw-amber-700); }
+.td-key-band.td-key-ctrl::after { background: var(--uw-teal-700); }
+.td-key-sel { background: var(--uw-navy); height: 4px; }
+.td-side-key { display: inline-flex; flex-wrap: wrap; gap: var(--uw-space-1) var(--uw-space-3); margin-left: auto; font-size: 13px; color: var(--uw-ink-muted); }
+.td-side-key > span { display: inline-flex; align-items: center; gap: var(--uw-space-2); }
+.td-key-then { height: 0; border-top: 2px dotted var(--uw-ink); border-radius: 0; }
+.td-key-now { height: 10px; border-bottom: 2px solid var(--uw-forest-700); border-radius: 0; }
+
+/* tablet: the stage takes the width, the rail goes under it */
+@media (max-width: 1180px) {
+  .uw-tiles.td-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .td-hero { grid-template-columns: minmax(0, 1fr); }
+  .td-days { order: 2; }
+  .td-legend { order: 3; }
+  .td-rail { order: 4; }
+  .td-strip { gap: 2px; }
+  .td-cell { flex: 1 0 28px; }
+  .td-cell span { display: none; }
+  .td-rail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
 }
 
-/* keep the slider marks small so 40 dates fit */
-#tb-date .dash-slider-mark,
-#tb-date .rc-slider-mark-text {
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-/* compact tables in the side panel and result card */
-#tb-side table td,
-#tb-side table th {
-  padding: 0.1rem 0.3rem;
+/* phone: one cloud at a time (then / now), everything stacks */
+@media (max-width: 700px) {
+  .uw-tiles.td-tiles { gap: var(--uw-space-2); }
+  .td-toggle { display: block; }
+  .td-views { grid-template-columns: minmax(0, 1fr); }
+  .td-show-now .td-view-then, .td-show-then .td-view-now { display: none; }
+  .td-rail, .td-pair-charts { grid-template-columns: minmax(0, 1fr); }
+  .td-cell { flex: 0 0 40px; }
 }

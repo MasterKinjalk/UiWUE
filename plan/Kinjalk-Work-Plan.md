@@ -21,7 +21,7 @@ Parameters marked *(start value)* are tuned on the first two plants.
 | D2 | `traits_runs.parquet`: one row per plant per run | covers all processed plants, 2025-08-12 to 2025-09-19, all available hours |
 | D3 | Validation report: paper-parity, noise floor, QC agreement | three numbers reported, pass/fail stated |
 | D4 | Stress results: onset day per trait, turgor correlation | one ranked table, four figures |
-| D5 | Three Dash pages: 3D Browser, Compare, Export | each page works on the full table with no code edits |
+| D5 | Three Dash pages: 3D Browser, Compare, Export (delivered as one page, 3D canopy, `/threed`) | each page works on the full table with no code edits |
 | D6 | Five slides | problem, pipeline, validation, result, demo |
 
 ## 2. Facts about the 3D data
@@ -209,9 +209,8 @@ src/uiwue/threed/
   run.py        CLI: python -m uiwue.threed.run --data-dir ... --plants ... --hours ...
   stats.py      baseline_normalise, fit_lmm, onset_day, noise_floor, turgor_corr
 app/pages/
-  threed_browser.py
-  threed_compare.py
-  threed_export.py
+  threed.py     the 3D canopy page (replaced threed_browser.py, threed_compare.py, threed_export.py;
+                data layer app/threed_canopy.py, figures app/threed_figures.py)
 tests/threed/   synthetic-scene tests (flat plane + tilted disc of known height, area, angle)
 ```
 
@@ -306,6 +305,10 @@ All statistics use `qc_pass` runs only. The treatment period is 2025-09-03 to
 Priority if time runs short: E0, E1, E3, E5, E2, E4.
 
 ## 8. Dash pages
+
+**Replaced on 15 Nov 2026:** the three pages below became one page, **3D canopy** (`/threed`,
+`app/pages/threed.py`); their old links land on it. What it shows and why: `docs/threed/APP.md`.
+The plan below is kept as it was written.
 
 Plotly `Scatter3d` renders in WebGL and handles these clouds directly (at most
 38,304 points each). Open3D is used for processing only, not for display.

@@ -1,0 +1,64 @@
+/* Daily rhythm (rx-) and Irrigation advisor (ir-) pages. Token variables only (design/tokens.css); the shared
+   parts (stat tile, next steps, buttons, chips) are in uiwue.css. Dash loads this file on every page, so every
+   rule is scoped to a page class. */
+
+.rx-chips, .ir-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+.rx-below { padding-top: var(--uw-space-5); }
+/* the flyover table needs a little more room than a side panel's 400 px */
+.uw-side.rx-side { flex: 1 1 440px; max-width: 480px; }
+.rx-side .uw-table td { white-space: nowrap; }
+.rx-ramp { display: inline-flex; }
+.rx-ramp .rx-ramp-cell { border-radius: 0; border-right-width: 0; }
+.rx-ramp .rx-ramp-cell:first-child { border-radius: var(--uw-radius-sm) 0 0 var(--uw-radius-sm); }
+.rx-ramp .rx-ramp-cell:last-child { border-radius: 0 var(--uw-radius-sm) var(--uw-radius-sm) 0; border-right-width: 1px; }
+
+/* Irrigation advisor: the answer in tiles, then every plant against the threshold, then the selected plant */
+/* every plant beside the selected plant's scans, which stay in view while the list scrolls */
+.uw-main.ir-main { flex: 999 1 520px; }
+.uw-side.ir-side { flex: 1 1 520px; max-width: 560px; position: sticky; top: var(--uw-space-4); }
+.uw-plants.ir-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: var(--uw-space-2); }
+.ir-grid .uw-plant { min-height: 52px; border-radius: var(--uw-radius-md); }
+.ir-grid .uw-plant:hover { background: var(--uw-surface-2); }
+.ir-grid .uw-bar { height: 10px; border-radius: 5px; }
+.ir-grid .uw-bar > i { width: 2px; }
+.ir-trace-head .uw-plant-link { font-size: 21px; line-height: 26px; }
+/* day strip (DESIGN 5): one cell per day, a bar over it for the plants to water that day */
+.ir-strip-box { padding-bottom: var(--uw-space-4); }
+.ir-strip { display: flex; gap: var(--uw-space-1); min-width: 900px; }
+.ir-cell { flex: 1 1 0; min-width: 0; min-height: 76px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 0; padding: var(--uw-space-1) 0 6px; border: 1px solid transparent; border-radius: var(--uw-radius-md); background: var(--uw-surface-2); color: var(--uw-ink-muted); font: inherit; cursor: pointer; }
+.ir-cell.uw-mint { background: var(--uw-mint); }
+.ir-cell.uw-sand { background: var(--uw-sand); }
+.ir-cell:hover { border-color: var(--uw-teal-700); }
+.ir-cell b { font-family: var(--uw-font-display); font-size: 17px; line-height: 20px; color: var(--uw-ink-display); }
+.ir-cell-date { font-size: 11px; line-height: 14px; white-space: nowrap; }
+.ir-cell-bar { width: 14px; height: 24px; margin-bottom: var(--uw-space-1); display: flex; align-items: flex-end; border-bottom: 1px solid var(--uw-gray-500); }
+.ir-cell-bar > span { width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--uw-amber-900); }
+.ir-cell-on, .ir-cell-on.uw-mint, .ir-cell-on.uw-sand { background: var(--uw-navy); color: var(--uw-surface); }
+.ir-cell-on b { color: var(--uw-surface); }
+.ir-cell-on .ir-cell-bar { border-bottom-color: var(--uw-surface); }
+.ir-cell-on .ir-cell-bar > span { background: var(--uw-amber-200); }
+.uw-legend.ir-counts { padding-top: 0; margin-left: auto; }
+.ir-counts b { font-family: var(--uw-font-display); color: var(--uw-ink-display); font-size: 17px; }
+.ir-tick { width: 2px; height: 14px; background: var(--uw-navy); }
+.ir-trace-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--uw-space-2) var(--uw-space-3); flex: 1 1 auto; }
+.ir-trace-head .uw-mark { align-self: center; }
+
+@media (max-width: 700px) {
+  /* 39 plants: two short cards a row (mark, ID, value), the bar gives way */
+  .uw-plants.ir-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ir-grid .uw-bar { display: none; }
+  .ir-grid .uw-plant { padding: 0 8px; gap: 6px; }
+  .ir-grid .uw-plant .uw-num { min-width: 0; margin-left: auto; }
+  .uw-legend.ir-counts { margin-left: 0; }
+  .uw-side.ir-side { position: static; max-width: none; }
+  .ir-strip { min-width: 1240px; }
+}
+
+/* Daily rhythm: the time bands named over the grid, the recommended flyovers marked on their rows */
+.uw-heat-band.rx-band { position: relative; min-width: 0; height: 18px; border-radius: var(--uw-radius-sm); }
+.rx-band-name { position: absolute; left: var(--uw-space-1); top: 0; z-index: 1; font-size: 12px; line-height: 18px; font-weight: 700; white-space: nowrap; }
+.rx-band.uw-mint .rx-band-name { color: var(--uw-forest-700); }
+.rx-band.uw-sand .rx-band-name { color: var(--uw-amber-900); }
+.rx-best { display: inline-block; color: var(--uw-navy); border-bottom: 3px solid var(--uw-teal-700); }
+.rx-best-key { font-family: var(--uw-font-display); font-weight: 700; font-size: 15px; line-height: 16px; }
+.uw-heat-cell { height: 36px; }

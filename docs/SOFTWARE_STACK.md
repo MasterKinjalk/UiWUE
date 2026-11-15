@@ -15,7 +15,7 @@ runs on every machine.
 | Statistics | statsmodels, scikit-learn | mixed models, regression, baselines |
 | Charts | plotly | all interactive charts, including 3D scatter |
 | Web app | dash, dash-bootstrap-components | multi-page app in the browser |
-| 3D in the app | plotly `Scatter3d`, `Mesh3d`, `Surface` | point clouds and surfaces in the browser (WebGL) |
+| 3D in the app | plotly `Scatter3d`, `Mesh3d` | point clouds and the soil disc in the browser (WebGL); surfaces were tried and dropped |
 | Files | imagecodecs, plyfile, requests | compressed TIFF, PLY point clouds, dataset download |
 | Parallel | joblib | batch processing across runs |
 | Figure export | kaleido | Plotly figures to PNG / SVG for slides |
@@ -46,11 +46,13 @@ Decided 2026-11-14: the app is a Dash web app. PyQt is dropped from
 Dash shows 3D through Plotly's WebGL traces inside `dcc.Graph`:
 
 - `Scatter3d` for point clouds, `Mesh3d` for planes and hulls, `Surface` for
-  height maps. Rotate, zoom and hover work out of the box.
+  height maps. Rotate, zoom and hover work out of the box. The 3D canopy page
+  draws plant points and a soil disc; a triangulated and a height-map surface
+  were tried and dropped (`docs/threed/PRESENTATION-NOTES.md`).
 - One ADA depth frame is at most 38,304 points, which `Scatter3d` handles
   easily. Keep one cloud under roughly 200,000 points; downsample above that.
 - Send clouds to the browser as cached arrays (`.npz`), not raw TIFFs, and
-  update the figure from a callback when the date slider moves.
+  update the figure from a callback when the chosen day changes.
 - Open3D and PyVista are for processing (plane fits, clustering, normals).
   Their own viewers open desktop windows and are not used inside the app.
 

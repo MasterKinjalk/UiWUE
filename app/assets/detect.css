@@ -1,0 +1,75 @@
+/* Early warning, Sensor comparison, Methods & limits (app/pages/early_warning.py, sensor_comparison.py,
+   methods.py). Token variables only (design/tokens.css); the shared parts (stat tile, chips that link to
+   Methods, next steps, disclosure, buttons) are in uiwue.css. */
+
+.dt-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+
+/* loss regained after re-watering (Early warning) */
+.dt-recovery { display: flex; flex-direction: column; gap: var(--uw-space-2); }
+.dt-recovery .uw-kicker { padding-top: var(--uw-space-1); }
+.dt-rec-row { display: flex; align-items: center; gap: var(--uw-space-3); min-height: 28px; }
+.dt-rec-name { flex: 1 1 auto; min-width: 0; }
+.dt-rec-row .uw-bar { flex: 0 0 72px; }
+
+/* options behind one control (Sensor comparison) */
+.dt-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-3) var(--uw-space-5); padding: var(--uw-space-2) 0 var(--uw-space-2); }
+.dt-options .uw-label { gap: var(--uw-space-2); }
+
+/* Methods & limits: grouped entries, each a limit and its consequence; an entry opened by a link is marked */
+.dt-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: var(--uw-space-4); align-items: start; }
+.dt-entries { display: flex; flex-direction: column; gap: var(--uw-space-2); margin: 0; padding: 0; list-style: none; }
+.dt-entry { scroll-margin-top: var(--uw-space-4); display: flex; flex-direction: column; gap: 2px; padding: var(--uw-space-2) var(--uw-space-3); border-radius: var(--uw-radius-md); background: var(--uw-surface-2); }
+.dt-entry.uw-sand { background: var(--uw-sand); }
+.dt-entry-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--uw-space-3); }
+.dt-entry-head b { color: var(--uw-ink-display); }
+.dt-entry-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--uw-ink-display); }
+.dt-entry.uw-sand .dt-entry-value { color: var(--uw-amber-900); }
+.dt-entry-text { font-size: 13px; line-height: 18px; color: var(--uw-ink); }
+.dt-entry:target, .dt-entry.dt-hit { outline: 2px solid var(--uw-navy); outline-offset: 2px; }
+.dt-entry a.dt-self { color: inherit; text-decoration: none; }
+.dt-entry a.dt-self:hover { text-decoration: underline; }
+.dt-jump { display: flex; flex-wrap: wrap; gap: var(--uw-space-2); padding-bottom: var(--uw-space-4); }
+
+@media (max-width: 700px) {
+  .dt-rec-row .uw-bar { flex-basis: 96px; }
+}
+
+/* Methods & limits: the four limits that bound every claim lead the page as cards */
+.dt-lead { padding-bottom: var(--uw-space-4); scroll-margin-top: var(--uw-space-4); }
+.dt-entries.dt-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--uw-space-3); }
+.dt-key .dt-entry { gap: var(--uw-space-2); padding: var(--uw-space-4) var(--uw-space-5); border-radius: var(--uw-radius-lg); }
+.dt-key .dt-entry-head { flex-direction: column; align-items: flex-start; gap: var(--uw-space-1); }
+.dt-key .dt-entry-head b { font-family: var(--uw-font-display); font-size: 21px; line-height: 26px; }
+.dt-key .dt-entry-value { font-family: var(--uw-font-display); font-size: 28px; line-height: 34px; }
+.dt-key .dt-entry-text { font-size: 15px; line-height: 21px; }
+.dt-col { display: flex; flex-direction: column; gap: var(--uw-space-4); min-width: 0; }
+.dt-wide { display: flex; flex-direction: column; gap: var(--uw-space-4); padding-top: var(--uw-space-4); }
+/* checks: a numbered list, each a hairline row */
+.dt-entries.dt-steps { counter-reset: check; gap: 0; }
+.dt-steps .dt-entry { counter-increment: check; position: relative; min-height: 44px; justify-content: center; padding: var(--uw-space-2) 0 var(--uw-space-2) 44px; border-radius: 0; background: none; border-top: 1px solid var(--uw-rule); }
+.dt-steps .dt-entry:first-child { border-top: 0; }
+.dt-steps .dt-entry::before { content: counter(check); position: absolute; left: 0; top: 50%; width: 28px; height: 28px; margin-top: -14px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--uw-teal-700); color: var(--uw-surface); font-family: var(--uw-font-display); font-weight: 700; font-size: 15px; }
+.dt-steps + .uw-tiles { margin-top: var(--uw-space-3); }
+/* words: definitions in columns, hairline rows instead of boxes */
+.dt-entries.dt-words { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 0 var(--uw-space-6); }
+.dt-words .dt-entry { padding: var(--uw-space-3) 0; border-radius: 0; background: none; border-top: 1px solid var(--uw-rule); }
+.dt-words .dt-entry-head b { font-family: var(--uw-font-display); font-size: 17px; }
+/* scope: the counts in one row */
+.dt-scope .uw-readouts { grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: var(--uw-space-4) var(--uw-space-5); }
+
+/* Sensor comparison: thermal alone at each resolution, beside the chart */
+.uw-side.sc-side { flex: 1 1 340px; max-width: 420px; }
+.sc-side[hidden] { display: none; }
+.sc-res { display: flex; flex-direction: column; }
+.sc-res-row { display: grid; grid-template-columns: minmax(0, 1fr) 52px; align-items: center; gap: var(--uw-space-1) var(--uw-space-3); padding: var(--uw-space-3) 0; border-top: 1px solid var(--uw-rule); cursor: help; }
+.sc-res-row:first-child { border-top: 0; padding-top: 0; }
+.sc-res-name { grid-column: 1 / -1; display: flex; align-items: baseline; gap: var(--uw-space-1); }
+.sc-res-name b { font-family: var(--uw-font-display); font-size: 21px; line-height: 26px; color: var(--uw-ink-display); white-space: nowrap; }
+.sc-res-name small { margin-left: 0; }
+.sc-res-row .uw-bar { height: 12px; border-radius: 6px; }
+.sc-res-row .uw-num { font-family: var(--uw-font-display); font-size: 21px; color: var(--uw-ink-display); }
+.sc-res-onset { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); font-size: 13px; color: var(--uw-ink-muted); }
+
+@media (max-width: 700px) {
+  .uw-side.sc-side { max-width: none; }
+}

@@ -23,6 +23,25 @@ SETUP_LABEL = {
 # Not prices; a combination costs the sum of its parts.
 SETUP_COST = {"rgb": 1, "depth": 2, "thermal_r80": 3, "thermal_r160": 4, "thermal": 5, "hsi": 12}
 SIZE_BASELINE = ("depth_projected_area", "rgb_green_cover")  # first available wins (6.7.3)
+# 3D traits left out of the analysis (docs/threed/APP.md, "What was removed"): no stress signal,
+# saturated by the 85 mm crop cylinder, or redundant with a kept trait. Kept: leaf area, height p75,
+# hull volume, and projected area as the size-only baseline.
+DEPTH_EXCLUDED = (
+    "depth_droop_index",
+    "depth_inclination_mean",
+    "depth_inclination_sd",
+    "depth_canopy_radius",
+    "depth_compactness",
+    "depth_n_points",
+    "depth_height_p50",
+    "depth_height_p95",
+)
+DEPTH_EXCLUDED_PREFIX = "depth_cyl_"  # every cylinder variant
+
+
+def excluded(column: str) -> bool:
+    """True for a 3D trait the analysis leaves out."""
+    return column in DEPTH_EXCLUDED or column.startswith(DEPTH_EXCLUDED_PREFIX)
 
 
 def setup_of(column: str) -> str:
@@ -49,7 +68,7 @@ def load_merged() -> pd.DataFrame:
 
 def trait_columns(df: pd.DataFrame, catalogue: pd.DataFrame | None = None, prefixes=tuple(SENSORS)) -> list[str]:
     """Stress traits to analyse: numeric, from a sensor module, and not catalogued as
-    direction 0 (bookkeeping, background, exposure)."""
+    direction 0 (bookkeeping, background, exposure) or left out as a noisy 3D trait (DEPTH_EXCLUDED)."""
     cat = load_catalogue() if catalogue is None else catalogue
     known = dict(zip(cat["column"], cat["direction"], strict=False))
     cols = []
@@ -58,7 +77,7 @@ def trait_columns(df: pd.DataFrame, catalogue: pd.DataFrame | None = None, prefi
             continue
         if not pd.api.types.is_numeric_dtype(df[c]) or pd.api.types.is_bool_dtype(df[c]):
             continue
-        if known.get(c, 1) == 0:
+        if known.get(c, 1) == 0 or excluded(c):
             continue
         cols.append(c)
     return cols

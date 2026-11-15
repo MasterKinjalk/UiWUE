@@ -39,34 +39,35 @@ def _text(component) -> str:
 def test_pages_render(results):
     ew = _load("early_warning")
     text = _text(ew.layout())
-    assert "ew-curves" in text and "ew-ranking" in text and "AUC rule" in text
+    assert "ew-curves" in text and "ew-ranking" in text and "1 control bed" in text
     for group in ("all", "W2", "W3"):
-        tiles, ranking, _flags, _rec, tbl = ew._update(group)
-        assert isinstance(ranking, go.Figure) and len(ranking.data) == 2
+        tiles, ranking, _flags, _rec, tbl, _w3 = ew._update(group)
+        assert isinstance(ranking, go.Figure) and len(ranking.data) == 1  # the onset only; the rule is on hover
         assert tiles and "day" in _text(html.Div(tiles))
-        if group == "all":
+        if group == "W2":
             assert getattr(tbl, "export_format", None) == "csv"
         for sig in ("thermal_leaf_air_dt", "depth_projected_area", "hsi_ndvi"):
-            curves, _chips, slots = ew._signal(group, sig)
+            curves, _chips = ew._signal(group, sig)
             assert isinstance(curves, go.Figure)
-    curves, chips, slots = ew._signal("all", "thermal_leaf_air_dt")
-    assert len(curves.data) >= 3 and len(slots) == 5
-    _, chips, _ = ew._signal("all", "rgb_bedfx")
+    curves, chips = ew._signal("all", "thermal_leaf_air_dt")
+    assert len(curves.data) >= 3 and "by hour" in _text(html.Div(chips))
+    _, chips = ew._signal("all", "rgb_bedfx")
     assert "bed effect" in _text(html.Div(chips))
 
     sc = _load("sensor_comparison")
     assert "sc-figure" in _text(sc.layout())
-    for ps in ("common", "own"):
-        for group in ("all", "W2", "W3"):
-            for metric in ("early_auc", "full_auc"):
-                tiles, fig, _flags, _tbl, _chip = sc._update(ps, group, metric)
-                assert isinstance(fig, go.Figure)
-    tiles, *_ = sc._update("common", "all", "early_auc")
-    assert "Thermal only" in _text(html.Div(tiles))
+    for view in ("sensors", "fusion"):
+        for ps in ("common", "own"):
+            for group in ("all", "W2", "W3"):
+                for metric in ("early_auc", "full_auc"):
+                    tiles, fig, _flags, _tbl, _legend, _opts = sc._update(view, ps, group, metric)
+                    assert isinstance(fig, go.Figure)
+    tiles, *_ = sc._update("sensors", "common", "W2", "early_auc")
+    assert "Thermal alone" in _text(html.Div(tiles)) and "Size only" in _text(html.Div(tiles))
 
     ml = _load("methods")
     text = _text(ml.layout())
-    assert "placebo first" in text and "One control bed" in text
+    assert "Watered-day check first" in text and "One control bed" in text
     for group in ("all", "W2", "W3"):
         assert isinstance(ml._placebo(group), go.Figure)
 

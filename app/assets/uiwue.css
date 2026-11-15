@@ -1,21 +1,61 @@
 /* UiWUE page styles (design/DESIGN.md). The --uw-* values come from design/tokens.css. */
 
-/* ground, type, focus */
+/* Dash 4's own components (slider, dropdown, tooltip) draw with --Dash-* colours, a purple accent by default:
+   point them at the tokens, and drop their shadows (DESIGN 2.2). html:root outranks Dash's own :root rule. */
+html:root {
+  --Dash-Fill-Interactive-Strong: var(--uw-teal-700);
+  --Dash-Fill-Interactive-Weak: var(--uw-surface-2);
+  --Dash-Fill-Primary-Hover: var(--uw-surface-2);
+  --Dash-Fill-Primary-Active: var(--uw-gray);
+  --Dash-Fill-Inverse-Strong: var(--uw-surface);
+  --Dash-Fill-Disabled: var(--uw-rule);
+  --Dash-Stroke-Strong: var(--uw-gray-500);
+  --Dash-Stroke-Weak: var(--uw-rule);
+  --Dash-Text-Primary: var(--uw-ink);
+  --Dash-Text-Strong: var(--uw-ink-display);
+  --Dash-Text-Weak: var(--uw-ink-muted);
+  --Dash-Text-Disabled: var(--uw-ink-muted);
+  --Dash-Shading-Strong: transparent;
+  --Dash-Shading-Weak: transparent;
+}
+
+/* ground, type, focus, links */
 body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-family: var(--uw-font-sans); font-size: 15px; line-height: 21px; }
-.uw-page { box-sizing: border-box; max-width: var(--uw-page-max); margin: 0 auto; padding: 0 var(--uw-space-6) 40px; }
+.uw-page { box-sizing: border-box; max-width: var(--uw-page-max); margin: 0 auto; padding: 0 var(--uw-space-6) var(--uw-space-6); }
 :focus-visible { outline: 2px solid var(--uw-navy); outline-offset: 2px; }
 .uw-page small { font-size: 12px; font-weight: 400; color: var(--uw-ink-muted); margin-left: 4px; }
+/* a plain link is teal-700, navy on hover (Bootstrap's theme drew it in an off-token green) */
+a { color: var(--uw-teal-700); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:hover { color: var(--uw-navy); }
+.uw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-/* nav */
-.uw-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 28px; min-height: 64px; border-bottom: 1px solid var(--uw-rule); }
-.uw-brand { font-family: var(--uw-font-display); font-weight: 700; font-size: 21px; color: var(--uw-ink-display); text-decoration: none; padding: 12px 0; }
-.uw-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
-.uw-links .nav-link { padding: 20px 0 17px; font-size: 14px; color: var(--uw-ink-muted); border-bottom: 3px solid transparent; border-radius: 0; }
+/* nav: the wordmark, then the pages as a path in groups (a caps label over a row of links); on a phone one
+   menu button that names the current page (app/app.py, assets/nav.js) */
+.uw-nav { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 var(--uw-space-6); min-height: 64px; border-bottom: 1px solid var(--uw-rule); }
+.uw-brand { align-self: center; font-family: var(--uw-font-display); font-weight: 700; font-size: 21px; color: var(--uw-ink-display); text-decoration: none; padding: 12px 0; }
+.uw-brand:hover { color: var(--uw-navy); }
+.uw-navrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 var(--uw-space-6); }
+.uw-navgroup { display: flex; flex-direction: column; padding-top: 8px; }
+.uw-navkicker { font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--uw-ink-muted); cursor: help; align-self: flex-start; }
+.uw-links { display: flex; flex-wrap: wrap; gap: 0 var(--uw-space-4); }
+.uw-links .nav-link { padding: 8px 0 13px; font-size: 14px; line-height: 21px; color: var(--uw-ink-muted); text-decoration: none; border-bottom: 3px solid transparent; border-radius: 0; }
 .uw-links .nav-link:hover { color: var(--uw-navy); }
 .uw-links .nav-link.active { color: var(--uw-ink-display); font-weight: 700; border-bottom-color: var(--uw-teal-700); background: none; }
+.uw-menu { display: none; }
+.uw-menu-btn { list-style: none; min-height: 44px; display: inline-flex; align-items: center; gap: var(--uw-space-2); padding: 0 var(--uw-space-3); border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); font-weight: 700; color: var(--uw-ink-display); cursor: pointer; }
+.uw-menu-btn::-webkit-details-marker { display: none; }
+.uw-menu-caret { font-size: 13px; color: var(--uw-ink-muted); }
+.uw-menu[open] .uw-menu-caret { transform: rotate(180deg); }
+.uw-menu-list { display: flex; flex-direction: column; gap: var(--uw-space-3); padding: var(--uw-space-3) 0 var(--uw-space-4); }
+.uw-menu-list .uw-navgroup { padding-top: 0; }
+.uw-menu-list .uw-links { flex-direction: column; gap: 0; }
+.uw-menu-list .nav-link { transition: none; min-height: 44px; display: flex; align-items: center; padding: 0 var(--uw-space-3); border-bottom: 0; border-left: 3px solid transparent; }
+.uw-menu-list .nav-link.active { border-left-color: var(--uw-teal-700); background: var(--uw-surface-2); }
 
 /* page header */
-.uw-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px; }
+.uw-header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--uw-space-3) var(--uw-space-4); padding: var(--uw-space-5) 0 var(--uw-space-4); }
+/* the kicker over the title: the page's nav group (components.header), drawn from data-kicker */
+.uw-title[data-kicker]::before { content: attr(data-kicker); display: block; margin-bottom: var(--uw-space-1); font-family: var(--uw-font-sans); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--uw-teal-700); }
 .uw-title { margin: 0; font-family: var(--uw-font-display); font-weight: 700; font-size: 30px; line-height: 36px; color: var(--uw-ink-display); }
 .uw-spacer { flex: 1 1 0; }
 
@@ -23,7 +63,7 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 .uw-row { display: flex; flex-wrap: wrap; gap: var(--uw-space-5); align-items: flex-start; }
 .uw-main { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-4); }
 .uw-side { flex: 1 1 300px; max-width: 400px; min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-2); }
-.uw-panel { border: 1px solid var(--uw-rule); border-radius: var(--uw-radius-lg); padding: var(--uw-space-4); min-width: 0; }
+.uw-panel { border: 1px solid var(--uw-rule); border-radius: var(--uw-radius-lg); padding: var(--uw-space-4) var(--uw-space-5) var(--uw-space-5); min-width: 0; }
 .uw-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: var(--uw-space-3); }
 .uw-panel-head h2 { margin: 0; font-family: var(--uw-font-display); font-size: 21px; line-height: 26px; font-weight: 700; color: var(--uw-ink-display); }
 .uw-scroll { overflow-x: auto; }
@@ -31,13 +71,28 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 .uw-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .uw-swatch { width: 22px; height: 16px; border-radius: 3px; border: 1px solid var(--uw-rule); box-sizing: border-box; }
 
-/* controls: at least 44 px */
-.uw-label { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--uw-ink-muted); }
-.uw-select { min-height: 44px; width: auto; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; font-size: 15px; }
-.uw-btn { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; align-self: flex-start; border-radius: var(--uw-radius-md); font-weight: 700; text-decoration: none; }
+/* controls: at least 44 px. A select is as wide as its longest option; it may shrink (ellipsis) to its row,
+   never push the page sideways (DESIGN 8) */
+.uw-label { display: inline-flex; align-items: center; gap: 8px; margin: 0; min-width: 0; max-width: 100%; font-size: 13px; color: var(--uw-ink-muted); }
+.uw-select { min-height: 44px; width: auto; min-width: 0; max-width: 100%; text-overflow: ellipsis; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; font-size: 15px; }
+/* actions (DESIGN 5): one filled teal-700 button per panel (uw-btn-primary); a plain uw-btn is outlined in
+   teal-700 (uw-btn-outline says so explicitly) */
+.uw-btn { box-sizing: border-box; min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; align-self: flex-start; gap: 8px; border: 1px solid var(--uw-teal-700); border-radius: var(--uw-radius-md); background: var(--uw-surface); color: var(--uw-teal-700); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.uw-btn:hover { background: var(--uw-surface-2); border-color: var(--uw-navy); color: var(--uw-navy); }
+.uw-btn-outline { background: var(--uw-surface); border-color: var(--uw-teal-700); color: var(--uw-teal-700); }
 .uw-btn-primary { background: var(--uw-teal-700); border: 1px solid var(--uw-teal-700); color: var(--uw-surface); }
 .uw-btn-primary:hover { background: var(--uw-navy); border-color: var(--uw-navy); color: var(--uw-surface); }
-.uw-icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); background: var(--uw-surface); color: var(--uw-ink); cursor: pointer; }
+/* disclosure (components.details): rarely used options and long lists behind one 44 px control */
+.uw-details { margin-top: var(--uw-space-4); border: 1px solid var(--uw-rule); border-radius: var(--uw-radius-lg); padding: 0 var(--uw-space-4); }
+.uw-details[open] { padding-bottom: var(--uw-space-4); }
+.uw-summary { min-height: 44px; display: flex; align-items: center; gap: var(--uw-space-2); cursor: pointer; font-weight: 700; color: var(--uw-teal-700); list-style: none; }
+.uw-summary::-webkit-details-marker { display: none; }
+.uw-summary::before { content: "▸"; font-size: 13px; }
+.uw-details[open] > .uw-summary::before { content: "▾"; }
+.uw-summary:hover { color: var(--uw-navy); }
+/* next steps at a page's foot (components.next_steps) */
+.uw-next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); padding-top: var(--uw-space-5); }
+.uw-icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); background: var(--uw-surface); color: var(--uw-ink); cursor: pointer; text-decoration: none; }
 .uw-stepper { display: inline-flex; align-items: center; gap: 4px; }
 .uw-day { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; border-radius: var(--uw-radius-md); background: var(--uw-navy); color: var(--uw-surface); }
 .uw-day b { font-family: var(--uw-font-display); font-size: 19px; }
@@ -51,8 +106,13 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 .uw-seg .btn-check:focus-visible + label { outline: 2px solid var(--uw-navy); outline-offset: 2px; }
 
 /* chips */
-.uw-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: var(--uw-radius-sm); font-size: 13px; font-weight: 700; cursor: help; }
-.uw-chip-caveat { background: var(--uw-sand); color: var(--uw-amber-900); }
+.uw-chip { box-sizing: border-box; display: inline-flex; align-items: center; min-height: 26px; padding: 2px 8px; border-radius: var(--uw-radius-sm); font-size: 13px; line-height: 18px; font-weight: 700; white-space: nowrap; cursor: help; }
+/* a chip that opens its entry on Methods & limits (components.chip(..., anchor=)) */
+a.uw-chip { text-decoration: none; cursor: pointer; }
+a.uw-chip:hover { text-decoration: underline; text-decoration-thickness: 1px; }
+.uw-chip-caveat, a.uw-chip-caveat:hover { background: var(--uw-sand); color: var(--uw-amber-900); }
+a.uw-chip-rule, a.uw-chip-rule:hover { color: var(--uw-ink); }
+.uw-sand .uw-chip-caveat, .uw-sand a.uw-chip-caveat:hover { background: var(--uw-surface); }  /* stays a chip on a sand tile or card */
 .uw-chip-rule { border: 1px solid var(--uw-gray-500); color: var(--uw-ink); }
 .uw-chip-context { background: var(--uw-gray); color: var(--uw-slate-600); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
 .uw-chip-best { background: var(--uw-teal-700); color: var(--uw-surface); font-size: 12px; padding: 0 8px; }
@@ -60,12 +120,38 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 
 /* tiles, cards, readouts */
 .uw-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--uw-space-3); }
-.uw-tile { padding: 14px 16px; border-radius: var(--uw-radius-md); }
-.uw-card { padding: 14px 16px; border-radius: var(--uw-radius-lg); display: flex; flex-direction: column; gap: 10px; }
-.uw-readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.uw-tiles.uw-lead { padding-bottom: var(--uw-space-4); }  /* the page's answer, above its figure */
+.uw-tile { padding: var(--uw-space-4) var(--uw-space-5); border-radius: var(--uw-radius-md); min-width: 0; }
+.uw-card { padding: var(--uw-space-4); border-radius: var(--uw-radius-lg); display: flex; flex-direction: column; gap: var(--uw-space-3); }
+.uw-readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--uw-space-3); }
+/* the one stat tile (components.stat): label, value with its unit (the unit drops under the value as a whole
+   when the tile is narrow), a second line; as a link the whole tile is the target, an arrow marks it */
+.uw-stat-tile { position: relative; box-sizing: border-box; display: flex; flex-direction: column; gap: var(--uw-space-1); border: 1px solid transparent; }
+.uw-stat-label { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-1) var(--uw-space-2); min-height: 26px; }
+.uw-tile-link .uw-stat-label { padding-right: var(--uw-space-4); }  /* room for the arrow */
+.uw-stat-label .uw-chip { min-height: 22px; padding: 0 var(--uw-space-2); }
+.uw-stat-tile .uw-stat { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
+.uw-stat-tile .uw-stat small { margin-left: 0; line-height: 16px; white-space: nowrap; }
+.uw-stat-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--uw-space-5); }
+.uw-stat-sub { font-size: 13px; line-height: 18px; color: var(--uw-ink-muted); }
+.uw-stat-sub b { color: var(--uw-ink); }
+.uw-stat-missing { border: 2px dashed var(--uw-rule); }
+.uw-stat-missing .uw-stat { color: var(--uw-ink-muted); }
+.uw-stat-best { border: 2px solid var(--uw-teal-700); }
+.uw-tile-link { color: var(--uw-ink); text-decoration: none; }
+.uw-tile-link:hover { color: var(--uw-ink); border-color: var(--uw-teal-700); }
+.uw-tile-link:hover .uw-stat > span:first-child { text-decoration: underline; text-decoration-thickness: 1px; }
+.uw-tile-go { position: absolute; top: var(--uw-space-3); right: var(--uw-space-4); font-size: 21px; line-height: 21px; color: var(--uw-teal-700); }
+.uw-sand .uw-stat-sub { color: var(--uw-amber-900); }
+/* a plant's ID, a link to its profile on every page (components.plant_link): serif, underlined on hover only */
+.uw-plant-link { font-family: var(--uw-font-display); font-weight: 700; color: var(--uw-ink-display); text-decoration: none; }
+.uw-plant-link:hover { color: var(--uw-navy); text-decoration: underline; text-decoration-thickness: 1px; }
 .uw-readouts-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .uw-readout-label { font-size: 12px; color: var(--uw-slate-600); }
-.uw-stat { font-family: var(--uw-font-display); font-size: 32px; line-height: 38px; font-weight: 700; color: var(--uw-ink-display); }
+.uw-stat { font-family: var(--uw-font-display); font-size: 36px; line-height: 42px; font-weight: 700; color: var(--uw-ink-display); }
+/* the number takes its tile's treatment colour (DESIGN 2.2): amber-900 on sand, teal-700 on sky */
+.uw-sand .uw-stat { color: var(--uw-amber-900); }
+.uw-sky .uw-stat { color: var(--uw-teal-700); }
 .uw-readout { font-family: var(--uw-font-display); font-size: 24px; line-height: 28px; font-weight: 700; color: var(--uw-ink-display); }
 .uw-stat, .uw-readout, .uw-section { white-space: nowrap; }
 .uw-section { font-family: var(--uw-font-display); font-size: 21px; line-height: 26px; font-weight: 700; color: var(--uw-ink-display); }
@@ -131,17 +217,57 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 .uw-cover-meta span { color: var(--uw-ink-muted); }
 .uw-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--uw-teal-700); }
 .uw-dot-none { background: transparent; border: 2px solid var(--uw-gray-500); box-sizing: border-box; }
-.uw-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--uw-space-3); padding-top: 20px; }
-.uw-pagetile { min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; text-decoration: none; }
-.uw-pagetile:hover { color: var(--uw-navy); text-decoration: underline; }
+.uw-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--uw-space-3); padding-top: var(--uw-space-5); }
+.uw-pagetile { box-sizing: border-box; min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 8px 16px; border: 1px solid transparent; border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; text-decoration: none; }
+.uw-pagetile:hover { color: var(--uw-navy); border-color: var(--uw-teal-700); }
+.uw-pagetile:hover b { text-decoration: underline; }
+.uw-pagetile > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.uw-pagetile-blurb { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--uw-slate-600); }
+
+/* Home: the experiment row, the finding tiles, the pages as the nav's path */
+.uw-home > * + * { margin-top: var(--uw-space-5); }
+.uw-home > .uw-header + * { margin-top: 0; }
+.uw-facts { display: flex; flex-wrap: wrap; gap: var(--uw-space-2); }
+.uw-fact { display: inline-flex; align-items: baseline; gap: var(--uw-space-2); min-height: 36px; box-sizing: border-box; padding: 6px 12px; border: 1px solid var(--uw-rule); border-radius: var(--uw-radius-md); font-size: 13px; cursor: help; }
+.uw-fact.uw-sky, .uw-fact.uw-sand { border-color: transparent; }
+.uw-fact b { font-family: var(--uw-font-display); font-size: 17px; color: var(--uw-ink-display); }
+.uw-home-tiles { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+.uw-paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: var(--uw-space-4); align-items: start; }
+.uw-path { display: flex; flex-direction: column; gap: var(--uw-space-2); min-width: 0; }
+.uw-path-head { color: var(--uw-ink-muted); cursor: help; align-self: flex-start; }
 .uw-disc { width: 32px; height: 32px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--uw-surface); font-size: 12px; letter-spacing: 0.05em; }
+
+/* hover tips (assets/nav.js draws every title in this box): wraps at 320 px, so a long method note reads */
+.uw-tip { position: absolute; z-index: 1000; top: 0; left: 0; box-sizing: border-box; max-width: min(320px, calc(100vw - 16px)); padding: 8px 12px; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); background: var(--uw-surface); color: var(--uw-ink); font-family: var(--uw-font-sans); font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: normal; text-transform: none; text-align: left; white-space: pre-line; pointer-events: none; visibility: hidden; }
+.uw-tip-on { visibility: visible; }
+
+/* the nav folds into the menu button below this width (it would wrap to two lines) */
+@media (max-width: 1040px) {
+  .uw-nav { align-items: center; justify-content: space-between; gap: 0 var(--uw-space-3); }
+  .uw-navrow { display: none; }
+  .uw-menu { display: block; }
+  .uw-menu[open] { flex: 1 0 100%; order: 2; }
+  .uw-menu[open] > .uw-menu-btn { position: absolute; right: 0; top: 10px; }
+  .uw-nav { position: relative; }
+}
 
 /* phone width: gutters shrink, side panels stack, wide parts scroll in their own box */
 @media (max-width: 700px) {
   .uw-page { padding: 0 var(--uw-space-4) 32px; }
-  .uw-links { gap: 0 14px; }
-  .uw-links .nav-link { padding: 12px 0 9px; }  /* 21 px line + 3 px rule: 45 px target */
   .uw-side { max-width: none; }
+  /* stat tiles two to a row (one to a row only on the narrowest phones), the stat at the scale's low end */
+  .uw-tiles { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+  .uw-stat { font-size: 28px; line-height: 34px; }
+  .uw-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }  /* an odd last tile takes the row */
   .uw-cover-meta { display: none; }
-  .uw-cover-name { flex-basis: 120px; }
+  /* a fixed name column (a long name wraps instead of pushing its track right), so every track and the axis
+     start at one x; the owner and the first and last dates give way, so the event dates do not run together */
+  .uw-cover-name { flex-basis: 120px; min-width: 0; }
+  .uw-cover-name > span:not(.uw-dot) { display: none; }
+  .uw-cover-axis > span:first-child, .uw-cover-axis > span:last-child { display: none; }
+  /* five readouts in a row (Early warning's slots): the section size, so "day 5" keeps a gap to its neighbour */
+  .uw-readouts-5 .uw-readout { font-size: 21px; line-height: 26px; }
+  /* a readout grid of more than one row of three takes two columns ("24 Aug–22 Sep"); one row of three stays */
+  .uw-readouts-3:has(> :nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uw-readouts .uw-section { white-space: normal; }  /* a section-size value wraps in its cell, not past it */
 }

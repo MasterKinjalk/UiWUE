@@ -1,8 +1,16 @@
-"""Daily rhythm: how the daily pattern changes under stress, and when in the day to image."""
+"""Daily rhythm: how the signals move through the day, whether stress changes that rhythm, and when to image.
+
+Finding first: three tiles computed live from the tables (how much hotter the deficit leaves run than the control
+bed at midday and at dawn, the 3D team's midday-dip test, the best flyover). The day profile is the page's figure;
+the flyover table and the hour × day separation grid support it. A link's ``?bed=&plant=&day=`` is carried on to
+the next pages.
+"""
 
 import dash
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import threed_canopy as tc
 from components import (
     GROUP,
     RULE_SHORT,
@@ -11,40 +19,27 @@ from components import (
     day_label,
     graph,
     header,
-    mark_stress_period,
+    next_steps,
     not_available,
+    page_href,
     panel,
     placebo_chip,
-    readout,
     segmented,
     select,
     signed,
     size_chip,
+    stat,
     trait_options,
     unit_of,
 )
 from dash import Input, Output, callback, html
 
-from uiwue.core import SLOTS, add_design, load_traits, read_table
-from uiwue.diurnal import (
-    DETECTORS,
-    PHASE_BINS,
-    PLACEBO_DAYS,
-    PRE_MAX_DAY,
-    PRE_MAX_RATE,
-    SCHEDULES,
-    best_rule,
-    phase_bin,
-    rhythm,
-)
+from uiwue.core import SLOTS, load_traits, read_table
+from uiwue.diurnal import PHASE_BINS, PLACEBO_DAYS, PRE_MAX_DAY, PRE_MAX_RATE, SCHEDULES, best_rule, phase_bin
+from uiwue.stats._design import qc_pass
 
-dash.register_page(
-    __name__,
-    path="/daily-rhythm",
-    name="Daily rhythm",
-    order=50,
-    description="How does a stressed plant's day differ from a watered one's, and when should you image?",
-)
+QUESTION = "How do the signals move through the day, does stress change that rhythm, and when should you image?"
+dash.register_page(__name__, path="/daily-rhythm", name="Daily rhythm", order=50, description=QUESTION)
 
 DEFAULT_TRAIT = "thermal_leaf_ref_dt"
 SCORES = {
@@ -57,13 +52,44 @@ SCORE_HOVER = {
     "diurnal_score_local": "Leaf minus air above a healthy-plant VPD line, z against the plant's own baseline",
     "diurnal_score_idso": "Leaf minus air above Idso's (1982) sugar beet line, 2.50 − 1.92 × VPD",
 }
-PLAN_RULES = DETECTORS  # "demand" knows irrigation stopped: not a detector
-METRICS = {"afternoon_minus_morning": "15 h − 09 h", "daily_range": "daily range", "overnight_change": "overnight"}
-METRIC_HOVER = {
-    "afternoon_minus_morning": "afternoon minus morning run, per plant and day",
-    "daily_range": "highest minus lowest run of the day (at least 4 runs)",
-    "overnight_change": "next morning's 06 h minus this evening's 18 h",
-}
+KEPT_3D = {t.column for t in tc.TRAITS.values()}  # the app's only 3D traits; the noisy depth traits were dropped
+PROFILE_HOVER = (
+    "Mean over plants at each flyover hour, QC-pass runs only; bars: standard error. Raw values, not change from "
+    "baseline: the shape of the day is the point."
+)
+NOT_POOLED_3D = (
+    "3D by treatment: deficit is W2 only, as on 3D canopy. W3 is not pooled (leaves cut for water content); "
+    "group by bed to see it."
+)
+HEAT_DAYS = (8, 12)  # the last days without water: the profile's "day 8–12" panel
+PROFILE_PX, PROFILE_MIN_PX = 380, 560  # height; the five panels need this width to keep level hour labels
+NEXT = (  # the page's next steps, at its foot: (text, path, hover); a link's selection is carried on
+    ("Irrigation advisor", "/irrigation", "which plants need water, imaged at the best flyover"),
+    ("Early warning", "/early-warning", "which sensor warns first, and by how many days"),
+)
+# Panel titles of the day profile, short enough not to run into each other at phone width; the span goes on hover
+PHASE_TITLES = dict(
+    zip(
+        PHASE_BINS[1],
+        (
+            ("before", "days −10 to −1: all plants watered"),
+            ("day 0–3", "days 0 to 3 without water"),
+            ("day 4–7", "days 4 to 7 without water"),
+            ("day 8–12", "days 8 to 12 without water (re-watered on day 12 at 18:35)"),
+            ("after", "days 13 to 19, after re-watering"),
+        ),
+        strict=True,
+    )
+)
+
+
+def facet_title(a):
+    """'phase_bin=days 0-3' -> 'day 0–3', with the span of days as the annotation's hover text."""
+    name = a.text.split("=")[-1]
+    short, hover = PHASE_TITLES.get(name, (name, name))
+    a.update(text=short, hovertext=hover)
+
+
 # AUC bins on the diverging value ramp, 0.5 = gray (DESIGN 2.2)
 AUC_BINS = [
     (0.30, C["teal-600"], "< 0.3"),
@@ -87,7 +113,35 @@ def first_separation(row):
     return None
 
 
-def heatmap(sep):
+def best_hours(sch):
+    """The flyover hours of the best rule's recommended schedule (uiwue.diurnal), () without one."""
+    rule = best_rule(sch) if sch is not None and "recommended" in sch else None
+    rec = sch[sch.recommended & (sch.rule == rule)] if rule else None
+    return tuple(SCHEDULES.get(rec.schedule.iloc[0], ())) if rec is not None and len(rec) else ()
+
+
+def band_row(days):
+    """The time bands over the grid, named once each: the baseline (mint) and the no-water window (sand)."""
+    kind = {d: "mint" if -4 <= d <= -1 else "sand" if 0 <= d <= 12 else None for d in days}
+    name = {"mint": "baseline", "sand": "no water"}
+    cells, last = [], None
+    for d in days:
+        k = kind[d]
+        cells.append(
+            html.Div(
+                html.Span(name[k], className="rx-band-name") if k and k != last else None,
+                className=f"uw-heat-band rx-band uw-{k}" if k else "uw-heat-band rx-band",
+            )
+        )
+        last = k
+    return html.Div(
+        [html.Div(style={"flex": "0 0 56px"}), *cells, html.Div(style={"flex": "0 0 76px"})],
+        className="uw-heat-row",
+        title="baseline 30 Aug – 2 Sep (mint) · no water 3 – 15 Sep (sand)",
+    )
+
+
+def heatmap(sep, best=()):
     days = list(range(int(sep.columns.min()), int(sep.columns.max()) + 1))
     head = html.Div(
         [
@@ -102,7 +156,7 @@ def heatmap(sep):
         ],
         className="uw-heat-row",
     )
-    rows = [head]
+    rows = [head, band_row(days)]
     for h in SLOTS:
         r = sep.loc[h].dropna() if h in sep.index else pd.Series(dtype=float)
         first = first_separation(r)
@@ -120,13 +174,17 @@ def heatmap(sep):
                 html.Div(
                     className="uw-heat-cell" + ring,
                     style={"background": auc_fill(v)},
-                    title=f"{h:02d} h · {day} · {when}: AUC {v:.2f}",
+                    title=f"{h:02d} h · {day} · {when}: score {v:.2f}",
                 )
             )
         rows.append(
             html.Div(
                 [
-                    html.Div(f"{h:02d}", className="uw-heat-key"),
+                    html.Div(
+                        html.Span(f"{h:02d}", className="rx-best" if h in best else None),
+                        className="uw-heat-key",
+                        title="a flyover of the recommended schedule" if h in best else None,
+                    ),
                     *cells,
                     html.Div(
                         "never" if first is None else f"day {first}",
@@ -137,26 +195,35 @@ def heatmap(sep):
                 className="uw-heat-row",
             )
         )
-    band = {d: C["mint"] if -4 <= d <= -1 else C["sand"] if 0 <= d <= 12 else "transparent" for d in days}
-    rows.append(
-        html.Div(
-            [
-                html.Div(style={"flex": "0 0 56px"}),
-                *[html.Div(className="uw-heat-band", style={"background": band[d]}) for d in days],
-                html.Div(style={"flex": "0 0 76px"}),
-            ],
-            className="uw-heat-row",
-            title="baseline 30 Aug – 2 Sep (mint) · no water 3 – 15 Sep (sand)",
-        )
-    )
     ring = {"outline": f"2px solid {C['navy']}", "outlineOffset": "-2px"}
+    # one ramp, named at its ends (each bin on hover), and the outline; the band row explains itself on hover
+    ramp = html.Span(
+        [
+            html.Span(className="uw-swatch rx-ramp-cell", style={"background": c}, title=f"score {t}")
+            for _, c, t in AUC_BINS
+        ],
+        className="rx-ramp",
+    )
     legend = html.Div(
         [
-            html.Span("AUC"),
-            *[html.Span([html.Span(className="uw-swatch", style={"background": c}), t]) for _, c, t in AUC_BINS],
-            html.Span([html.Span(className="uw-swatch", style=ring), "≥ 0.9 two days"]),
-            html.Span([html.Span(className="uw-swatch", style={"background": C["mint"]}), "baseline"]),
-            html.Span([html.Span(className="uw-swatch", style={"background": C["sand"]}), "no water"]),
+            html.Span(
+                ["score < 0.3", ramp, "≥ 0.9"],
+                title="Detection score (AUC) of deficit against control plants: 0.5 (grey) alike; amber, the deficit plants score "
+                "higher (more stressed); teal, lower",
+            ),
+            html.Span([html.Span(className="uw-swatch", style=ring), "first 2 days"], title="first two days ≥ 0.9"),
+            *(
+                [
+                    html.Span(
+                        [html.Span("12", className="rx-best rx-best-key", **{"aria-hidden": "true"}), "best flyover"],
+                        title="The flyovers of the recommended schedule: "
+                        + " + ".join(f"{h:02d}" for h in best)
+                        + " h",
+                    )
+                ]
+                if best
+                else []
+            ),
         ],
         className="uw-legend",
     )
@@ -170,95 +237,9 @@ def bed_effect(sep):
     if off.empty:
         return []
     hours = " and ".join(f"{h:02d} h" for h in off.index)
-    detail = ", ".join(f"{h:02d} h AUC {v:.2f}" for h, v in off.items())
-    hover = f"Placebo window (24–29 Aug, all watered): beds already differ ({detail})"
-    return [chip(f"bed effect at {hours}", hover)]
-
-
-def plan_cards(sch):
-    """One card per detector rule: its recommended flyovers and the W3 (held-out) result."""
-    rec = sch[sch.recommended & sch.rule.isin(PLAN_RULES)]
-    w3 = rec[rec.set == "W3 check"].set_index("rule")
-    w2 = rec[rec.set == "W2 tuning"].set_index("rule")
-    best = best_rule(sch)  # chosen on W2 alone (uiwue.diurnal.best_rule); W3 only confirms
-    cards = []
-    for rule in PLAN_RULES:
-        if rule not in w3.index:
-            continue
-        r, t = w3.loc[rule], w2.loc[rule]
-        tint = "sky" if rule == best else "mint" if r.false_alerts_controls == 0 and t.pre_pass else "gray"
-        title = [html.B(RULE_SHORT[rule])] + (
-            [html.Span("best", className="uw-chip uw-chip-best")] if rule == best else []
-        )
-        false = html.Div(
-            [
-                html.Div("false", className="uw-readout-label"),
-                html.Div(
-                    f"{r.false_alerts_controls} / {r.n_controls}",
-                    className="uw-section",
-                    style={"color": C["amber-900"]} if r.false_alerts_controls else None,
-                ),
-            ]
-        )
-        cards.append(
-            html.Div(
-                [
-                    html.Div(title, style={"display": "flex", "gap": "8px", "alignItems": "center"}),
-                    html.Div(
-                        [
-                            readout("flyover", r.schedule.replace("all five", "all 5"), size="section"),
-                            readout(
-                                "W3 alert",
-                                "–" if pd.isna(r.median_alert_day) else f"day {r.median_alert_day:g}",
-                                size="section",
-                            ),
-                            false,
-                        ],
-                        className="uw-readouts uw-readouts-3",
-                    ),
-                ],
-                className=f"uw-card uw-{tint}",
-                title=(
-                    f"Threshold {r.threshold:.2f}, set on W2 with 4 controls; W3 and 9 controls held out. "
-                    f"W2: day {t.median_alert_day:g}, all flagged by day {t.latest_alert_day:g}. "
-                    f"Watered scans above threshold: {100 * t.pre_above_rate:.1f} %."
-                ),
-            )
-        )
-    return cards
-
-
-def sky_card():
-    sky = read_table("diurnal", "sky_effect")
-    if sky is None:
-        return []
-    sky = sky.dropna(subset=["sunny_extra"])
-    cells = [
-        html.Div(
-            [
-                html.Div(f"{r.hour:02d} h", className="uw-readout-label"),
-                html.Div(signed(r.sunny_extra, "°C"), className="uw-section"),
-            ],
-            title=(
-                f"Deficit minus control leaf, days 2–12: {r.gap_sunny:.1f} °C on {r.n_sunny} sunny, "
-                f"{r.gap_cloudy:.1f} °C on {r.n_cloudy} cloudy runs (DWD Belm); few runs"
-            ),
-        )
-        for r in sky.itertuples()
-    ]
-    return [
-        html.Div(
-            [
-                html.Div("Sun vs cloud", className="uw-kicker", style={"color": C["slate-600"]}),
-                html.Div(
-                    cells,
-                    className="uw-readouts",
-                    style={"gridTemplateColumns": "repeat(2, minmax(0, 1fr))"},
-                ),
-            ],
-            className="uw-card uw-gray",
-        )
-    ]
+    detail = ", ".join(f"{h:02d} h score {v:.2f}" for h, v in off.items())
+    hover = f"The beds already differ on watered days 24–29 Aug ({detail}; 0.5 = no difference)"
+    return [chip(f"bed effect at {hours}", hover, anchor="bed-effect")]
 
 
 def verdict(a):
@@ -271,8 +252,9 @@ def verdict(a):
     return chip(
         "bed effect" if a.pre_worst_day_frac > PRE_MAX_DAY else "noisy",
         f"Watered days: {100 * a.pre_above_rate:.0f} % of scans above threshold, "
-        f"{100 * a.pre_worst_day_frac:.0f} % of plants on day {int(a.pre_worst_day)} "
+        f"{100 * a.pre_worst_day_frac:.0f} % of plants on day {str(int(a.pre_worst_day)).replace('-', '−')} "
         f"(passes at ≤ {100 * PRE_MAX_RATE:.0f} % and ≤ {100 * PRE_MAX_DAY:.0f} %)",
+        anchor="bed-effect",
     )
 
 
@@ -283,9 +265,9 @@ def when_table(sch, rule):
     day = lambda v: "–" if pd.isna(v) else f"day {v:g}"
     cols = [
         ("Flyover", "", "flyovers per day"),
-        ("Alert", "num", "median alert day, W3 (held out); W2 on hover"),
-        ("False", "num", "held-out watered W1 plants flagged, days 0–12"),
-        ("Watered", "num", "scans above threshold before the cutoff, all plants watered (W2 set)"),
+        ("Alert day", "num", "median alert day on the held-out W3 bed; W2 on hover"),
+        ("False alarms", "num", "held-out watered W1 plants flagged, days 0–12"),
+        ("Noise", "num", "scans above threshold before the cutoff, with every plant watered (W2 set)"),
         ("", "", ""),
     ]
     head = html.Tr([html.Th(n, className=c, title=h) for n, c, h in cols])
@@ -318,66 +300,151 @@ def when_table(sch, rule):
     return html.Div(html.Table([html.Thead(head), html.Tbody(body)], className="uw-table"), className="uw-scroll")
 
 
-def layout(**_):
-    df = load_traits()
-    head = header(
-        "Daily rhythm",
-        "How does a stressed plant's day differ from a watered one's, and when should you image to see it first?",
-        segmented("dr-score", SCORES, "diurnal_score_ref", "Score"),
+def midday_heat():
+    """The day profile's last no-water panel in numbers: deficit leaves (W2 + W3) minus the control bed's leaves
+    at each flyover hour over days 8–12 (QC-pass runs), and the same for the control plants. None without data."""
+    df = rhythm_runs(DEFAULT_TRAIT, "treatment")
+    d = df[df.days_since_cutoff.between(*HEAT_DAYS)]
+    if d.empty:
+        return None
+    deficit = d[d.bed != "W1"].groupby("hour")[DEFAULT_TRAIT].mean()
+    control = d[d.bed == "W1"].groupby("hour")[DEFAULT_TRAIT].mean()
+    return deficit, control
+
+
+def tiles(sch):
+    """The page's answer: midday heat (thermal), the 3D midday dip, the best flyover."""
+    out = []
+    heat = midday_heat()
+    if heat is not None and {6, 12} <= set(heat[0].index):
+        deficit, control = heat
+        sky = read_table("diurnal", "sky_effect")
+        sky = None if sky is None else sky.dropna(subset=["sunny_extra"])
+        sun = (
+            f" Sunny runs add up to {signed(sky.sunny_extra.max(), '°C')} "
+            f"({int(sky.loc[sky.sunny_extra.idxmax(), 'hour']):02d} h; few runs)."
+            if sky is not None and len(sky)
+            else ""
+        )
+        out.append(
+            stat(
+                f"Midday heat · day {HEAT_DAYS[0]}–{HEAT_DAYS[1]}",
+                signed(deficit[12], ""),
+                "°C",
+                "sand",
+                f"Deficit leaves (W2 + W3) minus the control bed's leaves, days {HEAT_DAYS[0]}–{HEAT_DAYS[1]}, mean of "
+                f"QC-pass runs: {signed(deficit[12], '°C')} at 12 h, {signed(deficit[6], '°C')} at 06 h; control "
+                f"plants {signed(control.get(12), '°C')}.{sun}",
+                sub=f"06 h {signed(deficit[6], '°C')}",
+            )
+        )
+    else:
+        out.append(not_available("Thermal"))
+    out.append(dip_tile())
+    out.append(flyover_tile(sch))
+    return out
+
+
+def dip_tile():
+    """The 3D team's test (``threed_canopy.midday_dip``): does drought deepen the midday dip in height?"""
+    m = tc.midday_dip()
+    if m is None or "height_p75" not in m:
+        return stat("Midday dip · 3D", "–", "", "gray", "no 3D daily-rhythm table (derived/threed/results/e4)")
+    h = m["height_p75"]
+    unit = h["unit"].replace(" per day", "/day")
+    none = h["ci_low"] <= 0 <= h["ci_high"]
+    leaf = m.get("leaf_area_est")
+    extra = (
+        f" Leaf area does dip more at midday once dark runs are left out: {signed(leaf['nodark_slope'], '', 1)} "
+        f"{leaf['unit'].replace('cm2', 'cm²')} (p = {leaf['nodark_p']:.3f})."
+        if leaf and np.isfinite(leaf["nodark_ci_high"]) and leaf["nodark_ci_high"] < 0
+        else ""
     )
+    return stat(
+        "Midday dip · 3D",
+        "none" if none else signed(h["slope"], "", 2),
+        "" if none else unit,
+        "gray",
+        f"Height, 15 h minus 09 h: drought changes it by {signed(h['slope'], '', 2)} {h['unit']} without water "
+        f"(95 % CI {signed(h['ci_low'], '', 2)} to {signed(h['ci_high'], '', 2)}, p = {h['p']:.2f}; mixed model with "
+        f"VPD, {h['n_plants']} plants, derived/threed/results/e4_models).{extra}",
+        sub=f"height {signed(h['slope'], unit, 2)}",
+    )
+
+
+def flyover_tile(sch):
+    """The best rule's recommended flyover (chosen on W2) and how it did on the held-out W3 bed."""
+    rule = best_rule(sch)
+    rec = sch[sch.recommended & (sch.rule == rule) & (sch.set == "W3 check")]
+    if rule is None or rec.empty:
+        return stat("Best flyover", "–", "", "mint", "no recommended schedule in derived/diurnal/schedules")
+    r = rec.iloc[0]
+    day = "–" if pd.isna(r.median_alert_day) else f"day {r.median_alert_day:g}"
+    return stat(
+        "Best flyover",
+        r.schedule.replace("all five", "all 5"),
+        "",
+        "mint",
+        f"Rule {RULE_SHORT[rule]}, threshold set on W2. On the held-out W3 bed: {r.n_detected} / {r.n_plants} plants "
+        f"flagged, median {day}; {r.false_alerts_controls} / {r.n_controls} watered controls flagged.",
+        sub=f"alert {day} · {r.false_alerts_controls} / {r.n_controls} false",
+        chips=[size_chip()],
+    )
+
+
+def layout(bed=None, plant=None, day=None, **_):
+    df = load_traits()
+    head = header("Daily rhythm", QUESTION)
     if df is None or "thermal_leaf_t" not in df:
         return html.Div([head, not_available("Thermal")])
     sep, sch = read_table("diurnal", "separability"), read_table("diurnal", "schedules")
     if sep is None or sch is None or "pre_pass" not in sch:
         return html.Div([head, not_available("Daily rhythm")])
-    traits = {o["value"]: o["label"] for o in trait_options(df.columns)}
-    top = html.Div(
-        [
-            html.Main(
-                panel(
-                    "Separability",
-                    html.Div(id="dr-heat"),
-                    hover="AUC, deficit (W2 + W3) vs control (W1) plants, per day and flyover; 0.5 = no difference",
-                    extra=[html.Div(id="dr-chips", style={"display": "flex", "gap": "8px", "flexWrap": "wrap"})],
-                ),
-                className="uw-main",
-            ),
-            html.Aside(
-                [
-                    *plan_cards(sch),
-                    html.Div(size_chip()),
-                    *sky_card(),
-                    html.A("Irrigation advisor", href="/irrigation", className="uw-btn uw-btn-primary"),
-                ],
-                className="uw-side",
-                **{"aria-label": "Flyover plans"},
-            ),
-        ],
-        className="uw-row",
-    )
+    shown = [c for c in df.columns if not c.startswith("depth_") or c in KEPT_3D]
+    traits = {o["value"]: o["label"] for o in trait_options(shown)}
+    day_profile = graph("dr-profile", "Mean of the chosen trait at each flyover hour, by group and stress phase")
+    day_profile.children.style = {"height": f"{PROFILE_PX}px", "minWidth": f"{PROFILE_MIN_PX}px"}
     profile = panel(
         "Day profile",
-        graph("dr-profile", "Mean of the chosen trait at each flyover hour, by group and stress phase", 360),
-        graph("dr-rhythm", "The chosen daily metric of the trait over days since irrigation off, by group", 320),
-        hover="Mean over plants at each scheduled run; bars: standard error",
+        html.Div(day_profile, className="uw-scroll"),  # five panels: narrower, it scrolls in its own box
+        hover=PROFILE_HOVER,
         extra=[
-            html.Div(id="dr-trait-chips"),
+            html.Div(id="dr-trait-chips", className="rx-chips"),
             html.Div(className="uw-spacer"),
             select("dr-trait", traits, DEFAULT_TRAIT, "Trait"),
             segmented("dr-group", {"treatment": "Treatment", "bed": "Bed"}, "treatment", "Group by"),
-            select("dr-metric", METRICS, "afternoon_minus_morning", "Daily"),
         ],
     )
     schedules = panel(
         "When to image",
         html.Div(id="dr-schedules"),
-        hover="Alert: above threshold on two usable scans in a row; threshold set on W2, checked on W3",
+        hover="Per flyover: median alert day on the held-out W3 bed, watered controls flagged, and watered-day scans "
+        "above the threshold. Alert: above threshold on two usable scans in a row; threshold set on W2.",
+        extra=[html.Div(className="uw-spacer"), select("dr-rule", RULE_SHORT, best_rule(sch) or "control_ref", "Rule")],
+    )
+    heat = panel(
+        "Separation by hour",
+        html.Div(id="dr-heat"),
+        hover="Detection score (AUC) of deficit (W2 + W3) against control (W1) plants, per flyover hour and day; 0.5 = no difference. "
+        "Outlined: the first two days in a row at ≥ 0.9.",
         extra=[
+            html.Div(id="dr-chips", className="rx-chips"),
             html.Div(className="uw-spacer"),
-            select("dr-rule", RULE_SHORT, best_rule(sch) or "control_ref", "Rule"),
+            segmented("dr-score", SCORES, "diurnal_score_ref", "Score"),
         ],
     )
-    return html.Div([head, top, html.Div([schedules, profile], className="uw-main", style={"paddingTop": "24px"})])
+    return html.Div(
+        [
+            head,
+            html.Div(tiles(sch), className="uw-tiles uw-lead"),
+            html.Div(
+                [html.Main(profile, className="uw-main"), html.Aside(schedules, className="uw-side rx-side")],
+                className="uw-row",
+            ),
+            html.Div(heat, className="rx-below"),
+            next_steps(*((t, page_href(path, bed, plant, day), hover) for t, path, hover in NEXT)),
+        ]
+    )
 
 
 @callback(Output("dr-heat", "children"), Output("dr-chips", "children"), Input("dr-score", "value"))
@@ -392,20 +459,38 @@ def update_separability(score):
         f"({s.columns.min()} to {s.columns.max()}); stressed and watered plants separate "
         + ", ".join(f"at {h:02d} h from day {d}" if d is not None else f"never at {h:02d} h" for h, d in first.items())
     )
-    grid = html.Div(heatmap(s), role="img", **{"aria-label": label})
-    return grid, [*bed_effect(s), chip(SCORES[score], SCORE_HOVER[score], "rule")]
+    best = best_hours(read_table("diurnal", "schedules"))
+    grid = html.Div(heatmap(s, best), role="img", title=SCORE_HOVER[score], **{"aria-label": label})
+    return grid, bed_effect(s)
+
+
+def rhythm_runs(trait, group):
+    """The runs behind the day profile: those with a value that passed their module's QC (the tables keep the
+    values of failed runs). A 3D trait grouped by treatment compares W1 with W2 only, as the 3D canopy page does:
+    W3 is never pooled into its deficit numbers (leaves cut for water content)."""
+    df = load_traits()
+    df = df[df[trait].notna() & qc_pass(df, trait)]
+    if trait in KEPT_3D and group == "treatment":
+        df = df[df.bed.isin(tc.BEDS)]
+    return df
+
+
+def trait_chips(trait, group):
+    """The bed-effect chip of the trait, and for a 3D trait grouped by treatment the W1 + W2 caveat."""
+    out = list(placebo_chip(trait))
+    if trait in KEPT_3D and group == "treatment":
+        out.append(chip("W1 + W2 only", NOT_POOLED_3D, anchor="w3-sampled"))
+    return out
 
 
 @callback(
     Output("dr-profile", "figure"),
-    Output("dr-rhythm", "figure"),
     Output("dr-trait-chips", "children"),
     Input("dr-trait", "value"),
     Input("dr-group", "value"),
-    Input("dr-metric", "value"),
 )
-def update_rhythm(trait, group, metric):
-    df = load_traits().dropna(subset=[trait])
+def update_rhythm(trait, group):
+    df = rhythm_runs(trait, group)
     unit = unit_of(trait)
     d = df.assign(phase_bin=phase_bin(df.days_since_cutoff))
     d = d[d.phase_bin != "nan"]
@@ -422,28 +507,14 @@ def update_rhythm(trait, group, metric):
         color_discrete_map=GROUP,
         labels={"hour": "h", "mean": unit},
     )
-    prof.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    prof.for_each_annotation(facet_title)
     prof.update_traces(line_width=2.5, marker_size=8, hovertemplate=f"%{{x}} h<br>%{{y:.2f}} {unit}")
-    prof.update_xaxes(tickvals=[6, 12, 18])
-    prof.update_layout(height=360, margin=dict(t=80), legend=dict(y=1.14, title_text=""))
-
-    r = add_design(rhythm(df, trait)).dropna(subset=[metric])
-    m = r.groupby(["days_since_cutoff", group])[metric].agg(["mean", "sem"]).reset_index()
-    rhy = px.line(
-        m,
-        x="days_since_cutoff",
-        y="mean",
-        error_y="sem",
-        color=group,
-        markers=True,
-        color_discrete_map=GROUP,
-        labels={"days_since_cutoff": "day", "mean": unit},
-    )
-    rhy.update_traces(
-        line_width=2.5, marker_size=7, hovertemplate=f"day %{{x}}<br>%{{y:.2f}} {unit}<br>{METRIC_HOVER[metric]}"
-    )
-    rhy.update_layout(height=320, legend_title_text="")
-    return prof, mark_stress_period(rhy), placebo_chip(trait)
+    # level hour labels (they rotate on narrow panels otherwise; the chart scrolls below PROFILE_MIN_PX) and one
+    # shared unit title under the middle panel
+    prof.update_xaxes(tickvals=[6, 12, 18], tickangle=0, title_text=None)
+    prof.update_xaxes(title_text="h", col=3)
+    prof.update_layout(height=PROFILE_PX, margin=dict(t=72), legend=dict(y=1.16, title_text=""))
+    return prof, trait_chips(trait, group)
 
 
 @callback(Output("dr-schedules", "children"), Input("dr-rule", "value"))

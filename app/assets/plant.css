@@ -1,0 +1,51 @@
+/* Plant profile, Bed map and Export (app/pages/plant_profile.py, bed_map.py, export.py). Token variables only
+   (design/tokens.css); the shared parts are in uiwue.css, which loads after this file, so a rule that overrides
+   one of its classes names two classes. */
+
+/* a page's sections, top to bottom: tiles, focal panel, detail */
+.pl-stack { display: flex; flex-direction: column; gap: var(--uw-space-4); }
+
+/* focal panel head: the picker grows, its chips and the CSV button sit right */
+.pl-preview .uw-table td { white-space: nowrap; }
+.pl-trait { flex: 1 1 280px; min-width: min(280px, 100%); max-width: 520px; }
+.pl-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+.pl-section-head { margin: var(--uw-space-2) 0 var(--uw-space-3); }
+
+/* per-sensor cards (Plant profile) */
+.pl-card { padding: var(--uw-space-3) var(--uw-space-4) var(--uw-space-2); }
+.pl-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-1) var(--uw-space-2); min-height: 32px; }
+.pl-tag { width: 44px; flex: none; color: var(--uw-slate-600); }
+.pl-pick {
+  flex: 1 1 0; min-width: 72px; min-height: 32px; padding: 0; text-align: left; border: 0; background: none;
+  font-weight: 700; color: var(--uw-ink-display); cursor: pointer;
+}
+.pl-pick:hover { color: var(--uw-teal-700); text-decoration: underline; }
+.pl-value small { margin-left: 4px; }
+.pl-missing { display: flex; flex-wrap: wrap; gap: var(--uw-space-2) var(--uw-space-5); padding-top: var(--uw-space-3); color: var(--uw-ink-muted); font-size: 13px; }
+.pl-missing:empty { display: none; }
+.pl-missing-item { display: inline-flex; align-items: center; gap: var(--uw-space-2); cursor: help; }
+.pl-missing-item b { color: var(--uw-ink); font-weight: 700; }
+
+/* Bed map: plants to look at, and the selected plant */
+.uw-tiles .pl-look-tile { grid-column: span 2; }
+.pl-look { display: flex; flex-wrap: wrap; gap: 0 var(--uw-space-5); }
+.pl-look-item { min-height: 44px; display: inline-flex; align-items: baseline; gap: var(--uw-space-1); padding-top: 6px; box-sizing: border-box; }
+.pl-look-id { font-size: 21px; line-height: 26px; }
+.pl-look-item > small { margin: 0; font-size: 13px; color: var(--uw-ink-muted); }
+.pl-plant-id { font-family: var(--uw-font-display); font-size: 32px; line-height: 38px; font-weight: 700; color: var(--uw-ink-display); }
+.pl-bed-head { display: flex; align-items: baseline; gap: var(--uw-space-2); padding: var(--uw-space-2) var(--uw-space-3); border-radius: var(--uw-radius-md); }
+
+/* Export: the filter column and the view switch */
+.pl-filters { gap: var(--uw-space-4); }
+.pl-filters fieldset { border: 0; margin: 0; padding: 0; }
+.pl-filters legend { font-size: 11px; color: var(--uw-ink-muted); }
+.pl-view { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2) var(--uw-space-3); }
+
+@media (max-width: 700px) {
+  .uw-tiles.pl-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uw-tiles.pl-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--uw-space-2); }  /* Bed map: one per bed */
+  .pl-tiles-3 .uw-stat-tile { padding: var(--uw-space-3); }
+  .pl-tiles-3 .pl-look-tile { grid-column: 1 / -1; }
+  .pl-tiles-3 .uw-stat { font-size: 24px; line-height: 28px; }
+  .pl-trait { max-width: none; }
+}

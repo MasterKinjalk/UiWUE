@@ -113,15 +113,15 @@ Yuming. `git pull --rebase` before every push.
 | **Raw data** | depth + RGB | hyperspectral; sensor sheets; leaf scans | RGB | thermal; air and light sensors (already on disk) |
 | **Tables** | `threed/traits_runs` | `spectral/traits_runs`, `spectral/spectra_runs`, `truth/*` | `rgb/traits_runs`, `detect/*` | `thermal/traits_runs`, `env/env_runs`, `diurnal/*` |
 | **Analyses** | paper parity, noise floor | paper parity for indices, mask QC | placebo, onset per signal, sensor combinations, ground-truth link, recovery | time of day, scan schedule, plant alert, irrigation rules, false alerts |
-| **Pages** | 3D browser, Trait explorer, Export | Plant profile, Bed map | Early warning, Sensor comparison, Methods & limits | Home, Daily rhythm, Irrigation advisor |
+| **Pages** | 3D canopy (was 3D browser), Trait explorer, Export | Plant profile, Bed map | Early warning, Sensor comparison, Methods & limits | Home, Daily rhythm, Irrigation advisor |
 | **Team role** | deputy integrator | story: video script and recording | owner of the shared statistics | integrator; form submission |
 
 ### Kinjalk — 3D structure
 
-- **Keep:** the pipeline in your sections 4.1–4.8, paper parity (E0a), synthetic tests (E0c), noise floor (E1), 3D browser, Compare, Export.
+- **Keep:** the pipeline in your sections 4.1–4.8, paper parity (E0a), synthetic tests (E0c), noise floor (E1), 3D browser, Compare, Export (now one page, 3D canopy).
 - **Hand over:** bed check (E2) and onset ranking (E3) to the shared statistics, which run on your table automatically; daily rhythm (E4) to Yuming, using your definitions of midday depression and overnight recovery; turgor correlation (E5) to Jack's ground-truth link.
 - **New:** Compare becomes the app-wide **Trait explorer** (any trait from any module, driven by the catalogue). Export covers the merged table. Process W3's nine clip plants too, so depth traits have a confirmation bed.
-- **Must-have:** `depth_height_p50/p75/p95`, `depth_projected_area`, `depth_canopy_radius`, `depth_droop_index` for the core plants, 12 h and 15 h first; E0a; the three pages.
+- **Must-have:** `depth_height_p50/p75/p95`, `depth_projected_area`, `depth_canopy_radius`, `depth_droop_index` for the core plants, 12 h and 15 h first; E0a; the three pages (now one, 3D canopy).
 - **Cut first:** the hand-labelled QC comparison (E0b), inclination and normals, hull volume, leaf area estimate, compactness, the side-by-side view.
 
 ### Sam — spectral traits and ground truth
@@ -175,7 +175,7 @@ Yuming. `git pull --rebase` before every push.
 | Per-hour results, fewer flyovers | Jack (extras), Yuming Y1–Y2 | Yuming | calls Jack's AUC function one hour at a time |
 | Irrigation rules and page | Sam S5, Yuming | Yuming | Sam's three rules are the rule set |
 | Sensor cost ranking | Jack Part B, Sam's notes | Jack | — |
-| Single-plant page | Sam, Jack, Kinjalk | Sam (Plant profile); Kinjalk keeps the 3D browser | Jack supplies the probability column |
+| Single-plant page | Sam, Jack, Kinjalk | Sam (Plant profile); Kinjalk keeps the 3D canopy page (was the 3D browser) | Jack supplies the probability column |
 | Trait-over-time page | Kinjalk Compare, parts of all | Kinjalk (Trait explorer) | — |
 | Export | Kinjalk, Jack | Kinjalk | — |
 | Limits and honesty page | Sam, Jack | Jack | Sam's content list |
@@ -279,7 +279,7 @@ navigation. Pages use the shared pickers and figure theme in
 | Page (file in `app/pages/`) | Owner | What the biologist learns | Priority |
 |---|---|---|---|
 | Home (`home.py`) | Yuming | what the pipeline did: modules present, plants, dates, missing runs | must |
-| 3D browser (`threed_browser.py`) | Kinjalk | what a plant looks like in 3D on any date | must |
+| 3D canopy (`threed.py`; replaced the 3D browser) | Kinjalk | how much canopy the deficit plants lost, what came back, and what one plant looks like in 3D | must |
 | Trait explorer (`trait_explorer.py`) | Kinjalk | how any trait changes over time, by treatment, bed or chosen plants | must |
 | Early warning (`early_warning.py`) | Jack | which signal detects stress first, and how long before visible symptoms | must |
 | Sensor comparison (`sensor_comparison.py`) | Jack | what combining sensors adds, and the cheapest setup that comes close | must |
@@ -370,7 +370,7 @@ gap. Nobody blocks on a teammate.
 ## 12. Submission
 
 - **Form (Yuming):** problem statement and solution overview from sections 1 and 3 (the diagram is the workflow diagram the brief asks for); technical approach and results from the four result cards; limits from Methods & limits.
-- **Video (Sam), 2 minutes:** the user and the problem (15 s); Home, the pipeline and what it extracted (20 s); 3D browser and Trait explorer, a plant wilting and its traits diverging (25 s); Early warning, the headline (25 s); Daily rhythm and Irrigation advisor (20 s); Methods & limits and Export (15 s).
+- **Video (Sam), 2 minutes:** the user and the problem (15 s); Home, the pipeline and what it extracted (20 s); 3D canopy and Trait explorer, a plant wilting and its traits diverging (25 s); Early warning, the headline (25 s); Daily rhythm and Irrigation advisor (20 s); Methods & limits and Export (15 s).
 - **Result card (everyone, `docs/results/<name>.md`, by Sun 09:30):** three numbers, one figure, two limits.
 - **Slides:** none unless someone confirms a live presentation.
 
