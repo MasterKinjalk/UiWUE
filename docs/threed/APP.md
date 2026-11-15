@@ -181,18 +181,19 @@ Run the tests with `.venv/Scripts/python.exe -m pytest -q tests/app`. They cover
 
    dash.register_page(
        __name__,
-       path="/ndvi-maps",          # URL of the page
-       name="NDVI Maps",           # label in the navbar and on the home page
+       path="/ndvi-maps",  # URL of the page
+       name="NDVI Maps",  # label in the navbar and on the home page
        description="One line for the home page card.",
-       order=20,                   # position in the navbar (3D pages use 30-32)
+       order=20,  # position in the navbar (3D pages use 30-32)
    )
 
-   def layout(**query):            # a function, so the data are re-read on each visit
+
+   def layout(**query):  # a function, so the data are re-read on each visit
        return html.Div([dcc.Graph(id="ndvi-graph")])
 
+
    @callback(Output("ndvi-graph", "figure"), Input("ndvi-graph", "id"))
-   def draw(_):
-       ...
+   def draw(_): ...
    ```
 
 2. Prefix every component id with your page, for example `ndvi-`. All pages
