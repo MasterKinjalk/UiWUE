@@ -414,6 +414,14 @@ def run(
     return tables, info
 
 
+def _rel(path) -> str:
+    """A path relative to the repo when it is inside it (run-info files are committed: no machine paths)."""
+    try:
+        return Path(path).resolve().relative_to(core.REPO.resolve()).as_posix()
+    except ValueError:
+        return Path(path).name
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cache", type=Path, nargs="+", default=[EXTERNAL_CACHE], help="one or more embedding caches")
@@ -462,7 +470,7 @@ def main(argv=None) -> None:
     out = write(tables, a.model, a.out)
     info |= dict(
         finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), seconds=round(time.time() - t0, 1),
-        caches=[str(c) for c in a.cache], size_traits=str(a.size_traits) if traits is not None else None,
+        caches=[_rel(c) for c in a.cache], size_traits=_rel(a.size_traits) if traits is not None else None,
     )  # fmt: skip
     prefix = "fusion_lockbox" if a.lockbox else "fusion_external"
     (out / f"{prefix}_{a.model.replace('+', '_')}_run_info.json").write_text(json.dumps(info, indent=2, default=str))
