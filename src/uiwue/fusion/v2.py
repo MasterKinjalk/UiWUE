@@ -48,13 +48,14 @@ import torch.nn.functional as F
 from torch import nn
 
 from uiwue import core
-from uiwue.detect.benchmark import TRAIN_DAYS, _curve, _per_plant_auc
+from uiwue.detect.benchmark import FULL_DAYS, TRAIN_DAYS, _curve, _per_plant_auc
 from uiwue.fusion import lockbox, train
 from uiwue.fusion.embed import CACHE, load_table
 from uiwue.fusion.fusion import expected_stage, fusion_loss
 from uiwue.fusion.labels import N_STAGES, TURGOR_SCALE, run_labels
 from uiwue.fusion.train import Config, RunSet, baseline_of
-from uiwue.stats.core import SEED
+from uiwue.stats import onset_day
+from uiwue.stats.core import EARLY_DAYS, SEED
 
 V2_CACHE = core.REPO / "cache" / "fusion_v2"
 FEATURES = V2_CACHE / "thermal_features.parquet"
@@ -78,8 +79,10 @@ class V2Config(Config):
     tfeat: bool = True  # hand-made thermal token
     env: bool = False  # weather token
     adv: float = 0.0  # weight of the bed adversary on pre-cutoff runs (0 = off)
+    hardneg: float = 1.0  # loss weight of deficit-bed runs on 2 Sep and the 3 Sep morning (negatives)
     min_ref: int = 5  # control plants needed in a run for a reference
     input_dropout: float = 0.0
+    window: int = 0  # hours: each run's inputs averaged with the plant's earlier runs that day within it (0 = off)
 
 
 VARIANTS: dict[str, dict] = {
@@ -95,6 +98,9 @@ VARIANTS: dict[str, dict] = {
     "delta+ref+tfeat+env": dict(parts=("delta", "ref"), tfeat=True, env=True),
     "delta+ref+tfeat+adv": dict(parts=("delta", "ref"), tfeat=True, adv=0.5),
     "delta+ref+tfeat+adv2": dict(parts=("delta", "ref"), tfeat=True, adv=2.0),
+    "delta+ref+tfeat+hn": dict(parts=("delta", "ref"), tfeat=True, hardneg=5.0),
+    "delta+ref+tfeat+win6": dict(parts=("delta", "ref"), tfeat=True, window=6),
+    "tfeat_only+win6": dict(parts=("delta", "ref"), tfeat=True, emb=False, window=6),
     "delta+ref+tfeat+mean": dict(parts=("delta", "ref"), tfeat=True, layers=0),
     "v1+tfeat": dict(parts=("now", "delta"), tfeat=True),
 }
@@ -237,6 +243,40 @@ def reference(rs: RunSet, ref_rows: np.ndarray, min_ref: int = 5, groups: np.nda
     return medians
 
 
+def causal_window(keys: pd.DataFrame, values: np.ndarray, valid: np.ndarray, hours: int) -> np.ndarray:
+    """Each row's mean over the same plant's valid rows from `hours` before it up to it (same
+    clock, so with hours < 12 the window stays inside the day). Rows are any order."""
+    t = (keys["date"] - pd.Timestamp(core.DATES[0])).dt.days.to_numpy() * 24 + keys["hour"].to_numpy()
+    pid = pd.factorize(keys["pid"])[0]
+    key = pid.astype(np.int64) * 100_000 + t
+    order = np.argsort(key, kind="stable")
+    ks, v = key[order], valid[order].astype(np.float64)
+    x = np.where(v[:, None] > 0, values[order], 0.0)
+    cs = np.vstack([np.zeros((1, x.shape[1])), np.cumsum(x, 0)])
+    cn = np.concatenate([[0.0], np.cumsum(v)])
+    start = np.searchsorted(ks, ks - hours, side="left")
+    end = np.arange(1, len(ks) + 1)
+    n = (cn[end] - cn[start])[:, None]
+    mean = np.where(n > 0, (cs[end] - cs[start]) / np.maximum(n, 1), 0.0)
+    out = np.empty_like(values)
+    out[order] = mean.astype(values.dtype)
+    return out
+
+
+def smooth_inputs(rs: RunSet, hours: int, parts) -> None:
+    """rs.smooth[(part, (token, variant))]: the causal window of each part, after the reference."""
+    rs.smooth = {}
+    for sv in rs.emb:
+        if sv[0] == "env":
+            continue
+        if "delta" in parts:
+            rs.smooth[("delta", sv)] = causal_window(rs.keys, rs.emb[sv] - rs.base[sv], rs.has[sv], hours)
+        if "ref" in parts and sv in rs.ref:
+            rs.smooth[("ref", sv)] = causal_window(rs.keys, rs.ref[sv], rs.has_ref[sv], hours)
+        if "now" in parts:
+            rs.smooth[("now", sv)] = causal_window(rs.keys, rs.emb[sv], rs.has[sv], hours)
+
+
 def apply_reference(rs: RunSet, medians: dict, run_keys: pd.DataFrame) -> None:
     """New plants against saved reference medians (run_keys: date, hour, group of each median)."""
     lookup = {
@@ -363,8 +403,13 @@ def _parts(rs: RunSet, t: str, v: str, idx: np.ndarray, parts) -> tuple[np.ndarr
     if t == "env":
         return rs.emb[sv][idx], rs.has[sv][idx]
     cols, ok = [], rs.has[sv][idx].copy()
+    smooth = getattr(rs, "smooth", {})
     for p in parts:
-        if p == "now":
+        if (p, sv) in smooth:  # the causal same-day window (V2Config.window)
+            cols.append(smooth[(p, sv)][idx])
+            if p == "ref":
+                ok &= rs.has_ref[sv][idx]
+        elif p == "now":
             cols.append(rs.emb[sv][idx])
         elif p == "delta":
             cols.append(rs.emb[sv][idx] - rs.base[sv][idx])
@@ -399,7 +444,17 @@ def make_batch(
         turgor=torch.from_numpy(k["turgor"].to_numpy(np.float32) / TURGOR_SCALE).to(device),
         bed=torch.from_numpy((k["bed"] != "W1").to_numpy(np.float32)).to(device),
         pre=torch.from_numpy((k["date"] < pd.Timestamp(core.CUTOFF)).to_numpy()).to(device),
+        late=torch.from_numpy(late_negative(k)).to(device),
     )
+
+
+def late_negative(k: pd.DataFrame) -> np.ndarray:
+    """Deficit-bed runs of 2 Sep and of the 3 Sep morning: the last negatives before the cutoff.
+    They share whatever changed between the beds from 2 Sep (doors closed; Master Plan 6.6)
+    with the stress days, so weighting them up asks the model for the stress beyond it."""
+    cut = pd.Timestamp(core.CUTOFF)
+    day = (k["date"] == cut - pd.Timedelta(days=1)) | ((k["date"] == cut) & (k["hour"] <= 11))
+    return (day & (k["bed"] != "W1")).to_numpy()
 
 
 def full_setup(rs: RunSet, tokens) -> dict[str, str]:
@@ -449,6 +504,10 @@ def fit(rs: RunSet, train_idx, val_idx, cfg: V2Config, device: str, target="y_de
                 b["stage"][:], b["turgor"][:] = -1, float("nan")
             out = model(b["x"], b["present"], adv_lambda=lam)
             loss = fusion_loss(out, b["y"], b["stage"], b["turgor"])
+            if cfg.hardneg != 1.0 and b["late"].any():  # the deficit BCE again, late negatives weighted up
+                w = torch.where(b["late"], cfg.hardneg, 1.0)
+                bce = F.binary_cross_entropy_with_logits(out["logit"], b["y"], reduction="none")
+                loss = loss - bce.mean() + (bce * w).sum() / w.sum()
             if adv > 0 and b["pre"].any():
                 loss = loss + F.binary_cross_entropy_with_logits(out["bed_logit"][b["pre"]], b["bed"][b["pre"]])
             opt.zero_grad()
@@ -550,8 +609,14 @@ def cross_validate(rs: RunSet, cfg: V2Config, device: str, ckpt_dir: Path | None
         in_train = np.zeros(n, bool)
         in_train[train_all] = True
         medians = reference(rs, in_train & control, cfg.min_ref, groups)
+        if cfg.window:
+            smooth_inputs(rs, cfg.window, cfg.parts)
         tr, va = train.inner_split(keys, train_all[train_rows[train_all]], cfg.val_frac, cfg.seed + k)
         model = fit(rs, tr, va, cfg, device)
+        if model is None:
+            raise ValueError(
+                f"fold {k}: no usable training runs (fewer than {cfg.min_ref} reference controls per run?)"
+            )
         ptr, pva = train.inner_split(keys, train_all[pre_rows[train_all]], cfg.val_frac, cfg.seed + k)
         pmodel = fit(rs, ptr, pva, cfg, device, target="y_bed", aux=False, adv=0.0)
         for name, setup in all_setups.items():
@@ -625,6 +690,8 @@ def ensemble(rs: RunSet, folds: list[dict], device: str) -> dict:
     stage, turg = np.zeros((len(folds), n)), np.zeros((len(folds), n))
     for k, ck in enumerate(folds):
         apply_reference(rs, *saved_reference(ck))
+        if cfg.window:
+            smooth_inputs(rs, cfg.window, cfg.parts)
         model, pmodel = build_from(ck, device), build_from(ck.get("placebo"), device)
         for name, setup in all_setups.items():
             prob[name][k] = predict(model, rs, idx, setup, cfg, device)[0]
@@ -651,7 +718,7 @@ def shared_setups(cv: dict) -> dict:
 
 
 def run_new(caches, folds: list[dict], model_name: str, device: str, n_boot=2000, traits=None, labels=None,
-            features: Path | None = FEATURES, only=None):  # fmt: skip
+            features: Path | None = FEATURES, only=None, summary_path: Path | None = None):  # fmt: skip
     """predict.run for v2 fold checkpoints: every plant the folds never saw (or `only` those)."""
     from uiwue.fusion import predict as pr
 
@@ -669,6 +736,13 @@ def run_new(caches, folds: list[dict], model_name: str, device: str, n_boot=2000
     print(f"{len(rs.keys)} runs, {len(pids)} new plants, {len(folds)} fold models ({model_name})")
     cv = ensemble(rs, folds, device)
     tables = pr.external_tables(rs, shared_setups(cv), model_name, n_boot, traits)
+    if summary_path is not None:  # the ablation columns (canary days, recovery, severity) for these plants
+        clips = pr.clip_plants()
+        rows = summarise(rs, cv, model_name, ABLATION_SETUPS, n_boot)
+        sub, cv_sub = subset_cv(rs, cv, ~rs.keys["pid"].isin(list(clips)).to_numpy())
+        rows += summarise(sub, cv_sub, model_name, ("thermal", "rgb+depth+thermal+hsi"), n_boot, plants="no_clip")
+        Path(summary_path).parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_parquet(summary_path, index=False)
     present = {s: sorted(rs.keys.loc[rs.has[(s, "full")], "pid"].unique()) for s in rs.sensors if (s, "full") in rs.has}
     info = dict(
         model=model_name, design="v2", plants=pids, n_plants=len(pids), runs=len(rs.keys),
@@ -718,8 +792,12 @@ def summarise(rs: RunSet, cv: dict, name: str, setups_=None, n_boot=2000, plants
         ("turgor", cv["turgor"], keys["turgor"]),
     ):  # the severity heads, all sensors (one value per variant, repeated on its rows)
         r = train.within_day_rho(keys, pred, truth.to_numpy(float))
+        full = "+".join(c for c in CAMERAS if c in "+".join(cv["setups"]).split("+"))
+        rp = train.within_day_rho(keys, cv["prob"][full], truth.to_numpy(float)) if full in cv["prob"] else []
         for row in rows:
             row[f"{target}_rho_median"] = float(r["rho"].median()) if len(r) else np.nan
+            # the deficit probability itself as a severity score, for comparison with the heads
+            row[f"{target}_rho_prob_median"] = float(rp["rho"].median()) if len(rp) else np.nan
     return rows
 
 
@@ -800,12 +878,139 @@ def benchmark_rows(
     return out
 
 
+def _control_ref(f: pd.DataFrame, ref_pids: set[str], min_controls: int = 3) -> pd.Series:
+    """Median leaf temperature of the `ref_pids` controls in the same run (the others for one of
+    them): uiwue.thermal.control_reference restricted to reference plants."""
+    pid = f["bed"] + "_" + f["plant"]
+    leaf = f["thermal_leaf_t"].where(f["thermal_qc_pass"].fillna(True).astype(bool))
+    is_ref = ((f["bed"] == "W1") & pid.isin(ref_pids)).to_numpy()
+    out = pd.Series(np.nan, index=f.index)
+    for g in f.groupby(["date", "hour"]).groups.values():
+        g = np.asarray(g)
+        r = g[is_ref[f.index.get_indexer(g)]]
+        vals = leaf.loc[r].dropna()
+        if len(vals) < min_controls:
+            continue
+        out.loc[g] = float(vals.median())
+        for i in vals.index:
+            out.loc[i] = float(vals.drop(i).median())
+    return out
+
+
+def benchmark_external(
+    features: Path, dev_pids: set[str], test_pids: set[str], n_boot=2000, groups=("all", "W2", "W3"),
+    baseline=core.BASELINE,
+) -> tuple[list[dict], list[pd.DataFrame]]:  # fmt: skip
+    """The benchmark's thermal logistic model fitted on every development plant-day (days 0-12)
+    and applied to new plants (the lock-box), with its placebo bed model fitted on the
+    development plants' placebo window. Leaf minus control-bed leaf uses development controls."""
+    from uiwue.detect.benchmark import make_model
+
+    f = core.normalize_keys(pd.read_parquet(features))
+    pid = f["bed"] + "_" + f["plant"]
+    f = f[pid.isin(dev_pids | test_pids)].reset_index(drop=True)
+    f["thermal_leaf_ref_dt"] = f["thermal_leaf_t"] - _control_ref(f, dev_pids)
+    feats = ["thermal_leaf_t", "thermal_leaf_t_p10", "thermal_leaf_air_dt", "thermal_leaf_ref_dt"]
+    daily = benchmark_daily(f, feats, baseline)
+    dev, test = daily[daily["pid"].isin(dev_pids)], daily[daily["pid"].isin(test_pids)].copy()
+    ok = lambda d: d[feats].notna().any(axis=1)
+    tr = dev[dev["days_since_cutoff"].between(*TRAIN_DAYS) & ok(dev)]
+    m = make_model("logistic").fit(tr[feats].to_numpy(float), tr["y"].to_numpy())
+    test["prob"] = np.where(ok(test), m.predict_proba(test[feats].to_numpy(float))[:, 1], np.nan)
+    pw = [pd.Timestamp(d) for d in core.PLACEBO]
+    ptr = dev[dev["date"].between(*pw) & ok(dev)]
+    pm = make_model("logistic").fit(ptr[feats].to_numpy(float), ptr["y"].to_numpy())
+    pre = test[test["date"].between(*pw)].copy()
+    pre["prob"] = np.where(ok(pre), pm.predict_proba(pre[feats].to_numpy(float))[:, 1], np.nan)
+    stress = test[test["days_since_cutoff"].between(*TRAIN_DAYS)]
+    canary = test[test["days_since_cutoff"].between(*CANARY_DAYS)]
+    rows, curves = [], []
+    for g in groups:
+        curve = _curve(stress, g, n_boot)
+        (e, elo, ehi), npos, nneg = _per_plant_auc(stress, g, n_boot, EARLY_DAYS)
+        (fa, _, _), _, _ = _per_plant_auc(stress, g, 0, FULL_DAYS)
+        (pa, plo, phi), _, _ = _per_plant_auc(pre, g, n_boot)
+        (pmain, _, _), _, _ = _per_plant_auc(test[test["date"].between(*pw)], g, 0)
+        c, pc = curve.set_index("day"), _curve(canary, g, 0).set_index("day")
+        rows.append(dict(
+            sensors="thermal", model="logistic", group=g, early_auc=e, early_ci_low=elo, early_ci_high=ehi,
+            full_auc=fa, onset_day=onset_day(curve) if len(curve) else np.nan, placebo_auc=pa,
+            placebo_ci_low=plo, placebo_ci_high=phi,
+            bed_effect=bool(np.isfinite(plo) and (plo > 0.5 or phi < 0.5) and max(pa, 1 - pa) >= 0.7),
+            placebo_auc_main=pmain, n_deficit=npos, n_control=nneg, setup="Thermal", n_sensors=1,
+            n_features=len(feats), cost_rank=5, is_size_baseline=False, size_column=None,
+            **{f"day{d}_auc": c["auc"].get(d, np.nan) for d in (0, 1, 2, 3)},
+            **{f"day_m{-d}_auc": pc["auc"].get(d, np.nan) for d in range(CANARY_DAYS[0], CANARY_DAYS[1] + 1)},
+        ))  # fmt: skip
+        name = "model:thermal:logistic"
+        curves.append(curve.assign(group=g, signal=name, kind="model", column=name, model="logistic"))
+    return rows, curves
+
+
+def bench_lockbox(
+    features: Path, n_boot=2000, out_dir: Path | None = None, baseline=core.BASELINE,
+    canary_path: Path = V2_CACHE / "lockbox_logistic_summary.parquet",
+) -> None:  # fmt: skip
+    """benchmark_external on the lock-box (all, no-clip), into fusion_lockbox_{benchmark,auc_by_day}."""
+    from uiwue.fusion import predict as pr
+
+    f = pd.read_parquet(features, columns=["bed", "plant"]).drop_duplicates()
+    pids = set(f["bed"] + "_" + f["plant"])
+    test, dev = pids & set(lockbox.LOCKBOX), pids - set(lockbox.LOCKBOX)
+    clips = pr.clip_plants()
+    bench, curves = [], []
+    for plants, sub in (("all", test), ("no_clip", test - clips)):
+        rows, cs = benchmark_external(features, dev, sub, n_boot, baseline=baseline)
+        tag = dict(plants=plants, n_plants=len(sub))
+        bench += [r | tag for r in rows]
+        curves += [c.assign(**tag) for c in cs]
+    canary = [c for c in pd.DataFrame(bench).columns if c.startswith("day")]
+    tables = {
+        "fusion_lockbox_benchmark": pd.DataFrame(bench).drop(columns=canary),
+        "fusion_lockbox_auc_by_day": pd.concat(curves, ignore_index=True),
+    }
+    out = pr.write(tables, "logistic", out_dir)
+    Path(canary_path).parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(bench).to_parquet(canary_path, index=False)
+    print(
+        pd.DataFrame(bench)[
+            [
+                "plants",
+                "group",
+                "early_auc",
+                "early_ci_low",
+                "onset_day",
+                "day_m1_auc",
+                "placebo_auc",
+                "n_deficit",
+                "n_control",
+            ]
+        ]
+        .round(3)
+        .to_string(index=False)
+    )
+    print(f"-> {out}")
+
+
+RGB_SIZE = V2_CACHE / "rgb_size.parquet"
+
+
 def size_rows(pids: set[str], n_boot=2000) -> list[dict]:
+    """Plant size alone (predict.size_baseline): depth_projected_area where Challenge 3 has it
+    (plants "with_size"), and RGB green cover (uiwue.fusion.features --rgb-size) for every plant
+    with RGB (plants "all"; the Master Plan's second size column)."""
     from uiwue.fusion.predict import size_baseline
 
+    out = []
     traits = core.read_table("threed", "traits_runs")
     rows, _, have = size_baseline(traits, pids, n_boot=n_boot)
-    return [dict(variant="size_only", plants="with_size", n_plants=len(have), **r) for r in rows]
+    out += [dict(variant="size_only", plants="with_size", n_plants=len(have), **r) for r in rows]
+    if RGB_SIZE.exists():
+        green = core.normalize_keys(pd.read_parquet(RGB_SIZE))
+        green = green[green["rgb_qc_pass"].fillna(True).astype(bool)] if "rgb_qc_pass" in green else green
+        rows, _, have = size_baseline(green[[*core.KEYS, "rgb_green_cover"]], pids, n_boot=n_boot)
+        out += [dict(variant="size_only_green_cover", plants="all", n_plants=len(have), **r) for r in rows]
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -865,7 +1070,8 @@ def ablate(
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["ablate", "train"])
+    ap.add_argument("command", choices=["ablate", "train", "bench-lockbox"])
+    ap.add_argument("--name", default="fusion_v2", help="train: model name (tables, runs/fusion/<name>)")
     ap.add_argument("--cache", type=Path, nargs="+", default=[CACHE])
     ap.add_argument("--features", type=Path, default=FEATURES)
     ap.add_argument("--variants", nargs="*", default=list(VARIANTS))
@@ -880,9 +1086,15 @@ def main(argv=None) -> None:
         "--baseline", nargs=2, default=None, help="sensitivity: baseline window (two dates) instead of core.BASELINE"
     )
     ap.add_argument("--tag", default="", help="suffix for variant names in the ablation table (e.g. _base0902)")
+    ap.add_argument("--no-bench", action="store_true", help="ablate: skip the benchmark and size rows")
+    ap.add_argument("--min-ref", type=int, default=V2Config.min_ref, help="control plants needed for a run's reference")
     a = ap.parse_args(argv)
     t0 = time.time()
     window = tuple(pd.Timestamp(d).date() for d in a.baseline) if a.baseline else core.BASELINE
+    if a.command == "bench-lockbox":
+        bench_lockbox(a.features, a.n_boot, a.out, window)
+        print(f"benchmark on the lock-box: {time.time() - t0:.0f} s")
+        return
     rs = assemble(a.cache, a.features if a.features.exists() else None, baseline=window)
     if a.max_w1 is not None:
         if a.max_w1 < 0:  # auto: as many W1 plants as the larger deficit bed has
@@ -895,16 +1107,22 @@ def main(argv=None) -> None:
     if a.command == "ablate":
         out = a.out or (V2_CACHE / "ablation.parquet")
         out.parent.mkdir(parents=True, exist_ok=True)
-        ablate(rs, a.variants, a.device, a.n_boot, out, a.features if a.features.exists() else None, tag=a.tag,
-               baseline=window, epochs=a.epochs)  # fmt: skip
+        bench = a.features if a.features.exists() and not a.no_bench else None
+        ablate(rs, a.variants, a.device, a.n_boot, out, bench, tag=a.tag, baseline=window, epochs=a.epochs,
+               min_ref=a.min_ref)  # fmt: skip
         print(f"ablation: {time.time() - t0:.0f} s -> {out}")
         return
-    cfg = make_config(a.variant, epochs=a.epochs, n_boot=a.n_boot)
-    name = "fusion_v2"
+    cfg = make_config(a.variant, epochs=a.epochs, n_boot=a.n_boot, min_ref=a.min_ref)
+    name = a.name
     cv = cross_validate(rs, cfg, a.device, ckpt_dir=a.runs_dir / name)
     named = shared_setups(cv)
     tables = train.results(rs, named, name, cfg.n_boot)
+    scores = tables.pop("fusion_scores_runs")  # v1's table keeps v1's scores; v2 writes its own
     out = train.write(tables, name, a.out)
+    if name == "fusion_v2":
+        scores = scores.rename(columns={k: k.replace("detect_fusion_", "detect_fusion_v2_") for k in scores})
+        scores["date"] = pd.to_datetime(scores["date"]).dt.date
+        scores.to_parquet(out / "fusion_v2_scores_runs.parquet", index=False)
     train.save_oof(rs, named, a.runs_dir / name)
     info = dict(
         model=name, variant=a.variant, finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),

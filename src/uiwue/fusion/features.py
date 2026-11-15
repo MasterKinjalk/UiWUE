@@ -21,7 +21,9 @@ the plants that are new.
 from __future__ import annotations
 
 import argparse
+import io
 import time
+import zipfile
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -44,11 +46,14 @@ def _frame_stats(img: np.ndarray) -> list[float]:
     return out
 
 
-def run_features(run_dir: Path, frames: list[Path]) -> dict:
-    """One run: each statistic at each resolution, median over the frames (uiwue.thermal.run_row)."""
+def run_features(run_dir: Path, frames: list, read=None, csv_bytes: bytes | None = None) -> dict:
+    """One run: each statistic at each resolution, median over the frames (uiwue.thermal.run_row).
+    `read(frame)` returns the image (default: tifffile.imread of a path); zipped runs pass their
+    frames_thermal.csv as bytes."""
     import tifffile
 
-    s = np.array([_frame_stats(tifffile.imread(f).astype(np.float32)) for f in frames])
+    read = read or tifffile.imread
+    s = np.array([_frame_stats(np.asarray(read(f), dtype=np.float32)) for f in frames])
     med = np.median(s, axis=0)
     row = {}
     for i, res in enumerate(RESOLUTIONS):
@@ -59,7 +64,9 @@ def run_features(run_dir: Path, frames: list[Path]) -> dict:
         row[f"thermal_leaf_t_p10{sfx}"] = float(med[3 * i + 1])
         row[f"thermal_bg_t{sfx}"] = float(med[3 * i + 2])
     csv = run_dir / "frames_thermal.csv"
-    if csv.exists():
+    if csv_bytes is not None:
+        ts = pd.Timestamp(int(pd.read_csv(io.BytesIO(csv_bytes)).timestamp.median()), unit="ns", tz="UTC")
+    elif csv.exists():
         ts = pd.Timestamp(int(pd.read_csv(csv).timestamp.median()), unit="ns", tz="UTC")
     else:
         ts = pd.Timestamp(f"{run_dir.parent.name.replace('_', '-')} {run_dir.name}:10", tz="Europe/Berlin").tz_convert(
@@ -94,10 +101,58 @@ def plant_features(plant_dir: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def plant_features_zip(zpath: Path) -> pd.DataFrame:
+    """plant_features for a plant still in its download zip (thermal_<bed>_<plant>.zip, members
+    <bed>_<plant>/<YYYY_MM_DD>/<HH>/thermal_00N.tif), read without extracting it."""
+    import tifffile
+
+    pid = zpath.stem.split("_", 1)[1]
+    bed, plant = pid.split("_")
+    runs: dict[tuple[str, str], list[str]] = {}
+    csvs: dict[tuple[str, str], str] = {}
+    with zipfile.ZipFile(zpath) as z:
+        for name in z.namelist():
+            parts = name.split("/")
+            if len(parts) != 4 or parts[0] != pid or not parts[2].isdigit():
+                continue
+            if parts[3].startswith("thermal_") and parts[3].endswith(".tif"):
+                runs.setdefault((parts[1], parts[2]), []).append(name)
+            elif parts[3] == "frames_thermal.csv":
+                csvs[(parts[1], parts[2])] = name
+        by_day: dict[str, dict] = {}
+        for (day, hh), frames in runs.items():
+            try:
+                date = pd.Timestamp(day.replace("_", "-"))
+            except ValueError:
+                continue
+            slot = core.slot_for_hour(int(hh))
+            if not core.DATES[0] <= date.date() <= core.DATES[1] or not slot:
+                continue
+            rank = (int(hh) == slot, len(frames))
+            best = by_day.setdefault(day, {})
+            if slot not in best or rank > best[slot][0]:
+                best[slot] = (rank, hh, sorted(frames))
+        rows = []
+        read = lambda name: tifffile.imread(io.BytesIO(z.read(name)))
+        for day in sorted(by_day):
+            date = pd.Timestamp(day.replace("_", "-"))
+            for slot, (_, hh, frames) in sorted(by_day[day].items()):
+                csv = z.read(csvs[(day, hh)]) if (day, hh) in csvs else None
+                run_dir = Path(pid) / day / hh
+                try:
+                    rows.append(
+                        dict(bed=bed, plant=plant, date=date, hour=slot) | run_features(run_dir, frames, read, csv)
+                    )
+                except Exception as e:  # noqa: BLE001
+                    print(f"  {zpath.name}:{run_dir}: {e}")
+    return pd.DataFrame(rows)
+
+
 def _cached(plant_dir: Path, cache_dir: Path) -> Path:
-    out = cache_dir / f"{plant_dir.name}.parquet"
+    name = plant_dir.stem.split("_", 1)[1] if plant_dir.suffix == ".zip" else plant_dir.name
+    out = cache_dir / f"{name}.parquet"
     if not out.exists():
-        df = plant_features(plant_dir)
+        df = plant_features_zip(plant_dir) if plant_dir.suffix == ".zip" else plant_features(plant_dir)
         tmp = out.with_suffix(".tmp")
         df.to_parquet(tmp, index=False)
         tmp.replace(out)
@@ -118,6 +173,8 @@ def add_air(df: pd.DataFrame, data_dir: Path = core.DATA) -> pd.DataFrame:
 
 
 def build(roots: list[Path], out: Path, workers: int = 4, plants: list[str] | None = None) -> pd.DataFrame:
+    """Every plant folder under `roots` (first root wins), and for plants without a folder their
+    thermal_<bed>_<plant>.zip in any root."""
     cache_dir = out.parent / (out.stem + "_plants")
     cache_dir.mkdir(parents=True, exist_ok=True)
     dirs = {}
@@ -125,7 +182,12 @@ def build(roots: list[Path], out: Path, workers: int = 4, plants: list[str] | No
         for p in sorted(Path(root).iterdir()) if Path(root).is_dir() else []:
             if p.is_dir() and "_" in p.name and p.name not in dirs and (plants is None or p.name in plants):
                 dirs[p.name] = p
-    todo = [p for p in dirs.values() if not (cache_dir / f"{p.name}.parquet").exists()]
+    for root in roots:
+        for z in sorted(Path(root).glob("thermal_W*_*.zip")) if Path(root).is_dir() else []:
+            pid = z.stem.split("_", 1)[1]
+            if pid not in dirs and (plants is None or pid in plants):
+                dirs[pid] = z
+    todo = [p for name, p in dirs.items() if not (cache_dir / f"{name}.parquet").exists()]
     print(f"{len(dirs)} plants, {len(todo)} to read")
     t0 = time.time()
     with ProcessPoolExecutor(workers) as ex:

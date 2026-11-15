@@ -88,6 +88,32 @@ SCORES_CATALOGUE = pd.DataFrame(
             1,
             "Predicted leaf-clip shift from the turgor head, mean of the 5 fold models, external plants.",
         ),
+        # Written by python -m uiwue.fusion.v2 train to fusion_v2_scores_runs: fusion v2 (docs/fusion.md
+        # section 8), out of fold on the development plants (the lock-box plants are not in it).
+        (
+            "detect_fusion_v2_prob",
+            "Stress probability (fusion v2)",
+            "0-1",
+            1,
+            (
+                "Out-of-fold P(deficit) from fusion v2: each sensor's change from the plant's baseline and from "
+                "the control plants in the same run, plus the hand-made thermal features; 5 folds grouped by plant."
+            ),
+        ),
+        (
+            "detect_fusion_v2_stage",
+            "Severity stage (fusion v2)",
+            "stage",
+            1,
+            "Expected stage 0-3 from fusion v2's ordinal head (S0 healthy to S3 severe), out of fold.",
+        ),
+        (
+            "detect_fusion_v2_turgor",
+            "Turgor deviation (fusion v2)",
+            "raw units",
+            1,
+            "Predicted leaf-clip shift from fusion v2's turgor head, out of fold.",
+        ),
     ],
     columns=["column", "label", "unit", "direction", "description"],
 )

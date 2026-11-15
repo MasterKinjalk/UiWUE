@@ -380,12 +380,14 @@ def run(
     workers: int = 4,
     features: Path | None = None,
     only=None,
+    summary_path: Path | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict]:
     folds = load_folds(run_dir)
     if folds[0].get("design") == "v2":  # fusion v2 (uiwue.fusion.v2): its own inputs and references
         from uiwue.fusion import v2
 
-        tables, info, _ = v2.run_new(caches, folds, model_name, device, n_boot, traits, labels, features, only)
+        tables, info, _ = v2.run_new(caches, folds, model_name, device, n_boot, traits, labels, features, only,
+                                     summary_path)  # fmt: skip
         return tables, info
     rs = train.assemble(caches, labels=labels)
     seen = seen_plants(folds)
@@ -452,6 +454,7 @@ def main(argv=None) -> None:
     tables, info = run(
         a.cache, a.runs_dir / a.model, a.model, a.device, a.n_boot, a.data_dir, traits, workers=a.workers,
         features=a.features, only=LOCKBOX if a.lockbox else None,
+        summary_path=(a.features.parent / f"lockbox_{a.model}_summary.parquet") if a.lockbox else None,
     )  # fmt: skip
     if a.lockbox:  # same layout as the external test, own table names
         tables = {k.replace("fusion_external_", "fusion_lockbox_"): v for k, v in tables.items()}
