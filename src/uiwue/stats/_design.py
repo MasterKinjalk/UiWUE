@@ -30,7 +30,7 @@ TUNE_CONTROLS = core.DEV_CONTROLS
 CONFIRM_CONTROLS = core.CONFIRM_CONTROLS
 
 # Bookkeeping suffixes that are never traits (6.2).
-_NOT_TRAIT = ("_mad", "capture_hour", "timestamp_utc", "n_frames_ok")
+_NOT_TRAIT = ("_mad", "capture_hour", "timestamp_utc", "n_frames_ok", "n_frames_used")
 
 
 def derived_dir() -> Path:
