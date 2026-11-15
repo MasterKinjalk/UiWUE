@@ -153,6 +153,32 @@ def ranked(onsets: pd.DataFrame, group: str = "all") -> pd.DataFrame:
     return o.sort_values(["_rob", "_on", "early_auc"], ascending=[True, True, False]).drop(columns=["_rob", "_on"])
 
 
+def shown(onsets: pd.DataFrame, group: str = "all") -> pd.DataFrame:
+    """The group's signals worth reading, earliest first: no flag, an onset, and no later than plant size alone
+    (the floor). Each sensor keeps its earliest clean signal, and the size baseline stays as the floor. The rest
+    is noise: it stays in the full tables only."""
+    o = ranked(onsets, group)
+    if o.empty:
+        return o
+    size = o["is_size_baseline"].fillna(False).astype(bool)
+    rob = o["robust_onset_day"] if "robust_onset_day" in o.columns else o["onset_day"]
+    clean = ~flagged(o) & rob.notna() & ~size
+    floor = rob[size].min()
+    early = (rob <= floor) if pd.notna(floor) else pd.Series(True, index=o.index)
+    first = o.index.isin(o[clean].groupby("sensor").head(1).index)
+    return o[size | (clean & (early | first))]
+
+
+def key_signals(onsets: pd.DataFrame) -> frozenset[str]:
+    """Signals that pass ``shown`` for at least one deficit group (W2, W3 or both), without the size baseline:
+    the app's short list of sensor traits."""
+    out: set[str] = set()
+    for group in onsets["group"].dropna().unique():
+        o = shown(onsets, group)
+        out |= set(o.loc[~o["is_size_baseline"].fillna(False).astype(bool), "signal"])
+    return frozenset(out)
+
+
 def default_signals(onsets: pd.DataFrame, group: str = "all") -> list[str]:
     """Earliest robust-onset trait per sensor that no check flags, plus the size baseline."""
     o = ranked(onsets, group)

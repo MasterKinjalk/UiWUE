@@ -15,7 +15,9 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[3]
-DERIVED = REPO / "derived"
+# The tables the app and the analyses read. UIWUE_DERIVED moves it: a run on someone's own data
+# (uiwue.pipeline) writes to its own workspace and never to the repo's derived/.
+DERIVED = Path(os.environ.get("UIWUE_DERIVED") or REPO / "derived")
 DATA = Path(os.environ.get("UIWUE_DATA", REPO / "data"))  # raw ADA data, local only
 
 KEYS = ["bed", "plant", "date", "hour"]

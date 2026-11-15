@@ -1,5 +1,6 @@
 """Home: the experiment in one line, its finding in numbers read live from the tables, and the way to every page."""
 
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -193,6 +194,8 @@ def numbers(df):
 def photos():
     """One deficit plant from above, the day before irrigation off and on day 10: what the numbers measure."""
     bed, plant = PHOTO_PLANT
+    if os.environ.get("UIWUE_RUN_NAME"):  # a run's own tables: the trial's photos are not of its plants
+        return None
     shots = []
     for name, day in PHOTOS:
         if not (ASSETS / name).exists():
@@ -380,7 +383,11 @@ def page_links():
     """One tile per page, in the nav's order: its tag, its name and what the reader learns there."""
     pages = {p["path"]: p for p in dash.page_registry.values()}
     order = [path for _, _, items in NAV for path, _ in items]
-    order += [p for p in sorted(pages, key=lambda k: pages[k].get("order") or 0) if p not in order and p != "/"]
+    order += [
+        p
+        for p in sorted(pages, key=lambda k: pages[k].get("order") or 0)
+        if p not in order and p != "/" and pages[p].get("nav", True)
+    ]
     out = []
     for path in order:
         p = pages.get(path)
@@ -420,6 +427,29 @@ def page_tiles():
             html.Div([html.Span("More", className="uw-kicker uw-path-head"), *tiles.values()], className="uw-path")
         )
     return html.Nav(cols, className="uw-paths", **{"aria-label": "Pages"})
+
+
+def own_data():
+    """The way in for a data folder of one's own: one tile under the path, to New run (a page outside the nav)."""
+    p = next((p for p in dash.page_registry.values() if p["path"] == "/new-run"), None)
+    if p is None:
+        return None
+    return html.Nav(
+        [
+            html.Span("Your data", title=p.get("description"), className="uw-kicker"),
+            dcc.Link(
+                [
+                    html.Span("NR", className="uw-disc", style={"background": C["slate-600"]}, **{"aria-hidden": "true"}),
+                    html.Span([html.B(p["name"]), html.Span("your folder, the same steps", className="uw-pagetile-blurb")]),
+                ],
+                href=p["relative_path"],
+                title=p.get("description") or p["name"],
+                className="uw-pagetile uw-gray",
+            ),
+        ],
+        className="hm-own",
+        **{"aria-label": "Your data"},
+    )
 
 
 # ---------------------------------------------------------------- what each table covers
@@ -505,5 +535,5 @@ def layout(**_):
         className="hm-hero",
     )
     if df is None:
-        return html.Div([hero, finding, not_available("Trait table"), page_tiles()], className="uw-home")
-    return html.Div([hero, finding, race(), page_tiles(), coverage()], className="uw-home")
+        return html.Div([hero, finding, not_available("Trait table"), page_tiles(), own_data()], className="uw-home")
+    return html.Div([hero, finding, race(), page_tiles(), own_data(), coverage()], className="uw-home")

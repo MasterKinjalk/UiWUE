@@ -15,6 +15,7 @@ import plotly.io as pio
 from dash import dcc, html
 
 from uiwue.core import BASELINE, CUTOFF, REWATER, catalogue, read_table
+from uiwue.detect import figures as _figures
 from uiwue.detect.data import excluded as _left_out
 
 _TOKENS = json.loads((Path(__file__).resolve().parents[1] / "design" / "tokens.json").read_text(encoding="utf-8"))
@@ -220,6 +221,38 @@ def kept_trait(signal) -> bool:
     return not _left_out(str(signal))
 
 
+KEY_OTHER = frozenset(  # the non-camera columns the pickers keep: one per source, the one each page leads with
+    {
+        "detect_stress_prob",
+        "detect_fusion_v2_prob",
+        "diurnal_score_ref",
+        "truth_turgor_shift",
+        "env_air_t",
+        "env_vpd",
+        "env_light_wm2",
+    }
+)
+KEY_SENSORS = ("thermal_", "depth_", "rgb_")  # the cameras detect/onsets scores
+
+
+def key_traits(columns) -> list:
+    """The columns worth a place in a signal picker, in their order. A camera trait: it passes Early warning's
+    noise rule (``figures.shown``: not flagged, an onset, no later than plant size alone) for at least one deficit
+    bed; every kept camera trait while detect/onsets is missing. Any other source: its lead column (``KEY_OTHER``)."""
+    o = read_table("detect", "onsets")
+    if o is None or o.empty or not {"signal", "group", "kind", "is_size_baseline"} <= set(o.columns):
+        cameras = None
+    else:
+        cameras = _figures.key_signals(o[o["signal"].map(kept_trait)])
+
+    def keep(c):
+        if c.startswith(KEY_SENSORS):
+            return kept_trait(c) if cameras is None else c in cameras
+        return c in KEY_OTHER or not c.startswith(("detect_", "diurnal_", "truth_", "env_"))
+
+    return [c for c in columns if keep(str(c))]
+
+
 def placebo_chip(signal):
     """'bed effect' chip when Jack's placebo test (detect/placebo) flags the trait: the beds differed before irrigation
     off. The placebo table is read through the kept-trait filter (``kept_trait``), as the detect pages read theirs."""
@@ -420,9 +453,10 @@ def unit_of(column):
 
 
 def trait_options(columns, stress_only=False):
-    """Dropdown options for catalogue traits present in `columns`, by their plain names (``plain``)."""
+    """Dropdown options for the key catalogue traits (``key_traits``) present in `columns`, by their plain names."""
     cat = catalogue().drop_duplicates("column")
     cat = cat[cat.column.isin(columns) & ((cat.direction != 0) if stress_only else True)]
+    cat = cat[cat.column.isin(key_traits(cat.column))]
     return [{"label": label_of(r.column), "value": r.column} for r in cat.itertuples()]
 
 

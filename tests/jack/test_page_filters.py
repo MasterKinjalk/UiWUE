@@ -207,11 +207,12 @@ def test_early_warning_ranks_and_counts_after_the_filter(detect):
     assert [t.children[0].children[0].children for t in tiles[:2]] == ["Thermal", "3D"]
     assert "day 4" in thermal and "day 6" in depth and "Leaf area" in depth and "cyl" not in depth
     assert "11 deficit · 7 control plants" in tiles_text  # n on the size tile and the 3D tile
-    # only kept flagged rows are counted: hull volume (n_points is dropped)
-    assert [f.children for f in flags] == ["1 flagged"]
+    # only kept rows are counted as cut: the flagged hull volume (n_points is dropped at the source)
+    assert [f.children for f in flags] == ["1 cut"]
     assert "Volume" in flags[0].title and "n points" not in flags[0].title  # the plain name (components.PLAIN)
 
     names = [y for tr in fig.data for y in tr.y]
+    assert "Volume" not in names  # a cut signal is not charted; it stays in the All signals table
     assert not any("cyl" in y or y in ("n points", "droop index") for y in names)
     assert "Size only" in names
     assert fig.layout.yaxis.automargin and fig.layout.showlegend is False

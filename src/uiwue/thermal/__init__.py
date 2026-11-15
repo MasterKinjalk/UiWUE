@@ -153,8 +153,11 @@ def control_reference(df, col):
     return ref
 
 
-def build(data_dir=DATA):
-    plants = sorted(p for p in (Path(data_dir) / "thermal").iterdir() if p.is_dir())
+def build(data_dir=DATA, plants=None):
+    """``plants``: full IDs such as W1_A2 to keep (default: every plant folder)."""
+    plants = sorted(
+        p for p in (Path(data_dir) / "thermal").iterdir() if p.is_dir() and (not plants or p.name in plants)
+    )
     with ProcessPoolExecutor() as ex:
         df = pd.DataFrame([r for rows in ex.map(plant_rows, plants) for r in rows])
     df["thermal_leaf_air_dt"] = df.thermal_leaf_t - at_times(air(data_dir).air_t, df.thermal_timestamp_utc)
@@ -168,8 +171,9 @@ def build(data_dir=DATA):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--data-dir", type=Path, default=DATA)
+    ap.add_argument("--plants", nargs="*", help="e.g. W1_A2 W2_J5 (default: all found)")
     args = ap.parse_args()
-    df = build(args.data_dir)
+    df = build(args.data_dir, args.plants)
     path = write_table(df, "thermal", "traits_runs", CATALOGUE)
     print(f"{len(df)} runs, {df[['bed', 'plant']].drop_duplicates().shape[0]} plants -> {path}")
     print(df.groupby("bed").plant.nunique().to_dict(), "| missing air:", int(df.thermal_leaf_air_dt.isna().sum()))

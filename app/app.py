@@ -2,16 +2,20 @@
 
     python app/app.py                      # then open http://127.0.0.1:8050
     python app/app.py --port 8060 --debug  # other port, hot reload
+    python app/app.py --runs               # the New run page may start runs on a folder of your own data
 
 Works from the repo root or from app/. The navbar draws the pages as a path in four groups
 (``components.NAV``: See, Detect, Act, Data); a registered page missing there still shows, after
 them, by its ``order``. On a phone the groups fold into one menu button that names the current page.
 A nav link carries the selection (?bed=&plant=&day=) to the next page when that page's layout reads it.
+A page registered with ``nav=False`` (New run) is reached from Home only. UIWUE_DERIVED points the app at
+another set of tables (a run's workspace); UIWUE_RUN_NAME then names that run beside the wordmark.
 """
 
 import argparse
 import inspect
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -43,7 +47,11 @@ TOKENS_CSS = (HERE.parent / "design" / "tokens.css").read_text(encoding="utf-8")
 app.index_string = app.index_string.replace("{%css%}", "{%css%}\n<style>" + TOKENS_CSS + "</style>")
 server = app.server  # for a WSGI server, e.g. waitress-serve --port 8050 app:server
 
-pages = sorted(dash.page_registry.values(), key=lambda p: (p.get("order") is None, p.get("order") or 0))
+pages = sorted(  # the pages of the nav; a page registered with nav=False is reached from Home only
+    (p for p in dash.page_registry.values() if p.get("nav", True)),
+    key=lambda p: (p.get("order") is None, p.get("order") or 0),
+)
+RUN_NAME = os.environ.get("UIWUE_RUN_NAME")  # set when this app shows a run's workspace, not the repo's derived/
 
 
 def nav_groups(registry=None):
@@ -91,6 +99,13 @@ navbar = html.Header(
     [
         dcc.Location(id="uw-url"),
         dcc.Link("UiWUE", href="/", title="Home: the experiment and its findings", className="uw-brand"),
+        html.Span(
+            RUN_NAME,
+            title=f"This app shows the tables of run {RUN_NAME} (New run), not the committed ones",
+            className="uw-chip uw-chip-context uw-runchip",
+        )
+        if RUN_NAME
+        else None,
         html.Nav(nav_links("uw-ng"), className="uw-navrow", **{"aria-label": "Pages"}),
         html.Details(  # phone width: one button naming the page, the same groups below it
             [
@@ -149,7 +164,10 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8050)
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to serve the local network")
     p.add_argument("--debug", action="store_true", help="hot reload and the Dash error panel")
+    p.add_argument("--runs", action="store_true", help="let the New run page start runs (off by default: demo-safe)")
     args = p.parse_args(argv)
+    if args.runs:
+        os.environ["UIWUE_RUNS"] = "1"  # read by pages/new_run.py when a run is started
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 

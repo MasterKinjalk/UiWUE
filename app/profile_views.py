@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import threed_canopy as tc
-from components import BAND, GRAPH_CONFIG, C, mark_stress_period, page_href, placebo_chip, plain, tech
+from components import BAND, GRAPH_CONFIG, C, key_traits, mark_stress_period, page_href, placebo_chip, plain, tech
 from components import bed_effect_chip as _bed_effect_chip
 from dash import dcc, html
 
@@ -63,7 +63,7 @@ HEADLINES = (
     ("IR", "thermal_leaf_ref_dt", "Leaf − control leaf"),
     ("IR", "diurnal_score_ref", "Thermal score"),
     *THREED,
-    ("RGB", "rgb_exg", "Greenness"),
+    ("RGB", "rgb_ngrdi", "Green–red index"),  # RGB's one clean signal (greenness is flagged: a bed effect)
     ("CLIP", "truth_turgor_shift", "Leaf-clip shift"),
     ("MODEL", "detect_stress_prob", "Stress probability"),
     ("MODEL", "detect_fusion_v2_prob", "Fusion probability"),  # out-of-fold thermal model, 171 development plants
@@ -143,6 +143,7 @@ def trait_choices(df, stress_only=False, rows=None):
     """Dropdown options for catalogue traits with numeric values in df (or in `rows`, one plant's runs); of the 3D
     traits only the three the app shows (THREED), not the dropped noisy ones."""
     cat = catalogue().drop_duplicates("column")
+    cat = cat[cat.column.isin(key_traits(cat.column))]  # the app's short list: no flagged, late or unscored signal
     have = rows if rows is not None else df
     out = []
     for r in cat.itertuples():

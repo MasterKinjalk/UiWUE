@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -132,7 +133,10 @@ NEAR_DAYS = 1  # the drawn run is the one closest to the plant's median over the
 
 
 def clouds_dir() -> Path:
-    """``data/derived/threed/clouds``, read from ``uiwue.core.DATA`` at call time (UIWUE_DATA moves it)."""
+    """``data/derived/threed/clouds``, read from ``uiwue.core.DATA`` at call time (UIWUE_DATA moves it);
+    UIWUE_CLOUDS names the folder itself (a run's workspace, ``uiwue.pipeline``)."""
+    if os.environ.get("UIWUE_CLOUDS"):
+        return Path(os.environ["UIWUE_CLOUDS"])
     return Path(core.DATA) / "derived" / "threed" / "clouds"
 
 

@@ -104,6 +104,28 @@ def display_names(o: pd.DataFrame) -> np.ndarray:
     return np.where(size, components.SIZE_ONLY, o["label"].astype(str))
 
 
+shown = figures.shown  # the one noise rule, shared with the other pages' signal pickers
+
+
+def cut_chip(onsets, group) -> list:
+    """One chip counting the signals left out, the reason for each on hover."""
+    o = figures.ranked(onsets, group)
+    cut = o[~o.index.isin(shown(onsets, group).index)]
+    if cut.empty:
+        return []
+    flag = figures.flagged(cut)
+    parts = []
+    if flag.any():
+        parts.append("beds already differed on watered days: " + ", ".join(cut.loc[flag, "label"].astype(str)))
+    if (~flag).any():
+        parts.append("no earlier than plant size alone: " + ", ".join(cut.loc[~flag, "label"].astype(str)))
+    return [
+        chip_link(
+            f"{len(cut)} cut", "Left out as noise. " + "; ".join(parts) + ". All signals: table below.", "bed-effect"
+        )
+    ]
+
+
 def _clip(onsets, group):
     """(median clip-turgor onset day, clip plants) of the group's imaged deficit plants; (nan, 0) if none."""
     o = figures.ranked(onsets, group)
@@ -116,11 +138,11 @@ def _clip(onsets, group):
 def ranking(onsets, group):
     """figures.onset_ranking (the onset only; the contract rule on hover) with room for the names, each signal's
     plant counts on hover, and the leaf clip's onset as the ground-truth line."""
-    fig = figures.onset_ranking(onsets, group, rule=False)
+    o = shown(onsets, group)
+    fig = figures.onset_ranking(onsets[onsets["signal"].isin(o["signal"])], group, rule=False)
     fig.update_layout(showlegend=False)  # the panel's legend names the sensors
     fig.update_yaxes(automargin=True)
     fig.update_xaxes(title="day since irrigation off")
-    o = figures.ranked(onsets, group)
     counts = dict(zip(display_names(o), zip(o["n_deficit"], o["n_control"], strict=True), strict=True))
     for tr in fig.data:
         if tr.y is None or "<extra>" not in (tr.hovertemplate or ""):
@@ -231,7 +253,6 @@ def evidence_legend():
         for k, lbl in (("Thermal", "Thermal"), ("Depth", "3D"), ("RGB", "RGB"), ("size", components.SIZE_ONLY))
     ]
     items += [
-        html.Span([html.Span("◇", **{"aria-hidden": "true"}), "flagged"], title="beds differed on watered days"),
         html.Span([html.Span("┆", **{"aria-hidden": "true"}), "leaf clip"], title="ground-truth onset"),
     ]
     return html.Div(items, className="uw-legend")
@@ -288,8 +309,8 @@ def layout(group=None, bed=None, plant=None, day=None, **_):
                                     className="uw-scroll",
                                 ),
                                 evidence_legend(),
-                                hover=f"{ONSET_HOVER} Dot: the day; open diamond: flagged, not ranked. Click a dot "
-                                "for its daily score."
+                                hover=f"{ONSET_HOVER} Flagged signals and those later than plant size alone "
+                                "are left out. Click a dot for its daily score."
                                 + (f" Plant counts from the detect run of {when}." if when else ""),
                                 extra=[html.Span(id="ew-flags")],
                             ),
@@ -409,19 +430,7 @@ TABLE_COLUMNS = {
 def _update(group):
     onsets = load_result("onsets")
     o = figures.ranked(onsets, group)
-    flagged = o[figures.flagged(o)]
-    flags = (
-        [
-            chip_link(
-                f"{len(flagged)} flagged",
-                "The beds already differed on watered days, so these are not ranked: "
-                + "; ".join(flagged["label"].astype(str)),
-                "bed-effect",
-            )
-        ]
-        if len(flagged)
-        else []
-    )
+    flags = cut_chip(onsets, group)
     if o.empty:
         tbl = not_available("Onsets for this group")
     else:
@@ -473,7 +482,7 @@ def _signal(group, signal):
 
 
 def signal_options(onsets, group) -> dict:
-    o = figures.ranked(onsets, group)
+    o = shown(onsets, group)
     return dict(zip(o["signal"], display_names(o), strict=True))
 
 
