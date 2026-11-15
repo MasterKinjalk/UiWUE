@@ -31,9 +31,10 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 .uw-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .uw-swatch { width: 22px; height: 16px; border-radius: 3px; border: 1px solid var(--uw-rule); box-sizing: border-box; }
 
-/* controls: at least 44 px */
-.uw-label { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--uw-ink-muted); }
-.uw-select { min-height: 44px; width: auto; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; font-size: 15px; }
+/* controls: at least 44 px. A select is as wide as its longest option; it may shrink (ellipsis) to its row,
+   never push the page sideways (DESIGN 8) */
+.uw-label { display: inline-flex; align-items: center; gap: 8px; margin: 0; min-width: 0; max-width: 100%; font-size: 13px; color: var(--uw-ink-muted); }
+.uw-select { min-height: 44px; width: auto; min-width: 0; max-width: 100%; text-overflow: ellipsis; border: 1px solid var(--uw-gray-500); border-radius: var(--uw-radius-md); color: var(--uw-ink-display); font-weight: 700; font-size: 15px; }
 .uw-btn { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; align-self: flex-start; border-radius: var(--uw-radius-md); font-weight: 700; text-decoration: none; }
 .uw-btn-primary { background: var(--uw-teal-700); border: 1px solid var(--uw-teal-700); color: var(--uw-surface); }
 .uw-btn-primary:hover { background: var(--uw-navy); border-color: var(--uw-navy); color: var(--uw-surface); }
@@ -144,4 +145,7 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
   .uw-side { max-width: none; }
   .uw-cover-meta { display: none; }
   .uw-cover-name { flex-basis: 120px; }
+  /* a readout grid of more than one row of three takes two columns ("24 Aug–22 Sep"); one row of three stays */
+  .uw-readouts-3:has(> :nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uw-readouts .uw-section { white-space: normal; }  /* a section-size value wraps in its cell, not past it */
 }

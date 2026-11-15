@@ -61,7 +61,7 @@ image folders + greenhouse sensors + weather station
   -> one extraction module per sensor (thermal, 3D depth, RGB, hyperspectral, ground truth)
   -> one run-level table: bed, plant, date, scheduled flyover
   -> shared statistics: baselines, placebo window, onset day, held-out check
-  -> app: Home · Plant profile · Bed map · 3D Browser · 3D Compare · 3D Export
+  -> app: Home · Plant profile · Bed map · 3D canopy
           · [Early warning] · [Sensor comparison] · Daily rhythm · Irrigation advisor
 ```
 

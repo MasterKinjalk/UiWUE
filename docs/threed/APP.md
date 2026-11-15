@@ -1,216 +1,220 @@
-# UiWUE app: the 3D phenotyping pages
+# UiWUE app: the 3D canopy page
 
-The app is a Dash web app. A biologist opens it in a browser tab. This file
-covers the app shell and the three Challenge 3 pages (deliverable D5 in
-`plan/Kinjalk-Work-Plan.md`, section 8). It also explains how a teammate adds a page.
+One page, **3D canopy** at `/threed`, holds the Challenge 3 work in the app (deliverable D5 in
+`plan/Kinjalk-Work-Plan.md`, section 8). It replaced three earlier pages (3D Browser, 3D Compare,
+3D Export) in November 2026; the review behind that is in `docs/threed/PRESENTATION-NOTES.md`.
+
+The answer it gives: **3D does not warn first. It measures how far each plant's canopy collapses
+without water and whether it comes back.** Deficit plants lose leaf area and height; after
+re-watering, height returns and leaf area does not.
 
 ## Run
 
 From the repository root:
 
 ```bash
-.venv/Scripts/python.exe app/app.py                  # http://127.0.0.1:8050
+.venv/Scripts/python.exe app/app.py                  # http://127.0.0.1:8050/threed
 .venv/Scripts/python.exe app/app.py --port 8060      # another port
 .venv/Scripts/python.exe app/app.py --debug          # hot reload and the Dash error panel
-.venv/Scripts/python.exe app/app.py --host 0.0.0.0   # serve the local network (demo machine)
 ```
 
-On macOS or Linux, use `.venv/bin/python`.
+On macOS or Linux, use `.venv/bin/python`. `UIWUE_DATA=<dir>` reads the local cloud cache and RGB
+frames from another data folder (default `data/`).
 
-| Variable | Effect |
+Deep link: `/threed?bed=W2&plant=O8&day=12` (`date=2025-09-15` works too). `bed` and `plant` pick
+the plant, the page's one selection, drawn in navy; `day` is the day drawn as NOW against a
+baseline day (THEN). A day whose runs all failed QC opens on the nearest drawable day. The page
+writes the selection back into the address bar.
+
+Without a link the page opens on a default chosen by rule (`threed_canopy.default_plant`): of the
+W2 plants whose peak-to-trough losses in height and leaf area both sit inside the bed's middle half
+and whose NOW run on a trough day is below their baseline on all three traits (so the card agrees
+with the tiles), the one with the largest visible height drop from THEN to NOW that has drawable
+clouds on a baseline day and a trough day. On the 216-plant table that is W2 O8 (day −3 against
+day 12: leaf area −67 %, height −50 %, volume −80 %).
+
+## What the page shows
+
+The layout lives in `app/pages/threed.py` and the figures in `app/threed_figures.py`. Every number
+comes from the data layer `app/threed_canopy.py`:
+
+| Part | What it shows | Data |
+|---|---|---|
+| Bed tiles | height and leaf area lost, peak to trough; what came back after re-watering; the 3D onset against thermal | `headline()`, `onsets()` |
+| The plant, then and now | plant-only point clouds of THEN and NOW with one camera and one scale, soil drawn as a disc with the 85 mm crop ring, a 50 mm scale bar. NOW draws the day's most typical QC-pass run (closest to the plant's per-trait median over that day and the days either side, so one odd run is never the picture); THEN draws the baseline-day run closest to the plant's baseline. Detached edge points are not drawn (below) | `cloud_days()`, `then_run()`, `plant_cloud()`, `axis_ranges()` |
+| Plant card | the three traits of the run drawn as NOW, as change from the plant's baseline, so the numbers describe the picture; the day's mean over its QC-pass runs is on hover. No status mark (the leaf-area rule also flags controls) | `cloud_days()` (`<trait>_run_pct`), `plant_days()` |
+| Side view | highest kept plant point per 5 mm of x of the same two runs, THEN dotted and NOW filled: where wilting reads best, and a view that needs no WebGL | `side_profile()` |
+| Deficit − control | per day, the mean change of W2 minus that of W1 (thick amber, drawn on top), with a 95 % plant-bootstrap band and the spread seen on watered days; the chosen plant minus the W1 mean as a thin navy line under it | `gap()`, `plant_days()` |
+| Collapse and recovery | every plant against its own peak (days 1 to 3): trough (days 10 to 12), re-watered (days 15 to 16). Per bed the median plant (line) and the middle half of the plants (band), one dot per plant (click to show it), the chosen plant in navy | `windows()` |
+| Onset | robust onset of the three 3D traits (forest) beside the first thermal and RGB signals and the size baseline (neutral), with a whisker over the 9, 12, 15 and 18 h runs scored alone; an `older table` chip with the n when `derived/detect` predates the 3D table | `onsets()`, `onsets_info()` |
+| `bed effect` chip | on the traits the placebo or the E2 check flags (on the 216-plant table: all three) | `bed_effects()` |
+
+**Detached edge points** (`stray_mask`, display only). Plant points are clustered by single linkage
+at 12 mm. A cluster is not drawn when it floats over the plant (its lowest point is above the
+highest point kept and it is at least 15 mm from every point kept) and it either enters through the
+crop wall (a point within 3 mm of the 85 mm cylinder, at most 10 % of the points) or is a speck
+(under 1 % of the points): a neighbour's leaf or debris the crop cut. The trait table keeps every
+point; the panel's run label says on hover how many points were not drawn. Of the 9,746 QC-pass
+daytime runs of W1 and W2 with a cloud, 346 (3.6 %) have such points, a median of 6 (at most 9 % of a
+cloud); checked by image on tall controls (their top leaves stay: a leaf of the plant joins it from
+below) and on sparse wilted plants.
+
+When the cloud cache is missing (it is not in git), the cloud panel shows the empty state and the
+trait charts still draw. When `derived/threed/traits_runs.parquet` is missing, the page shows the
+empty state. The page never draws a synthetic cloud or synthetic numbers.
+
+## Data
+
+| File | Read by | Used for |
+|---|---|---|
+| `derived/threed/traits_runs.parquet` (committed) | `runs()`, through `uiwue.core.read_table` like every page | every number; W1 (control, 72 plants) against W2 (deficit, 72 plants); W3 (72 plants) shown one by one |
+| `derived/detect/onsets.parquet`, `onsets_by_slot.parquet` | `onsets()`, `onsets_info()` | onsets, read as computed by `uiwue.detect`; no second onset rule. Refresh with `python -m uiwue.detect.run` after a new 3D table |
+| `derived/truth/rwc_leaves.parquet` | `sampled_leaf()` | the day a W3 plant lost a leaf to the water-content sampling |
+| `derived/detect/placebo.parquet`, `derived/threed/results/e2_bed_baseline.csv` | `bed_effects()` | the `bed effect` chip |
+| `data/derived/threed/clouds/<bed>_<plant>/<YYYY-MM-DD>_<HH>.npz` (local) | `cloud_days()`, `plant_cloud()` | the point clouds |
+| `data/rgb/<bed>_<plant>/<YYYY_MM_DD>/<HH>/rgb_<frame>.jpg` (local) | `rgb_frame()` | the RGB frame a cloud was built from |
+
+W3 is never pooled into the deficit group (most of its plants lost a leaf to the water-content
+sampling), so every bed number, band, dot and onset compares W1 with W2 only. W3 plants can still be
+picked one by one: they carry a `not pooled` chip, and their navy line is drawn against the W1 and
+W2 distributions. Tables and clouds are cached by path and modification time
+(`threed_canopy.table_key()`): a rewritten file is picked up on the next callback, with no restart.
+
+### Method
+
+- **Day:** days since irrigation off, day 0 = 3 Sep 2025; W2 was re-watered on day 12 at 18:35.
+- **Plant-day value:** the mean of the plant's QC-pass runs at 9, 12, 15 and 18 h. 06 h runs are
+  dark and are not used. QC-failed runs never enter a mean.
+- **Baseline:** the median of the plant's plant-day values on days −4 to −1 (30 Aug – 2 Sep), the
+  app's convention (`design/DESIGN.md` section 7.2). Values are % change from it. A plant without a
+  baseline keeps its rows; its change shows `–`.
+- **Loss and recovery:** each plant's trough and re-watered windows against its own peak window
+  (paired, so they need no baseline).
+- **Intervals:** 2,000 resamples of plants, seeded, so a band is the same on every load.
+
+## The three traits
+
+| Trait | Label | Unit | Role |
+|---|---|---|---|
+| `depth_leaf_area_est` | Leaf area | cm² | leads: separates first and does not come back |
+| `depth_height_p75` | Height | mm | the reversible (turgor) axis; carries the `bed effect` chip (placebo and E2) |
+| `depth_hull_volume` | Volume | cm³ | secondary; carries the `bed effect` chip (placebo) |
+
+On the committed 216-plant table (computed live by the page; numbers as of 15 Nov 2026; mean over
+plants with a 95 % plant-bootstrap interval):
+
+| Finding | Deficit (W2) | Control (W1) |
+|---|---|---|
+| Leaf area, peak → trough | −61 % (−65 to −57), n 68 | +1 % (−4 to +6), n 71 |
+| Height, peak → trough | −31 % (−38 to −24), n 68 | +20 % (+17 to +24), n 71 |
+| Leaf area, peak → re-watered | −49 % (−52 to −45), n 70 | +3 % (−2 to +8), n 67 |
+| Height, peak → re-watered | +6 % (+2 to +11), n 70 | +23 % (+19 to +26), n 67 |
+
+Height loss spreads widely (−70 % to +44 %; median −36 %): 32 of 68 deficit plants lose more than
+40 %, 13 lose 6 % or less (11 of them grow). 64 of 68 lose at least 33 % of their leaf area. On the
+28-plant table the numbers were −39 % height, −64 % leaf area, −3 % and −54 % after re-watering.
+Robust onsets, W2 against W1 (`derived/detect`, still computed on the 28-plant table, n 14 + 10):
+thermal day 4, leaf area day 5, RGB and volume day 6, height day 9. 3D is about a day behind
+thermal; its part is how much each plant lost and what came back.
+
+### What was removed, and why
+
+Noisy or redundant signals are left out of the analysis and the page, not hidden behind a toggle.
+
+| Removed | Why |
 |---|---|
-| `UIWUE_SYNTHETIC=1` | always use synthetic data, even when the real files exist |
-| `UIWUE_ROOT=<dir>` | read `data/` from another repository root (the default is the parent of `app/`) |
+| `droop_index` | no signal (its interval spans 0); too noisy from day to day |
+| `inclination_mean`, `inclination_sd` | no stress signal; both rise in both beds as the canopy grows |
+| `canopy_radius` | saturated at 80 to 81 mm by the 85 mm segmentation cylinder |
+| `projected_area` | saturated: the control is flat from day −2. It stays in the app as the size-only reference beside detection results (`design/DESIGN.md` section 7.6) |
+| `n_points`, `height_p50`, `height_p95`, `compactness`, `cyl_*` | redundant with a kept trait (ρ 0.94 to 0.98) or later |
+| midday-dip and overnight-recovery models | a null: midday minus 09 h does not differ between beds; 06 h runs are dark |
+| trait-against-turgor tab | correlations near 0 once detrended; its table existed on one machine only |
+| the "reliable" badge (E1) | it compared the signal with within-run noise, not with day-to-day repeatability |
 
-The Bootstrap theme (FLATLY) loads from a CDN. Without internet, the pages still
-work, but they lose their styling.
+### Caveats (on hover and chips on the page)
 
-## Synthetic data
+- One control bed: treatment and bed cannot be separated.
+- W2 heights already grew more slowly before day 0 (E2), hence change from each plant's own
+  baseline and the `bed effect` chip on height.
+- W2 runs fail QC more often on days 6 to 11, and the failed runs are the smaller plants, so
+  QC-pass means understate the loss.
+- Every plant of the 216-plant table has a baseline; a plant without one would keep its rows and
+  show `–`.
+- The onsets come from `derived/detect`, last computed on the 28-plant table: the page marks them
+  `older table` with their n until `python -m uiwue.detect.run` is run again.
+- Heights jump between day −3 and day −2; area traits show a day-0 gap in the placebo that is gone
+  on days 1 to 3.
+- "Leaf area" is measured inside the fixed 85 mm plant cylinder, not on the whole plant.
+- Onset days move by 1 to 3 days with the time-of-day slot: quote the robust daytime onset and
+  its slot range.
 
-The pages read the files named in `src/uiwue/threed/schema.py`, the shared
-contract. The app uses the synthetic table and clouds from `schema.synthetic_runs()`
-and `schema.synthetic_cloud()` in either of these cases:
+## Links in and out
 
-- `data/derived/threed/traits_runs.parquet` is missing, unreadable, or fails
-  `schema.validate_runs`
-- `UIWUE_SYNTHETIC=1` is set
-
-Every 3D page then shows an orange **Synthetic data** banner that gives the reason.
-With real data, a grey line names the table, its size and when it was last updated.
-
-- **Clouds.** A real cached cloud is always used when its file exists. A synthetic
-  cloud appears only when the table is synthetic or no cloud has been cached yet.
-  Its title then says "synthetic cloud". When real clouds exist but not the
-  one for this run, the view says so. It never shows a made-up cloud.
-- **Results.** With a synthetic table, the result card shows rough E1 and E3
-  stand-ins computed from that table. They are labelled "synthetic placeholder,
-  not a result". With a real table, results come only from the files. A missing
-  file is reported in place of its numbers.
-- **RGB frames and leaf-clip readings** are always real files.
-
-The loaders cache each file by path and modification time. A file that the
-pipeline rewrites is picked up on the next page load or callback, with no restart.
-
-## Pages
-
-### 3D Browser (`/threed-browser`, `app/pages/threed_browser.py`)
-
-- **Controls:**
-  - bed and plant
-  - a date slider over the plant's run dates (the cutoff and re-watering are marked)
-  - hour buttons (only hours that ran that day)
-  - colour by RGB, height, plant/background or temperature (temperature is
-    disabled when the cloud has no `temp`)
-  - "Plant only"
-  - "Second view"
-- **Main view:**
-  - `Scatter3d` of the cached cloud in mm, marker size 2
-  - RGB colours get one brightness gain per cloud, which puts the 99th percentile of the sampled
-    colour values at 255. The gain is at most ×4, so night frames stay dark, and the hover shows
-    it. The camera is under-exposed: coloured points average about 48 of 255.
-  - points without an RGB sample (`rgb` = 0, a median of 8 % of a cloud) are drawn in `gray-500`,
-    not black
-  - points more than 150 mm below the reference plane are hidden. They are strays (the floor
-    between pots lies at about −60 to −120 mm), and with `aspectmode="data"` they stretched the
-    height axis.
-  - `aspectmode="data"`, so x, y and height share one scale
-  - the reference plane at z = 0 as a faint `Mesh3d`
-  - the camera is kept while the date changes
-  - height colours use one scale per plant (its tallest `height_p95` + 15 %), so
-    dates and the two views can be compared
-- **Second view:** the same plant on a second date (default 2025-09-03), side by
-  side. It uses the same hour, or the nearest hour that ran.
-- **Side panel:**
-  - run metadata
-  - QC badges (red = blocking, amber = not blocking)
-  - every trait as median ± MAD with its unit; traits that E1 calls unreliable
-    are marked
-  - RGB frame 7, downscaled to 480 px
-- **Below:** `height_p75` over time, one trace per hour (the selected hour as a
-  line), with QC-failed runs as grey crosses. The shown date(s) and the drought
-  window are marked. Clicking a point moves the 3D view to that date and hour.
-- **Deep link:** `/threed-browser?bed=W2&plant=J5&date=2025-09-08&hour=15`.
-
-### 3D Compare (`/threed-compare`, `app/pages/threed_compare.py`)
-
-- **Controls:**
-  - trait (traits that E1 calls unreliable are labelled)
-  - group by treatment, bed, or hand-picked plants
-  - hour slot and date range
-  - baseline-normalise: % change from each plant's mean over 2025-09-01/02, the
-    same normalisation as E3
-  - include QC-failed runs (excluded by default, as in the statistics)
-- **Trajectories tab:** for each group, the daily mean with a ±1 SD band, plus a
-  thin line per plant. The drought window is shaded, and the cutoff (2025-09-03)
-  and re-watering (2025-09-15) are marked.
-- **Diurnal rhythm tab:**
-  - a day × hour heatmap per group, computed from the table: either the
-    deviation from the plant's daily mean, or the absolute value
-  - below it, the midday depression (15 h − 9 h) and the overnight recovery
-    (6 h next day − 18 h), from `e4_diurnal.csv`, or computed from the table
-    when that file is missing (the page says which)
-- **Trait vs turgor tab:**
-  - for a plant with a leaf clip: the trait per run (left axis) and the hourly
-    median clip reading (right axis; higher = lower turgor), in local time
-  - the E5 Spearman rows for that plant and the pooled rows for its bed, from
-    `e5_turgor.csv`
-- **Result card:**
-  - E1 noise floor, signal, SNR and reliable / not reliable
-  - E3 deficit − control slope with its CI and p-value, the onset day (Holm, and
-    unadjusted when given), and the lead time against the first visible symptom
-  - the E2 warning when the beds differed before the cutoff
-  - each element says when its file is missing
-
-### 3D Export (`/threed-export`, `app/pages/threed_export.py`)
-
-- **Filters:**
-  - beds and hours (an empty choice matches nothing)
-  - plants and traits (an empty choice means all)
-  - date range
-  - QC pass only (on by default)
-  - include the MAD columns
-- **Preview:** a `dash_table.DataTable` of the first 250 matching rows, with a
-  row, plant and date count. QC-failed rows are tinted.
-- **Download CSV:** every matching row, with the contract columns of
-  `traits_runs.parquet` for the chosen traits. When the data are synthetic, the
-  file name ends in `_SYNTHETIC`.
-- **Download method summary (Markdown):**
-  - data source and filters
-  - calendar
-  - noise floor per trait (`e1_noise.csv`)
-  - QC flags and whether each one blocks
-  - the parameters section of `docs/threed/PIPELINE.md` (the whole file when it
-    has no section whose heading mentions parameters)
-  - E0a parity
-  - the result files present
-
-## Files read
-
-| File | Used by |
-|---|---|
-| `data/derived/threed/traits_runs.parquet` | all three pages |
-| `data/derived/threed/clouds/<bed>_<plant>/<YYYY-MM-DD>_<HH>.npz` | Browser (randomly downsampled above 40,000 points) |
-| `data/rgb/<bed>_<plant>/<YYYY_MM_DD>/<HH>/rgb_007.jpg` | Browser side panel |
-| `data/derived/threed/results/e1_noise.csv` | Browser marks, Compare card, Export summary |
-| `data/derived/threed/results/e2_bed_baseline.csv`, `e3_onset.csv` | Compare card |
-| `data/derived/threed/results/e4_diurnal.csv` | Compare, diurnal tab |
-| `data/derived/threed/results/e5_turgor.csv` | Compare, turgor tab |
-| `data/derived/threed/results/e0a_parity.csv` | Export summary |
-| `data/leaf_readings.parquet`, `data/metadata_rwc_par_en.xlsx` ("Sensor Guide") | Compare, turgor tab (sensor → plant) |
-| `docs/threed/PIPELINE.md` | Export summary |
+- **Plant profile:** the `3D canopy` button opens `/threed?bed=…&plant=…` for every plant with
+  depth data. Its side panel has a `Leaf area · 3D` card with the plant's change from baseline at
+  the end of the no-water window (days 10 to 12) and after re-watering (days 15 to 16), from
+  `threed_canopy.structure_status`. It is a readout, not an alert: on the committed table the
+  structure rule (below −20 % of baseline on two usable days in a row while unwatered) fires for
+  63 of 72 deficit plants (median day 9), but also for 2 of 72 control plants (W1 L3 from day 1,
+  W1 O8 from day 9). The rule's verdict and the live control count are on the card's hover. W3
+  plants link to the page too and are shown on their own; the card stays W1 and W2.
+- **Bed map:** the selected plant's `3D canopy` link opens `/threed?bed=…&plant=…`.
+- **Home:** one `3D canopy` page tile, `forest-700` on `mint` (`design/DESIGN.md` section 2.1).
+- **Early warning:** 3D appears after thermal: `Next · Depth` is leaf area at day 5 against thermal
+  at day 4. Only the kept 3D traits (and projected area as the size baseline) are ranked there.
+- **Export:** the table `3D canopy · plant-days` replaces the old 3D export: one row per plant and
+  day with the three traits, each with its baseline (`_base`) and % change (`_pct`), the run
+  counts, and a data dictionary. The merged run table keeps every `depth_` column at run level.
+- **Old links:** `/threed-browser`, `/threed-compare` and `/threed-export` land on the 3D canopy
+  page with their query, through the page's `path_template` (`/threed<legacy>`); they have no nav
+  entry. (Dash's `redirect_from` would not do: it answers with a fixed 301 and drops the query.)
+- **Out:** the page links to the chosen plant's Plant profile and Bed map, and to Early warning,
+  Export and Methods & limits.
 
 ## Code layout
 
 ```
 app/
-  app.py            shell: Dash(use_pages=True), FLATLY theme, navbar and home page from the page registry
-  threed_data.py    data layer for the 3D pages: cached loaders, synthetic fallback, filters,
-                    trajectories / diurnal helpers, export, method summary, shared figure helpers
-  assets/threed.css hour button group, slider marks
-  pages/
-    threed_browser.py  threed_compare.py  threed_export.py
-tests/app/test_threed_pages.py
+  pages/threed.py     the 3D canopy page
+  threed_canopy.py    data layer: runs, plant-days, gap, windows, headline, onsets, bed checks,
+                      structure status, the run drawn per day and THEN, detached edge points,
+                      the default plant, clouds, side elevation, RGB frame (pandas, numpy, scipy)
+  threed_figures.py   the cloud stage and the other 3D figures
+  assets/threed.css   page styles, on the token variables
+  profile_views.py    threed_href, structure_summary and threed_days: the links in, the
+                      Plant profile card and the Export table
+tests/app/test_threed_canopy.py   the data layer, on the committed tables and small sandboxes
+tests/app/test_threed_pages.py    the page
+tests/app/test_profile_pages.py   the links in, the Plant profile card, the Home tile, the Export table
 ```
 
-Run the tests with `.venv/Scripts/python.exe -m pytest -q tests/app`. They cover:
-
-- the data layer, on synthetic data and on a temporary root of real-format files
-- every callback, called with realistic inputs
-- a smoke test that renders each page through the Flask test client and fires
-  its first round of callbacks over HTTP
+Run the tests with `.venv/Scripts/python.exe -m pytest -q tests/app`.
 
 ## Adding a page (teammates)
 
-1. Create one file `app/pages/<challenge>_<name>.py`:
+1. Create one file `app/pages/<name>.py`:
 
    ```python
    import dash
-   from dash import Input, Output, callback, dcc, html
+   from components import header
+   from dash import html
 
-   dash.register_page(
-       __name__,
-       path="/ndvi-maps",  # URL of the page
-       name="NDVI Maps",  # label in the navbar and on the home page
-       description="One line for the home page card.",
-       order=20,  # position in the navbar (3D pages use 30-32)
-   )
+   QUESTION = "Which plants show stress first?"
+   dash.register_page(__name__, path="/ndvi-maps", name="NDVI maps", order=40, description=QUESTION)
 
 
    def layout(**query):  # a function, so the data are re-read on each visit
-       return html.Div([dcc.Graph(id="ndvi-graph")])
-
-
-   @callback(Output("ndvi-graph", "figure"), Input("ndvi-graph", "id"))
-   def draw(_): ...
+       return html.Div([header("NDVI maps", QUESTION)])
    ```
 
-2. Prefix every component id with your page, for example `ndvi-`. All pages
-   share one id namespace. The 3D pages use `tb-`, `tc-` and `te-`.
-3. Import helpers that sit next to `app.py` by their module name
-   (`import threed_data`). `app.py` puts `app/` on `sys.path`.
-4. Put CSS in `app/assets/`. Dash loads every file there on every page, so
-   scope your selectors to your ids.
-5. Do not edit `app.py`. The navbar and the home page list every registered page.
-6. Create the app only once per process, because pages register their callbacks
-   globally. In tests, load `app/app.py` once (see the `dash_app` fixture in
-   `tests/app/test_threed_pages.py`).
+   `order` is the position in the navbar (3D canopy uses 25). The page's question goes in
+   `description` and in the title's hover, never as visible text (`CLAUDE.md`).
+2. Prefix every component id with your page, for example `ndvi-`. All pages share one id namespace.
+3. Import helpers that sit next to `app.py` by their module name (`import threed_canopy`).
+   `app.py` puts `app/` on `sys.path`.
+4. Use the shared parts in `app/components.py` and the tokens; put page CSS in `app/assets/`,
+   scoped to your ids. Dash loads every file there on every page.
+5. Do not edit `app.py`. The navbar and the Home page list every registered page.
+6. Pages register their callbacks globally, so create the app once per process. Tests that need
+   the whole app run it in a fresh process (see `tests/app/test_profile_pages.py`).

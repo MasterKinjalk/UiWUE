@@ -15,6 +15,7 @@ import plotly.io as pio
 from dash import dcc, html
 
 from uiwue.core import BASELINE, CUTOFF, REWATER, catalogue, read_table
+from uiwue.detect.data import excluded as _left_out
 
 _TOKENS = json.loads((Path(__file__).resolve().parents[1] / "design" / "tokens.json").read_text(encoding="utf-8"))
 _raw = {t["name"]: t["value"] for t in _TOKENS["color"]["tokens"]}
@@ -91,12 +92,21 @@ def chip(text, hover, kind="caveat"):
     return html.Span(text, title=hover, className=f"uw-chip uw-chip-{kind}")
 
 
+def kept_trait(signal) -> bool:
+    """False for a 3D trait the app leaves out: the one definition, ``uiwue.detect.data.DEPTH_EXCLUDED`` and every
+    ``depth_cyl_*`` column (noisy, saturated or redundant; docs/threed/APP.md). Every page reads the detect tables
+    through it, so a dropped trait never shows up, is never ranked and never drives a chip."""
+    return not _left_out(str(signal))
+
+
 def placebo_chip(signal):
-    """'bed effect' chip when Jack's placebo test (detect/placebo) flags the trait: the beds differed before irrigation off."""
+    """'bed effect' chip when Jack's placebo test (detect/placebo) flags the trait: the beds differed before irrigation
+    off. The placebo table is read through the kept-trait filter (``kept_trait``), as the detect pages read theirs."""
     p = read_table("detect", "placebo")
-    if p is None or "bed_effect" not in p:
+    if p is None or not {"signal", "group", "bed_effect"} <= set(p.columns):
         return []
-    r = p[(p.signal == signal) & (p.group == "all") & p.bed_effect.astype(bool)]
+    p = p[p.signal.map(kept_trait)]
+    r = p[(p.signal == signal) & (p.group == "all") & p.bed_effect.fillna(False).astype(bool)]
     if r.empty:
         return []
     r = r.iloc[0]

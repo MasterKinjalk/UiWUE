@@ -14,5 +14,5 @@ sugar beet, not only machine-learning models.
 3. Run the app: `python app/app.py` (from the repo root or `app/`; works without `pip install -e .`), then open <http://127.0.0.1:8050>
 4. Before pushing a table: `python -m uiwue.core.validate` and `python -m pytest -q`
 5. Challenge 3 (3D phenotyping): download data with `scripts/download_data.sh`; pipeline,
-   results and app pages are described in [docs/threed/](docs/threed/); fine-tuned models in
+   results and the 3D canopy page (`/threed`) are described in [docs/threed/](docs/threed/); fine-tuned models in
    [docs/ML_MODELS.md](docs/ML_MODELS.md)

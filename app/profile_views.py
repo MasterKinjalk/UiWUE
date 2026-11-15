@@ -3,6 +3,11 @@
 Values are shown as change from the plant's own baseline (DESIGN 7.2): the median over the baseline
 window (30 Aug – 2 Sep), as a percentage for size traits and as a difference for the rest. Scores and
 probabilities (detect_, diurnal_), the leaf-clip shift and the environment are shown as they are.
+Only runs that pass their module's QC are used (Master-Plan 6.5); a QC-failed run is "no scan".
+The 3D numbers (the three 3D small multiples and detail chart, the leaf-area readout, the 3D export
+table) come from ``threed_canopy``, the data layer of the 3D canopy page, so one plant shows one number
+on both pages: the plant-day mean of its QC-pass 9–18 h runs, as % of its own baseline. The Bed map
+keeps one run per square, against the same slot's baseline, and says so on hover.
 """
 
 import time
@@ -12,6 +17,7 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import threed_canopy as tc
 from components import BAND, GRAPH_CONFIG, C, mark_stress_period
 from dash import dcc, html
 
@@ -26,6 +32,7 @@ from uiwue.core import (
     normalize_keys,
     read_table,
 )
+from uiwue.stats._design import qc_pass
 
 BEDS = ("W1", "W2", "W3")
 ROWS = "ABCDEFGHIJKLMNOPQR"
@@ -42,12 +49,19 @@ SOURCE = {  # column prefix -> (source tag, module folder, sensor name)
     "diurnal_": ("IR", "diurnal", "thermal score"),
     "env_": ("ENV", "env", "environment"),
 }
-# One headline trait per sensor for the small multiples (tag, column, short label)
+# The app's only 3D traits: the three kept traits of the 3D canopy page (leaf area, height p75, hull volume), with
+# its labels. The size-only baseline (projected area, DESIGN 7.6) is not one of them: it is the `size` chip beside
+# the detection result (stress probability).
+THREED = tuple(("3D", t.column, t.label) for t in tc.TRAITS.values())
+THREED_COLUMNS = frozenset(c for _, c, _ in THREED)
+THREED_KEY = {t.column: k for k, t in tc.TRAITS.items()}  # contract column -> threed_canopy's short key
+THREED_BEDS = tc.BEDS  # the 3D canopy page's bed numbers: W1 (control) against W2 (deficit)
+THREED_LINK_BEDS = tc.SHOWN_BEDS  # the plants the 3D canopy page shows on their own: W1, W2 and W3
+# Headline traits per sensor for the small multiples (tag, column, short label)
 HEADLINES = (
     ("IR", "thermal_leaf_ref_dt", "Leaf − control leaf"),
     ("IR", "diurnal_score_ref", "Thermal score"),
-    ("3D", "depth_projected_area", "Projected area"),
-    ("3D", "depth_height_p75", "Height p75"),
+    *THREED,
     ("RGB", "rgb_exg", "Greenness"),
     ("CLIP", "truth_turgor_shift", "Leaf-clip shift"),
     ("MODEL", "detect_stress_prob", "Stress probability"),
@@ -123,12 +137,15 @@ def change_unit(column):
 
 
 def trait_choices(df, stress_only=False, rows=None):
-    """Dropdown options for catalogue traits with numeric values in df (or in `rows`, one plant's runs)."""
+    """Dropdown options for catalogue traits with numeric values in df (or in `rows`, one plant's runs); of the 3D
+    traits only the three the app shows (THREED), not the dropped noisy ones."""
     cat = catalogue().drop_duplicates("column")
     have = rows if rows is not None else df
     out = []
     for r in cat.itertuples():
         if r.column not in have or r.unit == "date" or not pd.api.types.is_numeric_dtype(have[r.column]):
+            continue
+        if r.column.startswith("depth_") and r.column not in THREED_COLUMNS:
             continue
         if stress_only and r.direction == 0:
             continue
@@ -166,11 +183,30 @@ def day_of(dates):
 
 
 # ------------------------------------------------------------------ plant data
+def usable(df, column):
+    """True for the runs whose value of `column` counts: it has one and the run passed its module's QC
+    (``<prefix>qc_pass``; a module without that flag passes). The tables keep the values of QC-failed runs."""
+    return df[column].notna() & qc_pass(df, column)
+
+
 def daily(df, column):
-    """One value per plant and day: the median of the 12 h and 15 h runs (Master-Plan 6.5)."""
-    d = df[df.hour.isin((12, 15))].dropna(subset=[column])
+    """One value per plant and day: the median of the 12 h and 15 h runs that pass QC (Master-Plan 6.5)."""
+    d = df[df.hour.isin((12, 15)) & usable(df, column)]
     d = d.groupby(["bed", "plant", "date"], as_index=False)[column].median()
     return d.assign(day=day_of(d.date))
+
+
+def threed_series(column):
+    """A kept 3D trait as the 3D canopy page computes it (``threed_canopy.plant_days``, every bed, each plant on its
+    own baseline): one row per plant and day with a value, the plant-day mean of its QC-pass 9–18 h runs under the
+    column's name and its % change from the plant's baseline (median of its days −4 to −1) as `chg`. None without
+    the 3D table."""
+    p = tc.plant_days(beds=tc.SHOWN_BEDS)
+    if p is None:
+        return None
+    k = THREED_KEY[column]
+    d = p.loc[p[k].notna(), ["bed", "plant", "treatment", "date", "day", k, f"{k}_pct"]]
+    return d.rename(columns={k: column, f"{k}_pct": "chg"}).reset_index(drop=True)
 
 
 def with_change(d, column, by=("bed", "plant")):
@@ -189,7 +225,10 @@ _SERIES = {}
 
 
 def series(df, column):
-    """Daily change-from-baseline series for every plant (cached per table and column)."""
+    """Daily change-from-baseline series for every plant (cached per table and column). The kept 3D traits come
+    from the 3D canopy page's plant-day table instead (``threed_series``), so both pages show one number."""
+    if column in THREED_KEY:
+        return threed_series(column)  # threed_canopy caches it per table file
     key = (id(df), column)
     if key not in _SERIES:
         _SERIES[key] = with_change(daily(df, column), column) if column in df else None
@@ -200,6 +239,12 @@ def plant_rows(df, bed, plant):
     return df[(df.bed == bed) & (df.plant == plant)]
 
 
+def no_chart_reason(column):
+    """Hover of a sensor panel whose plant has runs but no daily change to draw (no QC-pass run, or no baseline)."""
+    runs = "9–18 h runs" if column in THREED_KEY else "12 h and 15 h runs"
+    return f"no daily value with a baseline: none of its {runs} passed QC, or none did on 30 Aug – 2 Sep"
+
+
 def sensor_state(df, bed, plant, column):
     """('ok' | 'noscan' | 'notable', hover). noscan: the plant is in the module's table but no run has a
     usable value; notable: the module has no rows for this plant (or no table at all)."""
@@ -207,7 +252,7 @@ def sensor_state(df, bed, plant, column):
     if column not in df:
         return "notable", f"{sensor}: no table in derived/{module}/ yet"
     rows = plant_rows(df, bed, plant)
-    if rows[column].notna().any():
+    if usable(rows, column).any():
         return "ok", ""
     if column.startswith("truth_turgor"):
         return "notable", "no leaf clip on this plant"
@@ -254,11 +299,15 @@ def profile_href(bed, plant):
 
 
 def threed_href(bed, plant):
-    return f"/threed-browser?bed={bed}&plant={plant}"
+    """The 3D canopy page with this plant selected."""
+    return f"/threed?bed={bed}&plant={plant}"
 
 
 def has_depth(df, bed, plant):
-    return "depth_projected_area" in df and plant_rows(df, bed, plant).depth_projected_area.notna().any()
+    """True when a "3D canopy" link fits this plant: it has a value in a kept 3D trait and the 3D canopy page shows
+    its bed (``threed_canopy.SHOWN_BEDS``: W1, W2, and W3 plant by plant), so the link lands on this plant."""
+    cols = [c for _, c, _ in THREED if c in df]
+    return bed in THREED_LINK_BEDS and bool(cols) and bool(plant_rows(df, bed, plant)[cols].notna().any().any())
 
 
 def headline(df, bed, plant, column):
@@ -287,6 +336,47 @@ def stress_summary(df, bed, plant):
     return {
         "peak": (float(peak.chg), int(peak.day)) if peak is not None else (None, None),
         "now": (float(last.chg), int(last.day)),
+    }
+
+
+def span_text(lo, hi):
+    """'Day 10–12 · 13–15 Sep': a window of days since irrigation off, then its dates."""
+    a, b = CUTOFF + timedelta(days=int(lo)), CUTOFF + timedelta(days=int(hi))
+    dates = f"{a.day}–{b.day} {b:%b}" if a.month == b.month else f"{a.day} {a:%b} – {b.day} {b:%b}"
+    return f"Day {int(lo)}–{int(hi)} · {dates}".replace("-", "−")
+
+
+def structure_summary(bed, plant):
+    """3D leaf area of one plant against its own baseline, for a plain readout on Plant profile.
+
+    From ``threed_canopy.structure_status`` (plant-day mean of the QC-pass 9–18 h runs, % of the plant's
+    median on days −4 to −1): ``end`` and ``after``, the mean change over days 10–12 (end of the no-water
+    window) and days 15–16 (after re-watering), each {"value" (% or None), "n" (usable days), "days"};
+    ``first_below``, the first day of two usable days in a row below ``threshold`` % while unwatered
+    (``structure_alerts``), or None; ``alarms``, (control plants that rule also flags, control plants). The
+    rule flags control plants too, so the profile shows the values, not an alert. None when the plant is
+    not in the 3D table (or there is no table).
+    """
+    st, alerts = tc.structure_status(), tc.structure_alerts()
+    if st is None or alerts is None:
+        return None
+    mine = st[(st.bed == bed) & (st.plant == plant)]
+    if mine.empty:
+        return None
+    a = alerts[(alerts.bed == bed) & (alerts.plant == plant)].iloc[0]
+    control = alerts[alerts.treatment == "control"]
+
+    def window(days):
+        v = mine.loc[mine.day.between(*days), "leaf_area_pct"].dropna()
+        return {"value": float(v.mean()) if len(v) else None, "n": len(v), "days": tuple(days)}
+
+    return {
+        "has_baseline": bool(a.has_baseline),
+        "end": window(tc.TROUGH_DAYS),
+        "after": window(tc.REWATERED_DAYS),
+        "first_below": None if pd.isna(a.first_irrigate) else int(a.first_irrigate),
+        "alarms": (int(control.first_irrigate.notna().sum()), len(control)),
+        "threshold": tc.STRUCTURE_THRESHOLD,
     }
 
 
@@ -409,17 +499,40 @@ def detail_figure(df, bed, plant, column, height=340):
     return fig
 
 
+CHANGE_TEXT = {
+    "pct": "% change from the plant's own baseline (median 30 Aug – 2 Sep)",
+    "diff": "change from the plant's own baseline (median 30 Aug – 2 Sep)",
+    "raw": "value as computed by the module (no baseline subtraction)",
+}
+THREED_DAY_TEXT = (
+    "% change from the plant's own baseline (median of its daily values on days −4 to −1, 30 Aug – 2 Sep); "
+    "daily value = mean of its QC-pass runs at 9, 12, 15 and 18 h, as on 3D canopy"
+)
+
+
 def method_hover(column):
+    """How Plant profile's daily value and its change are made, for the hover of a chart."""
     module = source_of(column)[1]
-    how = {
-        "pct": "% change from the plant's own baseline (median 30 Aug – 2 Sep)",
-        "diff": "change from the plant's own baseline (median 30 Aug – 2 Sep)",
-        "raw": "value as computed by the module (no baseline subtraction)",
-    }[mode_of(column)]
-    return (
-        f"{label_unit(column)}: {how}; daily median of the 12 h and 15 h runs; "
-        f"band = control bed W1 mean ± 1 SD; source derived/{module}/"
+    if column in THREED_KEY:
+        how = THREED_DAY_TEXT
+    else:
+        how = f"{CHANGE_TEXT[mode_of(column)]}; daily median of the 12 h and 15 h runs that pass QC"
+    return f"{label_unit(column)}: {how}; band = control bed W1 mean ± 1 SD; source derived/{module}/"
+
+
+def run_hover(column, hour):
+    """How the Bed map's squares are made: one run, not a daily value, against the same slot's baseline."""
+    module = source_of(column)[1]
+    how = CHANGE_TEXT[mode_of(column)]
+    if mode_of(column) != "raw":
+        how = how.replace("(median 30 Aug – 2 Sep)", f"at {hour:02d} h (median of its {hour:02d} h runs 30 Aug – 2 Sep)")
+    out = (
+        f"{label_unit(column)}: {how}; each square is one {hour:02d} h run, a run that failed QC is no scan; "
+        f"source derived/{module}/"
     )
+    if column in THREED_KEY:
+        out += ". Plant profile and 3D canopy show the daily mean of the QC-pass 9–18 h runs instead"
+    return out
 
 
 # ------------------------------------------------------------------ marks (HTML)
@@ -502,10 +615,11 @@ _RUN_CHANGE = {}
 
 
 def run_change(df, column, hour):
-    """Run-level change from each plant's own baseline at the same slot (median of the baseline days)."""
+    """Run-level change from each plant's own baseline at the same slot (median of the baseline days), QC-pass runs
+    only: a run that failed its module's QC is no value here (and no part of a baseline)."""
     key = (id(df), column, hour)
     if key not in _RUN_CHANGE:
-        d = df[df.hour == hour].dropna(subset=[column])[["bed", "plant", "date", column]]
+        d = df[(df.hour == hour) & usable(df, column)][["bed", "plant", "date", column]]
         d = d.assign(day=day_of(d.date))
         _RUN_CHANGE[key] = with_change(d, column)
     return _RUN_CHANGE[key]
@@ -648,9 +762,15 @@ def bed_counts(df, column, day, hour, bed):
 
 
 # ------------------------------------------------------------------ export
+THREED_DAYS = "threed/plant_days"  # the 3D canopy page's plant-day table
+
+
 def export_tables():
-    """{key: (label, path or None)}: the merged run table first, then every result table in detect/ and diurnal/."""
+    """{key: (label, path or None)}: the merged run table first, the 3D canopy plant-day table when the 3D
+    trait table exists, then every result table in detect/ and diurnal/."""
     out = {"traits": ("Run traits (merged)", None)}
+    if (DERIVED / "threed" / "traits_runs.parquet").exists():
+        out[THREED_DAYS] = ("3D canopy · plant-days", None)
     for module in ("detect", "diurnal"):
         for p in sorted((DERIVED / module).glob("*.parquet")):
             out[f"{module}/{p.stem}"] = (f"{module} · {p.stem.replace('_', ' ')}", p)
@@ -665,6 +785,8 @@ def read_export(key):
     if key == "traits":
         df = traits()
         return None if df is None else df.copy()
+    if key == THREED_DAYS:
+        return threed_days()
     path = tables[key][1]
     t = retry(lambda: normalize_keys(pd.read_parquet(path)))
     if "bed" in t and "treatment" not in t:
@@ -672,6 +794,22 @@ def read_export(key):
     if "date" in t and "days_since_cutoff" not in t and "day" not in t:
         t["days_since_cutoff"] = day_of(t.date)
     return t
+
+
+def threed_days():
+    """The 3D canopy page's plant-day table under contract column names, or None without the 3D table.
+
+    One row per W1 or W2 plant and day: the three kept 3D traits (leaf area, height p75, hull volume) as the
+    mean of the QC-pass 9–18 h runs, each with the plant's baseline (``<column>_base``) and the % change from
+    it (``<column>_pct``), and the runs behind the day (n_runs, n_pass, slots). ``threed_canopy.plant_days``.
+    """
+    p = tc.plant_days()
+    if p is None:
+        return None
+    names = {"day": "days_since_cutoff"}
+    for k, t in tc.TRAITS.items():
+        names |= {k: t.column, f"{k}_base": f"{t.column}_base", f"{k}_pct": f"{t.column}_pct"}
+    return p.rename(columns=names)
 
 
 def day_column(t):
@@ -716,9 +854,12 @@ def data_dictionary(columns, table_key="traits"):
         "days_since_cutoff": ("Days since irrigation off (day 0 = 3 Sep 2025)", "d", "design"),
         "phase": ("before cutoff / stress / re-watered", "", "design"),
     }
+    plant_day = plant_day_terms(cat) if table_key == THREED_DAYS else {}
     rows = []
     for c in columns:
-        if c in cat.index:
+        if c in plant_day:
+            rows.append(dict(column=c, **plant_day[c]))
+        elif c in cat.index:
             r = cat.loc[c]
             rows.append(
                 dict(
@@ -746,6 +887,62 @@ def data_dictionary(columns, table_key="traits"):
                 )
             )
     return pd.DataFrame(rows, columns=["column", "label", "unit", "direction", "source", "description"])
+
+
+def plant_day_terms(cat):
+    """Dictionary rows of the 3D plant-day columns (``threed_days``): each trait, its baseline and change,
+    and the run counts; the trait's label, unit, direction and definition come from the catalogue."""
+    src = "derived/threed/"
+    day = "mean of the plant's QC-pass runs at 9, 12, 15 and 18 h that day"
+    out = {
+        "date": dict(label="Date of the plant-day", unit="date", direction="", source="key", description=""),
+        "n_runs": dict(
+            label="Runs that day",
+            unit="count",
+            direction="",
+            source=src,
+            description="runs of the plant in the 3D table at 9, 12, 15 and 18 h that day",
+        ),
+        "n_pass": dict(
+            label="QC-pass runs",
+            unit="count",
+            direction="",
+            source=src,
+            description="runs of n_runs that passed QC (depth_qc_pass); 0 = no usable scan that day",
+        ),
+        "slots": dict(
+            label="Slots averaged",
+            unit="h",
+            direction="",
+            source=src,
+            description="slots of the QC-pass runs averaged into the daily values",
+        ),
+    }
+    for t in tc.TRAITS.values():
+        r = cat.loc[t.column] if t.column in cat.index else None
+        label = r.label if r is not None else t.label
+        unit = unit_text(t.column) or t.unit
+        direction = int(r.direction) if r is not None and pd.notna(r.direction) else ""
+        what = r.description if r is not None and isinstance(r.description, str) else ""
+        out[t.column] = dict(
+            label=label, unit=unit, direction=direction, source=src, description=f"{what}; {day}" if what else day
+        )
+        out[f"{t.column}_base"] = dict(
+            label=f"{label}, baseline",
+            unit=unit,
+            direction="",
+            source=src,
+            description="the plant's baseline: median of its daily values on days −4 to −1 (30 Aug – 2 Sep); "
+            "empty when it has no QC-pass daytime run then",
+        )
+        out[f"{t.column}_pct"] = dict(
+            label=f"{label}, change",
+            unit="%",
+            direction=direction,
+            source=src,
+            description="% change from the plant's own baseline: (daily value / baseline − 1) × 100",
+        )
+    return out
 
 
 def preview_table(t, n=12):

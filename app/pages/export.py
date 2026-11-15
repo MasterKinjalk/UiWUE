@@ -1,7 +1,8 @@
 """Export: any derived table as CSV, filtered by bed, treatment, sensor and day, with its data dictionary.
 
-Tables: the merged run-level traits (load_traits) and every result table found under derived/detect and
-derived/diurnal, read as they are on disk (no fixed column list, so new columns export too).
+Tables: the merged run-level traits (load_traits), the 3D canopy plant-day table (the three kept 3D traits as
+change from each plant's baseline, profile_views.threed_days) and every result table found under
+derived/detect and derived/diurnal, read as they are on disk (no fixed column list, so new columns export too).
 """
 
 import dash

@@ -18,12 +18,15 @@ from _jack_common import (
     graph,
     header,
     load_result,
+    min_width,
     missing_tile,
     not_available,
     panel,
     readout,
     register_page,
     run_alone,
+    run_info,
+    run_time,
     segmented,
     select,
     signed_days,
@@ -44,16 +47,66 @@ AUC_RULE = (
     "Rule onset: first day the CI lower bound is above 0.70 on that day and the next. "
     "Robust onset: the same, with the bar raised to the largest AUC seen on any watered day (24 Aug – day 0)."
 )
-RECOVERY = {
+RECOVERY = {  # 3D rows: the 3D page's leaf area and height; projected area is only the size baseline
     "thermal_leaf_air_dt": "function",
     "rgb_ngrdi": "function",
     "depth_leaf_area_est": "structure",
-    "depth_projected_area": "structure",
+    "depth_height_p75": "structure",
 }
 
 
 def _rob(row):
     return row.get("robust_onset_day", row.get("onset_day", np.nan))
+
+
+W3_SAMPLED = (
+    "W3 plants each had a leaf cut for relative water content on one of days 1–12, so their 3D canopy loss mixes "
+    "drought and sampling; 3D canopy never pools W3 and compares W1 with W2 only."
+)
+
+
+def w3_chip(onsets, signal, sensor, group) -> list:
+    """Caveat chip for a 3D result whose group holds W3 plants (W2 + W3, or W3): the leaf cut for water content
+    shrinks their canopy too. The hover gives the same signal's W2-only onset, the number 3D canopy shows."""
+    if sensor != "Depth" or group == "W2":
+        return []
+    w2 = onsets[(onsets["signal"] == signal) & (onsets["group"] == "W2")]
+    rob = _rob(w2.iloc[0]) if len(w2) else np.nan
+    alone = f" W2 alone: robust onset {day_text(rob)}." if pd.notna(rob) else ""
+    return [chip("W3 sampled", W3_SAMPLED + alone)]
+
+
+def _n(row) -> str:
+    return f"{int(row['n_deficit'])} deficit · {int(row['n_control'])} control plants"
+
+
+def display_names(o: pd.DataFrame) -> np.ndarray:
+    """Signal names as the ranking chart writes them: the size-only baseline tagged 'size' (DESIGN 7.6)."""
+    size = o["is_size_baseline"].fillna(False).astype(bool).to_numpy()
+    return np.where(size, "size · " + o["label"].astype(str), o["label"].astype(str))
+
+
+def ranking(onsets, group):
+    """figures.onset_ranking with room for the signal names (automargin) and each signal's plant counts on
+    hover, so a reader can see which plants an onset rests on."""
+    fig = figures.onset_ranking(onsets, group)
+    # The panel's legend explains rule / robust / flagged; Plotly's own would colour 'robust' after
+    # whichever sensor happens to come first.
+    fig.update_layout(showlegend=False)
+    fig.update_yaxes(automargin=True)
+    o = figures.ranked(onsets, group)
+    counts = dict(zip(display_names(o), zip(o["n_deficit"], o["n_control"], strict=True), strict=True))
+    for tr in fig.data:
+        if tr.y is None or "<extra>" not in (tr.hovertemplate or ""):
+            continue
+        cd = np.empty((len(tr.y), 0)) if tr.customdata is None else np.asarray(tr.customdata, dtype=object)
+        k = cd.shape[1]
+        n = np.array([[int(v) for v in counts[y]] if y in counts else ["–", "–"] for y in tr.y], dtype=object)
+        tr.customdata = np.c_[cd, n]
+        tr.hovertemplate = tr.hovertemplate.replace(
+            "<extra>", f"<br>%{{customdata[{k}]}} deficit · %{{customdata[{k + 1}]}} control plants<extra>", 1
+        )
+    return fig
 
 
 def _range(slots, onsets, row, group):
@@ -105,9 +158,9 @@ def tiles(onsets, slots, group):
                 day_text(_rob(r)),
                 "W2 only" if only else "",
                 "gray",
-                hover=f"{r['label']}: robust onset {day_text(_rob(r))}, rule {day_text(r['onset_day'])}; "
-                f"{int(r['n_deficit'])} deficit · {int(r['n_control'])} control plants"
-                + ("; W3 has no table for this sensor" if only else ""),
+                hover=f"{r['label']}: robust onset {day_text(_rob(r))}, rule {day_text(r['onset_day'])}; {_n(r)}"
+                + ("; no W3 plants in the detect results for this sensor" if only else ""),
+                extra=w3_chip(onsets, r["signal"], r["sensor"], group),
             )
         )
     size = o[o["is_size_baseline"].astype(bool)]
@@ -120,7 +173,8 @@ def tiles(onsets, slots, group):
                 f"AUC {fmt(s['early_auc'])}",
                 "gray",
                 hover=f"{s['label']} alone (DESIGN 7.6): robust onset {day_text(_rob(s))}; "
-                f"early AUC (days 1–4) {fmt(s['early_auc'])}, 0.5 = chance",
+                f"early AUC (days 1–4) {fmt(s['early_auc'])}, 0.5 = chance; {_n(s)}",
+                extra=w3_chip(onsets, s["signal"], s["sensor"], group),
             )
         )
     n_clip = int(best.get("n_clip", 0) or 0)
@@ -163,6 +217,9 @@ def tiles(onsets, slots, group):
     return out
 
 
+RANKING_MIN_PX = 420  # narrower, the 14 day columns get closer than two markers: scroll in the panel instead
+
+
 def evidence_legend():
     sw = lambda bg, edge=None: html.Span(
         className="uw-swatch", style={"background": bg, **({"border": edge} if edge else {})}, **{"aria-hidden": "true"}
@@ -192,9 +249,12 @@ def layout(**_):
     if onsets is None or auc is None or onsets.empty:
         return html.Div([head, not_available("Detection onsets")])
     traits = figures.ranked(onsets, "all")
-    options = {r["signal"]: figures.signal_name(r) for _, r in traits.iterrows()}
+    options = {
+        r["signal"]: ("size · " if r["is_size_baseline"] else "") + figures.signal_name(r) for _, r in traits.iterrows()
+    }
     best = figures.headline(onsets, "all")
     first = best["signal"] if best is not None else next(iter(options))
+    when = run_time(run_info())
 
     return html.Div(
         [
@@ -206,10 +266,18 @@ def layout(**_):
                         [
                             panel(
                                 "Onset by signal",
-                                graph("ew-ranking", "Onset day per signal, rule and robust, days 0 to 12"),
+                                html.Div(
+                                    min_width(
+                                        graph("ew-ranking", "Onset day per signal, rule and robust, days 0 to 12"),
+                                        RANKING_MIN_PX,
+                                    ),
+                                    className="uw-scroll",
+                                ),
                                 evidence_legend(),
                                 hover="Open circle: contract rule (bar 0.70). Filled: robust onset (bar = largest "
-                                "watered-day AUC). Diamond: flagged by the placebo or the pre-cutoff check.",
+                                "watered-day AUC). Diamond: flagged by the placebo or the pre-cutoff check. Plant "
+                                "counts on hover: the plants with usable values when the onsets were computed"
+                                + (f" (detect run {when})." if when else "."),
                                 extra=[html.Span(id="ew-flags")],
                             ),
                             panel(
@@ -256,12 +324,23 @@ def recovery_rows(group):
     s = figures.recovery_summary(rec, list(RECOVERY), group)
     if s.empty:
         return [not_available("Recovery")]
-    s = s.set_index("signal").reindex([k for k in RECOVERY if k in set(s.index)]).reset_index()
+    s = s.set_index("signal").reindex([k for k in RECOVERY if k in set(s["signal"])]).reset_index()
     out = []
     for kind in ("function", "structure"):
-        out.append(html.Div(kind, className="uw-kicker", style={"color": C["slate-600"]}))
+        caveat = [chip("W3 sampled", W3_SAMPLED)] if kind == "structure" and group != "W2" else []
+        out.append(
+            html.Div(
+                [html.Span(kind, className="uw-kicker", style={"color": C["slate-600"]}), *caveat],
+                style={"display": "flex", "alignItems": "center", "gap": "8px", "flexWrap": "wrap"},
+            )
+        )
         for r in s[s["signal"].map(RECOVERY) == kind].itertuples():
             pct = float(np.clip(r.recovery, 0, 1)) * 100
+            past = (
+                "; over 100 %: past its own pre-cutoff value, the plants kept growing after re-watering"
+                if r.recovery > 1
+                else ""
+            )
             out.append(
                 html.Div(
                     [
@@ -273,7 +352,7 @@ def recovery_rows(group):
                         html.Span(f"{r.recovery * 100:.0f} %", className="uw-num"),
                     ],
                     style={"display": "flex", "alignItems": "center", "gap": "10px"},
-                    title=f"{r.label}: median recovery {r.recovery * 100:.0f} % over {r.n} deficit plants",
+                    title=f"{r.label}: median recovery {r.recovery * 100:.0f} % over {r.n} deficit plants{past}",
                 )
             )
     return out
@@ -305,9 +384,9 @@ def _update(group):
         tbl = not_available("Onsets for this group")
     else:
         tbl = table(
-            o,
+            o.assign(name=display_names(o)),
             {
-                "label": "Signal",
+                "name": "Signal",
                 "sensor": "Sensor",
                 "onset_day": "Rule onset (day)",
                 "robust_onset_day": "Robust onset (day)",
@@ -322,7 +401,7 @@ def _update(group):
             },
             id="ew-datatable",
         )
-    return tiles(onsets, slots, group), figures.onset_ranking(onsets, group), flags, recovery_rows(group), tbl
+    return tiles(onsets, slots, group), ranking(onsets, group), flags, recovery_rows(group), tbl
 
 
 @callback(
@@ -340,7 +419,7 @@ def _signal(group, signal):
     row = o.iloc[0]
     size = onsets.loc[onsets["is_size_baseline"].astype(bool) & (onsets["group"] == group), "signal"]
     fig = figures.auc_curves(auc, onsets, [signal, *[s for s in size if s != signal]], group)
-    chips = [source_tag(row["sensor"]), *bed_effect_chip(row)]
+    chips = [source_tag(row["sensor"]), *bed_effect_chip(row), *w3_chip(onsets, signal, row["sensor"], group)]
     cells = []
     s = slots[(slots["signal"] == signal) & (slots["group"] == group)] if slots is not None else pd.DataFrame()
     for h in (6, 9, 12, 15, 18):
@@ -355,7 +434,7 @@ def _signal(group, signal):
                 readout(f"{h:02d} h" + (" · day effect" if fire else ""), day_text(r["robust_onset_day"])),
                 title=(
                     f"{h:02d} h run alone: robust onset {day_text(r['robust_onset_day'])}, rule "
-                    f"{day_text(r['onset_day'])}, watered max AUC {fmt(r['null_auc_max'])}"
+                    f"{day_text(r['onset_day'])}, watered max AUC {fmt(r['null_auc_max'])}; {_n(r)}"
                     + (f"; rule fires on a watered day ({day_text(r['precutoff_fire_day'])})" if fire else "")
                 ),
             )

@@ -237,7 +237,7 @@ def show_map(trait, hour, day, imaged_only, sel):
                 pv.fmt(hi, unit, 0 if unit == "%" else 1, signed),
                 flip,
             ),
-            title=f"{pv.method_hover(trait)}; amber = more stressed",
+            title=f"{pv.run_hover(trait, hour)}; amber = more stressed",
         ),
         *mark_legend(),
         html.Span(
@@ -256,11 +256,7 @@ def show_map(trait, hour, day, imaged_only, sel):
             ]
         ),
         *placebo_chip(trait),
-        chip(
-            "method",
-            f"{pv.method_hover(trait)}. Each square is one run ({hour:02d} h) against the same slot's baseline.",
-            "rule",
-        ),
+        chip("method", pv.run_hover(trait, hour), "rule"),
     ]
     label, date = pv.day_text(day).split(" · ")
     return (*figs, *counts, legend, [html.B(label), html.Span(date)])
@@ -314,7 +310,7 @@ def show_side(sel, trait, hour, day):
                 readout("value", pv.fmt(r[trait], "", 2, False), raw_unit),
             ],
             className="uw-readouts",
-            title=f"{pv.label_unit(trait)} · {pv.day_text(day)} · {hour:02d} h. {pv.method_hover(trait)}",
+            title=f"{pv.label_unit(trait)} · {pv.day_text(day)} · {hour:02d} h. {pv.run_hover(trait, hour)}",
         )
     else:
         kind = r.state
@@ -328,8 +324,9 @@ def show_side(sel, trait, hour, day):
     if pv.has_depth(df, bed, plant):
         links.append(
             dcc.Link(
-                "3D view",
+                "3D canopy",
                 href=pv.threed_href(bed, plant),
+                title="this plant's point clouds, leaf area, height and volume against its own baseline",
                 className="uw-btn",
                 style={"border": f"1px solid {C['teal-700']}", "color": C["teal-700"]},
             )

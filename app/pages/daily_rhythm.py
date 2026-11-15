@@ -3,6 +3,7 @@
 import dash
 import pandas as pd
 import plotly.express as px
+import threed_canopy as tc
 from components import (
     GROUP,
     RULE_SHORT,
@@ -26,6 +27,7 @@ from components import (
 from dash import Input, Output, callback, html
 
 from uiwue.core import SLOTS, add_design, load_traits, read_table
+from uiwue.stats._design import qc_pass
 from uiwue.diurnal import (
     DETECTORS,
     PHASE_BINS,
@@ -58,6 +60,36 @@ SCORE_HOVER = {
     "diurnal_score_idso": "Leaf minus air above Idso's (1982) sugar beet line, 2.50 − 1.92 × VPD",
 }
 PLAN_RULES = DETECTORS  # "demand" knows irrigation stopped: not a detector
+KEPT_3D = {t.column for t in tc.TRAITS.values()}  # the app's only 3D traits; the noisy depth traits were dropped
+PROFILE_HOVER = (
+    "Mean over plants at each scheduled run, QC-pass runs only; bars: standard error. Raw values per slot: "
+    "the time-of-day pattern, not the daily change from baseline of Plant profile and 3D canopy"
+)
+NOT_POOLED_3D = (
+    "3D, grouped by treatment: deficit is W2 only, as on 3D canopy. W3 is not pooled: most of its plants had a "
+    "leaf cut for relative water content on one of days 1–12. Group by bed to see W3 on its own."
+)
+# Facet titles of the day profile, short enough not to run into each other at phone width; the span goes on hover
+PHASE_TITLES = dict(
+    zip(
+        PHASE_BINS[1],
+        (
+            ("before", "days −10 to −1: all plants watered"),
+            ("day 0–3", "days 0 to 3 without water"),
+            ("day 4–7", "days 4 to 7 without water"),
+            ("day 8–12", "days 8 to 12 without water (re-watered on day 12 at 18:35)"),
+            ("after", "days 13 to 19, after re-watering"),
+        ),
+        strict=True,
+    )
+)
+
+
+def facet_title(a):
+    """'phase_bin=days 0-3' -> 'day 0–3', with the span of days as the annotation's hover text."""
+    name = a.text.split("=")[-1]
+    short, hover = PHASE_TITLES.get(name, (name, name))
+    a.update(text=short, hovertext=hover)
 METRICS = {"afternoon_minus_morning": "15 h − 09 h", "daily_range": "daily range", "overnight_change": "overnight"}
 METRIC_HOVER = {
     "afternoon_minus_morning": "afternoon minus morning run, per plant and day",
@@ -330,7 +362,8 @@ def layout(**_):
     sep, sch = read_table("diurnal", "separability"), read_table("diurnal", "schedules")
     if sep is None or sch is None or "pre_pass" not in sch:
         return html.Div([head, not_available("Daily rhythm")])
-    traits = {o["value"]: o["label"] for o in trait_options(df.columns)}
+    shown = [c for c in df.columns if not c.startswith("depth_") or c in KEPT_3D]
+    traits = {o["value"]: o["label"] for o in trait_options(shown)}
     top = html.Div(
         [
             html.Main(
@@ -359,9 +392,9 @@ def layout(**_):
         "Day profile",
         graph("dr-profile", "Mean of the chosen trait at each flyover hour, by group and stress phase", 360),
         graph("dr-rhythm", "The chosen daily metric of the trait over days since irrigation off, by group", 320),
-        hover="Mean over plants at each scheduled run; bars: standard error",
+        hover=PROFILE_HOVER,
         extra=[
-            html.Div(id="dr-trait-chips"),
+            html.Div(id="dr-trait-chips", style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
             html.Div(className="uw-spacer"),
             select("dr-trait", traits, DEFAULT_TRAIT, "Trait"),
             segmented("dr-group", {"treatment": "Treatment", "bed": "Bed"}, "treatment", "Group by"),
@@ -396,6 +429,25 @@ def update_separability(score):
     return grid, [*bed_effect(s), chip(SCORES[score], SCORE_HOVER[score], "rule")]
 
 
+def rhythm_runs(trait, group):
+    """The runs behind the day profile: those with a value that passed their module's QC (the tables keep the
+    values of failed runs). A 3D trait grouped by treatment compares W1 with W2 only, as the 3D canopy page does:
+    W3 is never pooled into its deficit numbers (leaves cut for water content)."""
+    df = load_traits()
+    df = df[df[trait].notna() & qc_pass(df, trait)]
+    if trait in KEPT_3D and group == "treatment":
+        df = df[df.bed.isin(tc.BEDS)]
+    return df
+
+
+def trait_chips(trait, group):
+    """The bed-effect chip of the trait, and for a 3D trait grouped by treatment the W1 + W2 caveat."""
+    out = list(placebo_chip(trait))
+    if trait in KEPT_3D and group == "treatment":
+        out.append(chip("W1 + W2 only", NOT_POOLED_3D))
+    return out
+
+
 @callback(
     Output("dr-profile", "figure"),
     Output("dr-rhythm", "figure"),
@@ -405,7 +457,7 @@ def update_separability(score):
     Input("dr-metric", "value"),
 )
 def update_rhythm(trait, group, metric):
-    df = load_traits().dropna(subset=[trait])
+    df = rhythm_runs(trait, group)
     unit = unit_of(trait)
     d = df.assign(phase_bin=phase_bin(df.days_since_cutoff))
     d = d[d.phase_bin != "nan"]
@@ -422,9 +474,11 @@ def update_rhythm(trait, group, metric):
         color_discrete_map=GROUP,
         labels={"hour": "h", "mean": unit},
     )
-    prof.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    prof.for_each_annotation(facet_title)
     prof.update_traces(line_width=2.5, marker_size=8, hovertemplate=f"%{{x}} h<br>%{{y:.2f}} {unit}")
-    prof.update_xaxes(tickvals=[6, 12, 18])
+    # level tick labels (they rotate on narrow facets otherwise) and one shared unit title under the middle facet
+    prof.update_xaxes(tickvals=[6, 12, 18], tickangle=0, title_text=None)
+    prof.update_xaxes(title_text="h", col=3)
     prof.update_layout(height=360, margin=dict(t=80), legend=dict(y=1.14, title_text=""))
 
     r = add_design(rhythm(df, trait)).dropna(subset=[metric])
@@ -443,7 +497,7 @@ def update_rhythm(trait, group, metric):
         line_width=2.5, marker_size=7, hovertemplate=f"day %{{x}}<br>%{{y:.2f}} {unit}<br>{METRIC_HOVER[metric]}"
     )
     rhy.update_layout(height=320, legend_title_text="")
-    return prof, mark_stress_period(rhy), placebo_chip(trait)
+    return prof, mark_stress_period(rhy), trait_chips(trait, group)
 
 
 @callback(Output("dr-schedules", "children"), Input("dr-rule", "value"))

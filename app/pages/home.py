@@ -36,8 +36,7 @@ GROUPS = {  # page path -> (tile tint, disc colour)
     "/bed-map": ("mint", "forest-700"),
     "/plant-profile": ("lilac", "plum-700"),
     "/export": ("gray", "slate-600"),
-    "/threed-browser": ("lilac", "plum-700"),
-    "/threed-compare": ("lilac", "plum-700"),
+    "/threed": ("mint", "forest-700"),  # DESIGN 2.1: forest-700 is the 3D tile colour
 }
 CAMERAS = ("thermal_", "depth_", "rgb_", "hsi_")
 

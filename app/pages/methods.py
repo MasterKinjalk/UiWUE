@@ -1,6 +1,5 @@
 """Methods & limits: how detection results were checked, and what they cannot tell you. (Jack)"""
 
-import json
 import sys
 from pathlib import Path
 
@@ -15,19 +14,21 @@ from _jack_common import (
     fmt,
     graph,
     header,
+    kept_signal,
     load_result,
     not_available,
     panel,
     readout,
     register_page,
     run_alone,
+    run_info,
+    run_time,
     segmented,
 )
 from dash import Input, Output, callback, html
 
 from uiwue import core
 from uiwue.detect import figures
-from uiwue.stats._design import derived_dir
 
 QUESTION = "How were the detection results checked, and what can they not tell you?"
 register_page(__name__, path="/methods", name="Methods & limits", order=90, description=QUESTION)
@@ -60,15 +61,25 @@ DEFINITIONS = [
 ]
 
 
-def _scope():
+SENSOR_SHORT = {"Thermal": "thermal", "Depth": "3D", "RGB": "RGB", "Hyperspectral": "HSI"}  # sensor -> scope label
+PREFIX = {"thermal": "thermal", "3D": "depth", "RGB": "rgb", "HSI": "hsi"}
+
+
+def _table_plants() -> dict | None:
+    """bed, plant of every plant in each sensor's trait table in derived/ now, by scope label."""
     df = core.load_traits()
     if df is None:
-        return not_available("Trait tables")
+        return None
     n = {}
-    for p, lbl in (("thermal", "thermal"), ("depth", "3D"), ("rgb", "RGB"), ("hsi", "HSI")):
+    for lbl, p in PREFIX.items():
         cols = [c for c in df.columns if c.startswith(p + "_") and pd.api.types.is_numeric_dtype(df[c])]
-        sub = df.loc[df[cols].notna().any(axis=1), ["bed", "plant"]].drop_duplicates() if cols else df.iloc[0:0]
-        n[lbl] = sub
+        n[lbl] = df.loc[df[cols].notna().any(axis=1), ["bed", "plant"]].drop_duplicates() if cols else df.iloc[0:0]
+    return n
+
+
+def _scope(n):
+    if n is None:
+        return not_available("Trait tables")
     cells = []
     for lbl, sub in n.items():
         beds = " · ".join(f"{b} {k}" for b, k in sub.groupby("bed").size().items())
@@ -81,13 +92,45 @@ def _scope():
     ctl = n["thermal"]
     cells += [
         html.Div(readout("controls", str(int((ctl["bed"] == "W1").sum()))), title="W1, the one control bed"),
-        html.Div(readout("dates", "24 Aug–22 Sep", size="section"), title="Placebo 24–29 Aug, re-watered 15 Sep 18:35"),
-        html.Div(readout("baseline", "30 Aug–2 Sep", size="section"), title="Each plant's own median, same slot"),
+        html.Div(_dates("dates", "24 Aug", "22 Sep"), title="Placebo 24–29 Aug, re-watered 15 Sep 18:35"),
+        html.Div(_dates("baseline", "30 Aug", "2 Sep"), title="Each plant's own median, same slot"),
     ]
     return html.Div(cells, className="uw-readouts uw-readouts-3")
 
 
-def _limits():
+def _dates(label, start, end):
+    """A date-range readout that may wrap after the dash, never inside a date: the range is wider than a
+    narrow column (phone width)."""
+    r = readout(label, f"{start}–{end}".replace(" ", " "), size="section")
+    r.children[1].style = {"whiteSpace": "normal"}
+    return r
+
+
+def _w3(onsets, tables) -> tuple[str, str, bool]:
+    """The W3 limit from the detect results, not a fixed sentence: which sensors' results include W3
+    deficit plants, and why the others do not (no W3 table, or a W3 table newer than the detect run).
+    Returns (value, hover, caveat)."""
+    if onsets is None or "n_deficit" not in onsets:
+        return "–", "No detection results yet.", True
+    sensors = [SENSOR_SHORT[s] for s in SENSOR_SHORT if s in set(onsets["sensor"])]
+    w3 = {SENSOR_SHORT.get(s, s) for s in onsets.loc[(onsets["group"] == "W3") & (onsets["n_deficit"] > 0), "sensor"]}
+    have, rest = [s for s in sensors if s in w3], [s for s in sensors if s not in w3]
+    if not rest:
+        return " · ".join(have), "W3 deficit plants are in every sensor's detection results.", False
+    run = f"the detect run of {when}" if (when := run_time(run_info())) else "the detect run"
+    why = []
+    for s in rest:
+        t = tables.get(s) if tables else None
+        k = int((t["bed"] == "W3").sum()) if t is not None else 0
+        if k:
+            why.append(f"{s}: {k} W3 plants in its table, none in {run} (rerun python -m uiwue.detect.run)")
+        else:
+            why.append(f"{s}: no W3 table")
+    tip = f"W3 results: {', '.join(have) or 'none'}. " + "; ".join(why) + ". Those results are W2 only, not replicated."
+    return (" · ".join(have) + " only") if have else "none", tip, True
+
+
+def _limits(tables=None):
     onsets, truth = load_result("onsets"), load_result("truth_link")
     th = None
     if onsets is not None and "null_auc_max" in onsets:
@@ -98,6 +141,7 @@ def _limits():
         r = truth[truth["signal"] == "thermal_leaf_air_dt"]
         rho = r.iloc[0] if len(r) else None
     sym = onsets[onsets["group"] == "all"].iloc[0] if onsets is not None and "n_symptom" in onsets else None
+    w3, w3_tip, w3_caveat = _w3(onsets, tables)
     items = [
         ("One control bed", "W1", ONE_CONTROL_BED, True),
         (
@@ -109,7 +153,7 @@ def _limits():
             ),
             True,
         ),
-        ("W3", "thermal only", "W3 has no RGB or depth table: RGB and 3D results are W2 only, not replicated.", True),
+        ("W3", w3, w3_tip, w3_caveat),
         ("Hyperspectral", "no table", "No hyperspectral trait table in derived/ yet; nothing is claimed for it.", True),
         (
             "Symptom dates",
@@ -201,22 +245,24 @@ def _split():
 
 
 def _run_info():
-    f = derived_dir() / "detect" / "run_info.json"
-    if not f.exists():
+    i = run_info()
+    if not i:
         return []
-    i = json.loads(f.read_text())
+    traits = i.get("traits", [])
+    left_out = sum(not kept_signal(t) for t in traits)
     return [
         chip(
             "run " + str(i.get("finished", "?"))[:10],
-            f"Computed {i.get('finished', '?')} on {i.get('plants', '?')} plants and {len(i.get('traits', []))} "
-            f"traits with {i.get('n_boot', '?')} bootstrap resamples (python -m uiwue.detect.run).",
+            f"Computed {run_time(i) or '?'} on {i.get('plants', '?')} plants and {len(traits)} traits"
+            + (f" ({left_out} noisy 3D traits not shown, {len(traits) - left_out} shown)" if left_out else "")
+            + f" with {i.get('n_boot', '?')} bootstrap resamples (python -m uiwue.detect.run).",
             "context",
         )
     ]
 
 
 def layout(**_):
-    pb = load_result("placebo")
+    pb, tables = load_result("placebo"), _table_plants()
     head = header("Methods & limits", QUESTION, *_run_info())
     placebo = (
         not_available("Placebo")
@@ -233,8 +279,8 @@ def layout(**_):
                 extra=[segmented("ml-group", GROUPS, "all", "Deficit beds")] if pb is not None else [],
             ),
             panel("Split", _split()),
-            panel("Scope", _scope()),
-            panel("Known limits", _limits()),
+            panel("Scope", _scope(tables)),
+            panel("Known limits", _limits(tables)),
             panel(
                 "Definitions",
                 html.Div(
@@ -272,7 +318,17 @@ def layout(**_):
 
 @callback(Output("ml-placebo", "figure"), Input("ml-group", "value"))
 def _placebo(group):
-    return figures.placebo_figure(load_result("placebo"), group)
+    """Placebo AUC per kept trait (load_result drops the noisy 3D traits), the size-only baseline tagged
+    'size' (DESIGN 7.6); automargin keeps the names whole."""
+    pb, onsets = load_result("placebo"), load_result("onsets")
+    if pb is None:
+        return figures.empty_figure("No placebo results")
+    if onsets is not None and "is_size_baseline" in onsets:
+        size = set(onsets.loc[onsets["is_size_baseline"].fillna(False).astype(bool), "signal"])
+        pb = pb.assign(label=pb["label"].where(~pb["signal"].isin(size), "size · " + pb["label"].astype(str)))
+    fig = figures.placebo_figure(pb, group)
+    fig.update_yaxes(automargin=True)
+    return fig
 
 
 if __name__ == "__main__":

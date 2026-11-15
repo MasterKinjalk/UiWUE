@@ -60,6 +60,16 @@ SENSOR_COLOURS = {
     "size": C["gray-500"],
 }
 SENSOR_TAG = {"Thermal": "IR", "Depth": "3D", "RGB": "RGB", "Hyperspectral": "HSI"}
+# Source tags (DESIGN 5) of the benchmark's sensor keys, for the setup tick labels; the full names stay on hover
+SETUP_TAG = {
+    "rgb": "RGB",
+    "depth": "3D",
+    "thermal": "IR",
+    "thermal_r160": "IR 160",
+    "thermal_r80": "IR 80",
+    "hsi": "HSI",
+    "size": "size",
+}
 MODEL_SYMBOL = {
     "logistic": "circle",
     "boosted": "diamond",
@@ -217,7 +227,8 @@ def auc_curves(
         fig.add_annotation(
             x=float(rob), y=1.04, yref="y", text="onset", showarrow=False, font=dict(size=12, color=C["navy"])
         )
-    fig.update_xaxes(title="day", range=[-10.5, 18.5], zeroline=False, dtick=2)
+    # every 4th day from day 0 (cut-off) through day 12 (re-watered): level labels that fit a phone-width chart
+    fig.update_xaxes(title="day", range=[-10.5, 18.5], zeroline=False, tick0=0, dtick=4, tickangle=0)
     fig.update_yaxes(title="AUC", range=[0, 1.08])
     return _theme(fig, 380)
 
@@ -288,6 +299,13 @@ def recovery_summary(rec: pd.DataFrame | None, signals=None, group: str = "all")
 # --------------------------------------------------------------------------- #
 # Sensor comparison
 # --------------------------------------------------------------------------- #
+def setup_tick(sensors: str, n_deficit, n_control) -> str:
+    """Tick label of a setup: one source tag per line ('RGB<br>+ 3D<br>+ IR 160'), then the plant counts
+    ('9 · 9'), so the labels of fifteen setups stay apart; the full setup name is in the hover."""
+    tags = [SETUP_TAG.get(s, s) for s in str(sensors).split("+")]
+    return "<br>".join([tags[0], *(f"+ {t}" for t in tags[1:]), f"{int(n_deficit)} · {int(n_control)}"])
+
+
 def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "early_auc") -> go.Figure:
     """One point per setup and model, cheapest setup on the left, n plants in the tick label.
     Open markers: the placebo or the pre-cutoff check flagged the setup."""
@@ -299,13 +317,9 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
         fig.add_hline(y=r[metric], line_dash="dash", line_color=SENSOR_COLOURS["size"], line_width=1)
     fig.add_hline(y=0.5, line_color=C["rule"], line_width=1)
     rest = b[~b["is_size_baseline"].astype(bool)].copy()
-    rest["tick"] = (
-        rest["setup"]
-        + "<br>"
-        + rest["n_deficit"].astype(int).astype(str)
-        + " · "
-        + rest["n_control"].astype(int).astype(str)
-    )
+    rest["tick"] = [
+        setup_tick(s, d, c) for s, d, c in zip(rest["sensors"], rest["n_deficit"], rest["n_control"], strict=True)
+    ]
     order = rest.drop_duplicates("setup").sort_values("cost_rank")
     ticks = dict(zip(order["setup"], order["tick"], strict=True))
     colour = {"logistic": C["teal-700"], "boosted": C["navy"]}
@@ -339,10 +353,14 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
                     sub["robust_onset_day"] if "robust_onset_day" in sub else sub["onset_day"],
                     sub["placebo_auc"],
                     np.where(flag, "flagged", "clean"),
+                    sub["setup"],
+                    sub["n_deficit"].astype(int),
+                    sub["n_control"].astype(int),
                 ],
                 hovertemplate=(
-                    "%{x}<br>AUC %{y:.2f}<br>robust onset day %{customdata[0]}"
-                    "<br>placebo AUC %{customdata[1]:.2f} · %{customdata[2]}<extra>" + model + "</extra>"
+                    "%{customdata[3]}<br>AUC %{y:.2f}<br>robust onset day %{customdata[0]}"
+                    "<br>placebo AUC %{customdata[1]:.2f} · %{customdata[2]}"
+                    "<br>%{customdata[4]} deficit · %{customdata[5]} control plants<extra>" + model + "</extra>"
                 ),
             )
         )

@@ -414,7 +414,7 @@ dates from 24 Aug, the four diagnostics `soil_z_mm`, `clipped_fraction`, `centro
 
 The batch: 5,970 runs (28 plants, 12 Aug–19 Sep, all slots), 0 errors, 0.48 s per run on one
 core, about 3 minutes on 20 workers; 5,970 cached clouds (frame 7, plant-centred, points within
-15 cm) for the 3D Browser.
+15 cm) for the 3D canopy page.
 
 **Refined depth (optional, `--depth-model`)**: replaces each frame's ToF depth with the
 fine-tuned Prompt Depth Anything map (§9.2), resampled to the ToF pixel grid (per pixel: points
@@ -1271,18 +1271,16 @@ difference. 15 h is the cleanest slot before the cutoff.
 
 `app/app.py` is a Dash multi-page shell [Dash]; each file in `app/pages/` registers itself (path,
 name, order, and a `description` holding the page's question). Pages read only `derived/` through
-`uiwue.core` (the 3D pages also read cached clouds), and every page shows an empty state when its
-table is missing.
+`uiwue.core` (the 3D canopy page also reads cached clouds), and every page shows an empty state when
+its table is missing.
 
 | Page | What it computes and shows |
 |---|---|
 | **Home** `/` | a table of every derived table (rows, plants, dates); a heatmap of plants with data per sensor and day (`coverage`), with the cutoff marked |
-| **Plant profile** `/plant-profile` | cards: treatment, clip onset, first symptom (with its note), RWC (W3 sampled plants), latest `detect_stress_prob`. Charts: the chosen trait's daily value (median of 12/15 h) for the plant against the control bed; clip turgor trace; RWC; mean spectrum by date (when `spectra_runs` exists) |
+| **Plant profile** `/plant-profile` | cards: treatment, clip onset, first symptom (with its note), RWC (W3 sampled plants), latest `detect_stress_prob`, 3D leaf area against the plant's baseline at the end of the no-water window and after re-watering (a readout: its −20 % rule also flags a control plant). Charts: the chosen trait's daily value (median of 12/15 h) for the plant against the control bed; clip turgor trace; RWC; mean spectrum by date (when `spectra_runs` exists) |
 | **Bed map** `/bed-map` | the 216 pots in their grid positions, three beds side by side, coloured by any trait at a chosen day and slot; one colour range per trait (2nd–98th percentile over all runs) so days compare; pots without a reading as open rings; clip plants outlined; play button steps through days |
-| **3D Browser** `/threed-browser` | the cached point cloud (colour by RGB, height, plant/background), the reference plane, a second date side by side, QC badges, every trait ± MAD (unreliable traits marked), RGB frame 7, `height_p75` over time; deep links `?bed=W2&plant=J5&date=…&hour=15` |
+| **3D canopy** `/threed` | W1 against W2 on three traits (leaf area, height p75, hull volume) as % change from each plant's own baseline (plant-day mean of the QC-pass 9–18 h runs): headline tiles (loss peak → trough, what came back after re-watering, onset against thermal); the chosen plant's cloud then and now (plant points only, one camera and scale) with a side elevation; deficit minus control by day with a plant-bootstrap CI; collapse and recovery per plant; an onset strip against thermal and RGB from `derived/detect`; no synthetic cloud when the cache is missing. Deep link `?bed=W2&plant=J5&day=10`; details in `docs/threed/APP.md` |
 | **Early warning** `/early-warning` | stat tiles: first sensor (robust onset with its range), next sensor, size only, lead vs leaf clip (n), written notes (n); onset dot plot (rule and robust onset per signal, by sensor); daily AUC of one signal with the watered-day envelope and per-slot onsets; recovery bars; CSV table; group switch (W2 + W3, W2, W3) |
-| **3D Compare** `/threed-compare` | a trait over time by treatment, bed or chosen plants (optional % change from 1–2 Sep; mean ± SD band; one line per plant); day × hour heatmaps; midday depression and overnight recovery; trait vs turgor for clip plants; a result card with E1, E2, E3 |
-| **3D Export** `/threed-export` | filters, a 250-row preview, CSV download of the depth table, and a Markdown method summary (calendar, noise floor, QC flags, parameters, parity) |
 | **Sensor comparison** `/sensor-comparison` | tiles: thermal only, best combination, size only, cheapest close; plant set switch (same plants by default, or each setup's own); AUC per setup with n in the tick label; CSV table; fusion rows appear on the own-plants view when `fusion_benchmark` exists |
 | **Daily rhythm** `/daily-rhythm` | mean ± SEM per slot in five phase bins; a rhythm metric (§7.9) over days by group; the separability heatmap (day × slot AUC); the schedule table per rule; a sky note from `sky_effect` |
 | **Irrigation advisor** `/irrigation` | pick a rule (its recommended schedule pre-selected) and a day; every plant's status on that day as fine / watch / irrigate marks (from `status` with the tuned threshold); the rule's track record on W2 and the held-out W3; a plant's score over time with the threshold line |

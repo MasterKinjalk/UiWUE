@@ -14,6 +14,7 @@ from _jack_common import (
     fmt,
     graph,
     header,
+    min_width,
     missing_tile,
     not_available,
     panel,
@@ -33,6 +34,7 @@ QUESTION = "Does adding depth or RGB to one thermal camera detect deficit better
 register_page(__name__, path="/sensor-comparison", name="Sensor comparison", order=40, description=QUESTION)
 
 PLANT_SETS = {"common": "Same plants", "own": "All plants"}
+SETUPS_MIN_PX = 900  # narrower, fifteen setup labels run into each other: the chart scrolls in its panel instead
 METRICS = {"early_auc": "Days 1–4", "full_auc": "Days 1–12"}
 LOPO = (
     "Each setup is scored on plants it never saw: leave-one-plant-out, logistic and boosted trees, inputs are "
@@ -40,8 +42,8 @@ LOPO = (
     "plant's mean probability over days 1–4, deficit vs control. Cost rises left to right (rank, not price)."
 )
 SETS_HOVER = {
-    "common": "Every setup on the same plant-days: those with thermal, depth and RGB (W1 and W2 only; W3 has "
-    "thermal only).",
+    "common": "Every setup on the same plant-days: those with thermal, depth and RGB (W1 and W2 only; W3 has no "
+    "RGB).",
     "own": "Each setup on the plant-days that have all its sensors, so plant counts differ between setups.",
 }
 
@@ -95,7 +97,7 @@ def tiles(bench, group, plant_set):
             )
         )
     else:
-        out.append(missing_tile("Best combination", "No multi-sensor setup for this group: W3 has thermal only"))
+        out.append(missing_tile("Best combination", "No multi-sensor setup with thermal for this group and plant set"))
     size = b[b["is_size_baseline"].astype(bool)].sort_values("early_auc", ascending=False)
     if len(size):
         r = size.iloc[0]
@@ -133,10 +135,16 @@ def layout(**_):
             html.Div(id="sc-tiles", className="uw-tiles", style={"paddingBottom": "16px"}),
             panel(
                 "Setups",
-                graph("sc-figure", "AUC per sensor setup and model, cheapest setup on the left"),
-                hover="One point per setup and model; whiskers are 95 % CIs from resampling plants. Tick label: "
-                "deficit · control plants. Open marker: placebo bed effect or the model already separates the "
-                "beds on watered days. Dashed grey: plant size alone.",
+                html.Div(
+                    min_width(
+                        graph("sc-figure", "AUC per sensor setup and model, cheapest setup on the left"), SETUPS_MIN_PX
+                    ),
+                    className="uw-scroll",
+                ),
+                hover="One point per setup and model; whiskers are 95 % CIs from resampling plants. Tick label: the "
+                "sensors (IR thermal, IR 160 and IR 80 the low-resolution thermal, 3D depth), then deficit · control "
+                "plants. Open marker: placebo bed effect or the model already separates the beds on watered days. "
+                "Dashed grey: plant size alone.",
                 extra=[segmented("sc-metric", METRICS, "early_auc", "AUC window"), html.Span(id="sc-flags")],
             ),
             html.Div(panel("All setups", html.Div(id="sc-table")), style={"paddingTop": "16px"}),
