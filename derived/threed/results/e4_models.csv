@@ -1,0 +1,23 @@
+trait,response,slope_interaction,ci_low,ci_high,p_value,vpd_coef,vpd_p,slope_interaction_par_adjusted,onset_day,onset_date,onset_day_unadjusted,unit,n_rows,n_plants,slots_present,source
+height_p50,midday_depression,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+height_p50,overnight_recovery,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+height_p75,midday_depression,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+height_p75,overnight_recovery,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+height_p95,midday_depression,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+height_p95,overnight_recovery,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+projected_area,midday_depression,,,,,,,,,,,cm2 per day,0,0,"6,9,12,15,18",real
+projected_area,overnight_recovery,,,,,,,,,,7.0,cm2 per day,0,0,"6,9,12,15,18",real
+leaf_area_est,midday_depression,,,,,,,,,,,cm2 per day,0,0,"6,9,12,15,18",real
+leaf_area_est,overnight_recovery,,,,,,,,,,7.0,cm2 per day,0,0,"6,9,12,15,18",real
+hull_volume,midday_depression,,,,,,,,,,,cm3 per day,0,0,"6,9,12,15,18",real
+hull_volume,overnight_recovery,,,,,,,,,,,cm3 per day,0,0,"6,9,12,15,18",real
+canopy_radius,midday_depression,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+canopy_radius,overnight_recovery,,,,,,,,,,,mm per day,0,0,"6,9,12,15,18",real
+inclination_mean,midday_depression,,,,,,,,,,,deg per day,0,0,"6,9,12,15,18",real
+inclination_mean,overnight_recovery,,,,,,,,,,,deg per day,0,0,"6,9,12,15,18",real
+droop_index,midday_depression,,,,,,,,,,,ratio per day,0,0,"6,9,12,15,18",real
+droop_index,overnight_recovery,,,,,,,,,,,ratio per day,0,0,"6,9,12,15,18",real
+compactness,midday_depression,,,,,,,,,,,ratio per day,0,0,"6,9,12,15,18",real
+compactness,overnight_recovery,,,,,,,,,,,ratio per day,0,0,"6,9,12,15,18",real
+n_points,midday_depression,,,,,,,,,,,count per day,0,0,"6,9,12,15,18",real
+n_points,overnight_recovery,,,,,,,,9.0,2025-09-12,7.0,count per day,0,0,"6,9,12,15,18",real

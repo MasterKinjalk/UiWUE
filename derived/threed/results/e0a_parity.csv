@@ -1,0 +1,3 @@
+quantity,ours,paper,rel_diff,pass,ci_low,ci_high,p_value,n_rows,n_plants,height,source
+"control_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",5.341067111178941,4.3,0.24210863050673062,,3.739566424164069,6.9425677981938145,6.295150767983966e-11,87,10,"ours: height_p75 above soil, qc_pass",real
+"interaction_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",-10.972111116280088,-13.08,0.1611535843822563,,-13.201578889647616,-8.74264334291256,5.122322176641775e-22,87,10,"ours: height_p75 above soil, qc_pass",real

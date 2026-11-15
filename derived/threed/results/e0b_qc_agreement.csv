@@ -1,0 +1,4 @@
+flag,ada_label,precision,recall,f1,tp,fp,fn,n_labelled,n_flagged,n_runs,n_plants,rule,meets_target_recall,source
+qc_dark,Dark,0.9539877300613497,0.8962536023054755,0.924219910846954,311,15,36,347,326,1044,8,dark: >= 8 of 15 RGB frames Dark,True,real
+qc_not_centred,Not Centered,0.4806201550387597,0.11091234347048301,0.1802325581395349,62,67,497,559,129,1044,8,not centred: any depth/intensity/RGB/3D frame,False,real
+qc_no_plant,no plant,0.0,0.0,,0,32,1,1,32,1044,8,no plant: any frame,False,real
