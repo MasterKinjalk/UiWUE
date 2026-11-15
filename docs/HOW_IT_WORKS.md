@@ -1081,8 +1081,12 @@ camera's views from the other robot positions.
 - **Optimiser:** lr 10⁻⁴, backbone lr × 0.1. **Metric:** mask AP (COCO, IoU 0.50:0.95) via
   pycocotools at score threshold 0.3.
 - **Result v1** (step 1,000): plant AP 0.46 (AP50 0.80), leaf AP 0.44 (AP50 0.78). On ADA it finds
-  healthy leaves but misses most wilted, dark leaves after the cutoff. Not yet wired into the
-  pipeline (`process_run(plant_mask_fn=...)` is ready).
+  healthy leaves but misses most wilted, dark leaves after the cutoff.
+- **Result v2** (step 8,000, `runs/leafseg-m2f/best`): plant AP 0.54 (AP50 0.90), leaf AP 0.49
+  (AP50 0.81). In the 3D pipeline with `run --plant-model` (`uiwue.threed.plantmask`): the
+  centre-plant instance replaces ExG on points with colour, the used frames vote per voxel,
+  then the usual DBSCAN and cylinder run. It finds no plant on dark 06 h frames, which keep the
+  height rule. Method and comparison: `docs/threed/PIPELINE.md`, "Learned plant mask".
 
 ---
 
