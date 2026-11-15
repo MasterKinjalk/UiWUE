@@ -3,6 +3,8 @@
     python -m uiwue.threed.experiments --exp E0a E0b E1 E2 E3 E4 E5
     python -m uiwue.threed.experiments --exp E0a E1 E3 --runs data/derived/threed/traits_runs.parquet
     python -m uiwue.threed.experiments --synthetic          # demonstration on synthetic tables
+    python -m uiwue.threed.experiments --runs derived/threed/traits_runs.parquet --out derived/threed/results
+                                                            # from the committed team table (fresh clone)
 
 Run from the repository root. Writes the CSVs of ``schema.RESULT_FILES`` (plus a few extra
 tables), PNG figures and ``summary.md`` into ``schema.RESULTS_DIR``. ``--synthetic`` writes into
@@ -36,6 +38,7 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
 
 from uiwue.threed import envdata, schema, stats
+from uiwue.threed.contract import from_team_table
 
 # ---------------------------------------------------------------- constants
 TIER1 = ("A2", "A8", "J5", "R1", "R7")  # the paper's plants, in W1 and W2
@@ -84,6 +87,8 @@ def _log(msg: str) -> None:
 # ---------------------------------------------------------------- inputs
 def prepare_runs(df: pd.DataFrame) -> pd.DataFrame:
     """Contract checks plus the derived columns the experiments need."""
+    if "depth_capture_hour" in df:  # the committed team table (derived/threed/), not the pipeline's own
+        df = from_team_table(df)
     schema.validate_runs(df)
     df = df.copy()
     df["date"] = stats.ensure_dates(df["date"])

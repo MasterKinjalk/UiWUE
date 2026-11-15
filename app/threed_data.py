@@ -45,6 +45,7 @@ LEAF_READINGS = schema.DATA_DIR / "leaf_readings.parquet"
 SENSOR_SHEET = schema.DATA_DIR / "metadata_rwc_par_en.xlsx"
 PIPELINE_DOC = Path("docs") / "threed" / "PIPELINE.md"
 TEAM_RUNS = Path("derived") / "threed" / "traits_runs.parquet"  # the committed team table (Master-Plan 6.4)
+TEAM_RESULTS = Path("derived") / "threed" / "results"  # experiments recomputed from TEAM_RUNS (see its README)
 INTERNAL_COLUMNS = ("plant_id", "day")  # added by the loader, never exported
 SYNTHETIC_RESULTS = ("e1_noise.csv", "e3_onset.csv")  # placeholders made in synthetic mode
 GROUPINGS = {"treatment": "treatment", "bed": "bed", "plants": "plant_id"}
@@ -409,14 +410,16 @@ class Result:
 
 
 def results_dir() -> Path:
-    return repo_root() / schema.RESULTS_DIR
+    """The pipeline's results on this machine, else the copy committed in git."""
+    local = repo_root() / schema.RESULTS_DIR
+    return local if local.is_dir() else repo_root() / TEAM_RESULTS
 
 
 def load_result(name: str) -> Result:
     """``name`` is a key of ``schema.RESULT_FILES``, for example 'e3_onset.csv'."""
     if name not in schema.RESULT_FILES:
         raise KeyError(f"{name} is not in schema.RESULT_FILES")
-    rel = (schema.RESULTS_DIR / name).as_posix()
+    rel = (results_dir() / name).relative_to(repo_root()).as_posix()
     if runs_source().synthetic:
         if name in SYNTHETIC_RESULTS:
             note = "synthetic placeholder computed from the synthetic table, not a result"
@@ -799,7 +802,7 @@ def method_summary(selection: pd.DataFrame, filters: dict, traits: list[str] | N
     out.append("")
     present = sorted(p.name for p in results_dir().glob("*.csv")) if results_dir().is_dir() else []
     out += ["## Result files present", ""]
-    out += [f"- `{(schema.RESULTS_DIR / p).as_posix()}`" for p in present] or ["- none yet"]
+    out += [f"- `{(results_dir() / p).relative_to(repo_root()).as_posix()}`" for p in present] or ["- none yet"]
     return "\n".join(out) + "\n"
 
 

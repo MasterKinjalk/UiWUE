@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from uiwue.threed import envdata, schema, stats
 from uiwue.threed import experiments as ex
-from uiwue.threed import schema, stats
 
 
 @pytest.fixture(scope="module")
@@ -311,6 +311,8 @@ def test_cli_synthetic_writes_contract_files(tmp_path):
     rc = ex.main(["--synthetic", "--out", str(tmp_path)])
     assert rc == 0
     for name, cols in schema.RESULT_FILES.items():
+        if name == "e0b_qc_agreement.csv" and not envdata.ADA_QC_JSON.exists():
+            continue  # E0b needs the ADA authors' labels, which only an external/ada2025 clone has
         f = tmp_path / name
         assert f.exists(), name
         df = pd.read_csv(f)

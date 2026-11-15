@@ -1,0 +1,6 @@
+trait,noise,signal,snr,reliable,unit,noise_within_column,snr_within_column,signal_raw,signal_date,n_runs,frames_per_run,noise_method,source
+cyl_height_p50,1.9425387168807822,95.89583166718674,49.36623956776048,True,mm,,,105.44284088601592,2025-09-14,2200,6.0,runs table <trait>_mad (no frame table),real
+cyl_height_p75,2.086593050087181,66.30768032970454,31.777964719538435,True,mm,,,110.63628549382202,2025-09-14,2200,6.0,runs table <trait>_mad (no frame table),real
+cyl_height_p95,2.9689583646649496,63.931500266013245,21.533309805517597,True,mm,,,126.90955269298294,2025-09-14,2200,6.0,runs table <trait>_mad (no frame table),real
+cyl_projected_area,4.43335374530737,101.47516097771742,22.889028669351543,True,cm2,,,119.55632873672799,2025-09-14,2200,6.0,runs table <trait>_mad (no frame table),real
+cyl_n_points,112.0,4562.214285714286,40.73405612244898,True,count,,,5633.9375,2025-09-14,2200,6.0,runs table <trait>_mad (no frame table),real
