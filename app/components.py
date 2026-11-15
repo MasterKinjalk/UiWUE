@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from dash import dcc, html
 
-from uiwue.core import BASELINE, CUTOFF, REWATER, catalogue
+from uiwue.core import BASELINE, CUTOFF, REWATER, catalogue, read_table
 
 _TOKENS = json.loads((Path(__file__).resolve().parents[1] / "design" / "tokens.json").read_text(encoding="utf-8"))
 _raw = {t["name"]: t["value"] for t in _TOKENS["color"]["tokens"]}
@@ -65,7 +65,7 @@ pio.templates.default = "uiwue"
 
 BASELINE_DAYS = ((BASELINE[0] - CUTOFF).days - 0.5, (BASELINE[1] - CUTOFF).days + 0.5)
 REWATER_DAY = (REWATER - CUTOFF).days + 0.5  # re-watered in the evening of day 12
-DRY_DAYS = (-0.5, REWATER_DAY)
+DRY_DAYS = (0, REWATER_DAY)  # cutoff (day 0) to re-watering: the band edges are the events
 GRAPH_CONFIG = {"displayModeBar": False}
 
 
@@ -89,6 +89,39 @@ def not_available(what):
 def chip(text, hover, kind="caveat"):
     """caveat (sand), rule (outlined) or context (caps) chip; the detail goes on hover."""
     return html.Span(text, title=hover, className=f"uw-chip uw-chip-{kind}")
+
+
+def placebo_chip(signal):
+    """'bed effect' chip when Jack's placebo test (detect/placebo) flags the trait: the beds differed before irrigation off."""
+    p = read_table("detect", "placebo")
+    if p is None or "bed_effect" not in p:
+        return []
+    r = p[(p.signal == signal) & (p.group == "all") & p.bed_effect.astype(bool)]
+    if r.empty:
+        return []
+    r = r.iloc[0]
+    return [
+        chip(
+            "bed effect",
+            f"Before irrigation off the deficit and control beds already differ in {r.label} "
+            f"(placebo AUC {r.placebo_auc:.2f}, 95 % CI {r.placebo_ci_low:.2f}–{r.placebo_ci_high:.2f}; detect/placebo)",
+        )
+    ]
+
+
+def size_chip():
+    """The size-only baseline next to a detection result (DESIGN 7.6): when projected leaf area alone separates."""
+    o = read_table("detect", "onsets")
+    r = o[o.is_size_baseline.astype(bool) & (o.group == "all")] if o is not None and "is_size_baseline" in o else None
+    if r is None or r.empty or pd.isna(r.onset_day.iloc[0]):
+        return chip("size · –", "Size-only baseline (depth projected area): no onset in detect/onsets yet", "rule")
+    r = r.iloc[0]
+    return chip(
+        f"size · day {r.onset_day:g}",
+        f"Size-only baseline: {r.label} alone separates deficit from control plants from day {r.onset_day:g} "
+        f"({r.n_deficit} deficit, {r.n_control} control plants with depth data; onset rule of uiwue.stats, detect/onsets)",
+        "rule",
+    )
 
 
 def mark(status, hover=None):

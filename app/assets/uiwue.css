@@ -140,7 +140,7 @@ body { margin: 0; background: var(--uw-surface); color: var(--uw-ink); font-fami
 @media (max-width: 700px) {
   .uw-page { padding: 0 var(--uw-space-4) 32px; }
   .uw-links { gap: 0 14px; }
-  .uw-links .nav-link { padding: 8px 0 5px; }
+  .uw-links .nav-link { padding: 12px 0 9px; }  /* 21 px line + 3 px rule: 45 px target */
   .uw-side { max-width: none; }
   .uw-cover-meta { display: none; }
   .uw-cover-name { flex-basis: 120px; }

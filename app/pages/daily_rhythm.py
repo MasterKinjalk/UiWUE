@@ -14,17 +14,19 @@ from components import (
     mark_stress_period,
     not_available,
     panel,
+    placebo_chip,
     readout,
     segmented,
     select,
     signed,
+    size_chip,
     trait_options,
     unit_of,
 )
 from dash import Input, Output, callback, html
 
 from uiwue.core import SLOTS, add_design, load_traits, read_table
-from uiwue.diurnal import PHASE_BINS, SCHEDULES, phase_bin, rhythm
+from uiwue.diurnal import PHASE_BINS, PLACEBO_DAYS, SCHEDULES, phase_bin, rhythm
 
 dash.register_page(
     __name__,
@@ -152,23 +154,29 @@ def heatmap(sep):
 
 
 def bed_effect(sep):
-    """Caveat chip when the placebo window (before irrigation off) already separates the beds at some hour."""
-    pre = sep[[c for c in sep.columns if c < 0]].mean(axis=1)
+    """Caveat chip when the placebo window (24-29 Aug, days -10 to -5) already separates the beds at some hour."""
+    pre = sep[[c for c in sep.columns if PLACEBO_DAYS[0] <= c <= PLACEBO_DAYS[1]]].mean(axis=1)
     off = pre[(pre - 0.5).abs() >= 0.1]
     if off.empty:
         return []
     hours = " and ".join(f"{h:02d} h" for h in off.index)
     detail = ", ".join(f"{h:02d} h AUC {v:.2f}" for h, v in off.items())
     hover = (
-        f"Before irrigation off the beds already differ ({detail}); part of the signal at these hours may be the bed"
+        f"In the placebo window (24–29 Aug, all plants watered) the beds already differ ({detail}); "
+        "part of the signal at these hours may be the bed"
     )
     return [chip(f"bed effect at {hours}", hover)]
 
 
 def plan_cards(sch):
-    w3 = sch[(sch.set == "W3 check") & sch.recommended & sch.rule.isin(PLAN_RULES)].set_index("rule")
-    ok = w3[w3.false_alerts_controls == 0]
-    best = ok.sort_values(["median_alert_day", "scans_per_day"]).index[0] if len(ok) else None
+    rec = sch[sch.recommended & sch.rule.isin(PLAN_RULES)]
+    w3 = rec[rec.set == "W3 check"].set_index("rule")
+    w2 = rec[(rec.set == "W2 tuning") & (rec.false_alerts_controls == 0)].assign(
+        day=lambda t: t.median_alert_day.fillna(99)
+    )
+    # best is chosen on W2 (tuning): most plants flagged, then earliest, then fewest flyovers; W3 only confirms
+    order = w2.sort_values(["n_detected", "day", "scans_per_day"], ascending=[False, True, True])
+    best = order.rule.iloc[0] if len(order) else None
     cards = []
     for rule in PLAN_RULES:
         if rule not in w3.index:
@@ -270,6 +278,8 @@ def schedule_table(sch, rule):
     body = []
     for name in SCHEDULES:
         a, b = w2.loc[name], w3.loc[name]
+        if pd.isna(a.scans_per_day) or pd.isna(b.n_plants):
+            continue
         body.append(
             html.Tr(
                 [
@@ -318,6 +328,7 @@ def layout(**_):
             html.Aside(
                 [
                     *plan_cards(sch),
+                    html.Div(size_chip()),
                     *sky_card(),
                     html.A("Irrigation advisor", href="/irrigation", className="uw-btn uw-btn-primary"),
                 ],
@@ -333,6 +344,7 @@ def layout(**_):
         graph("dr-rhythm", "The chosen daily metric of the trait over days since irrigation off, by group", 320),
         hover="Mean over plants at each scheduled run; bars: standard error",
         extra=[
+            html.Div(id="dr-trait-chips"),
             html.Div(className="uw-spacer"),
             select("dr-trait", traits, DEFAULT_TRAIT, "Trait"),
             segmented("dr-group", {"treatment": "Treatment", "bed": "Bed"}, "treatment", "Group by"),
@@ -353,12 +365,22 @@ def layout(**_):
 def update_separability(score):
     s = read_table("diurnal", "separability")
     s = s[(s.score == score) & (s.group == "W2 + W3")].pivot(index="hour", columns="day", values="auc")
-    return heatmap(s), [*bed_effect(s), chip(SCORES[score], SCORE_HOVER[score], "rule")]
+    if s.empty:
+        return not_available("Separability for this score"), []
+    first = {h: first_separation(s.loc[h].dropna()) for h in s.index}
+    label = (
+        f"AUC of {SCORES[score]} by flyover hour (06–18 h) and day since irrigation off "
+        f"({s.columns.min()} to {s.columns.max()}); stressed and watered plants separate "
+        + ", ".join(f"at {h:02d} h from day {d}" if d is not None else f"never at {h:02d} h" for h, d in first.items())
+    )
+    grid = html.Div(heatmap(s), role="img", **{"aria-label": label})
+    return grid, [*bed_effect(s), chip(SCORES[score], SCORE_HOVER[score], "rule")]
 
 
 @callback(
     Output("dr-profile", "figure"),
     Output("dr-rhythm", "figure"),
+    Output("dr-trait-chips", "children"),
     Input("dr-trait", "value"),
     Input("dr-group", "value"),
     Input("dr-metric", "value"),
@@ -402,7 +424,7 @@ def update_rhythm(trait, group, metric):
         line_width=2.5, marker_size=7, hovertemplate=f"day %{{x}}<br>%{{y:.2f}} {unit}<br>{METRIC_HOVER[metric]}"
     )
     rhy.update_layout(height=320, legend_title_text="")
-    return prof, mark_stress_period(rhy)
+    return prof, mark_stress_period(rhy), placebo_chip(trait)
 
 
 @callback(Output("dr-schedules", "children"), Input("dr-rule", "value"))

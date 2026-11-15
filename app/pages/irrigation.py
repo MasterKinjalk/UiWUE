@@ -5,11 +5,24 @@ from functools import lru_cache
 import dash
 import numpy as np
 import pandas as pd
-from components import RULE_SHORT, C, chip, day_label, header, mark, not_available, readout, select, signed, unit_of
+from components import (
+    RULE_SHORT,
+    C,
+    chip,
+    day_label,
+    header,
+    mark,
+    not_available,
+    readout,
+    select,
+    signed,
+    size_chip,
+    unit_of,
+)
 from dash import Input, Output, State, callback, ctx, dcc, html
 
 from uiwue.core import load_traits, read_table
-from uiwue.diurnal import RULES, SCHEDULES, status
+from uiwue.diurnal import PLACEBO_DAYS, RULES, SCHEDULES, status
 
 dash.register_page(
     __name__,
@@ -54,20 +67,22 @@ def bed_effect(rule, schedule):
     col = RULES[rule][0]
     if sep is None or col not in set(sep.score):
         return []
-    pre = sep[(sep.score == col) & (sep.group == "W2 + W3") & (sep.day < 0)].groupby("hour").auc.mean()
+    placebo = sep.day.between(*PLACEBO_DAYS)  # 24-29 Aug: every plant watered
+    pre = sep[(sep.score == col) & (sep.group == "W2 + W3") & placebo].groupby("hour").auc.mean()
     off = pre[pre.index.isin(SCHEDULES[schedule]) & ((pre - 0.5).abs() >= 0.1)]
     if off.empty:
         return []
     detail = ", ".join(f"{h:02d} h AUC {v:.2f}" for h, v in off.items())
-    hover = f"Before irrigation off the beds already differ ({detail}); part of the signal may be the bed, not stress"
+    hover = f"In the placebo window (24–29 Aug, all watered) the beds already differ ({detail}); part of the signal may be the bed"
     return [chip("bed effect at " + " and ".join(f"{h:02d} h" for h in off.index), hover)]
 
 
 def layout(**_):
     df, sch = load_traits(), read_table("diurnal", "schedules")
+    rec = sch[sch.recommended & (sch.set == "W2 tuning")] if sch is not None else None
     rules = (
-        {r: f"{RULE_SHORT[r]} · {recommended(r).replace('all five', 'all 5')}" for r in RULES}
-        if sch is not None
+        {r.rule: f"{RULE_SHORT[r.rule]} · {r.schedule.replace('all five', 'all 5')}" for r in rec.itertuples()}
+        if rec is not None
         else {}
     )
     stepper = html.Div(
@@ -84,13 +99,14 @@ def layout(**_):
         select("ir-rule", rules, DEFAULT_RULE, "Rule") if rules else None,
         stepper,
     )
-    if df is None or sch is None or "diurnal_score_ref" not in df:
+    if df is None or not rules or "diurnal_score_ref" not in df:
         return html.Div([head, not_available("Daily rhythm")])
     days = sorted(int(d) for d in df.loc[df.thermal_leaf_t.notna(), "days_since_cutoff"].unique())
+    start = min(days, key=lambda d: abs(d - DEFAULT_DAY))
     return html.Div(
         [
             head,
-            dcc.Store(id="ir-day", data=DEFAULT_DAY),
+            dcc.Store(id="ir-day", data=start),
             dcc.Store(id="ir-days", data=days),
             html.Div(
                 [
@@ -119,9 +135,10 @@ def layout(**_):
     prevent_initial_call=True,
 )
 def step(_prev, _next, day, days):
-    i = days.index(day) if day in days else 0
-    i += -1 if ctx.triggered_id == "ir-prev" else 1
-    return days[min(max(i, 0), len(days) - 1)]
+    """The previous or next day that has data, relative to the shown day; stays put at either end."""
+    if ctx.triggered_id == "ir-prev":
+        return max((d for d in days if d < day), default=day)
+    return min((d for d in days if d > day), default=day)
 
 
 @callback(
@@ -161,7 +178,9 @@ def update(rule, day):
 
     vals = m.value.dropna()
     lo, hi = min(vals.min(), k, 0) if len(vals) else 0, max(vals.max(), k) if len(vals) else 1
-    pos = lambda x: f"{np.clip((x - lo) / (hi - lo) * 100, 0, 100):.1f}%" if hi > lo else "0%"
+    pos = lambda x: (
+        f"{np.clip((x - lo) / (hi - lo) * 100, 0, 98):.1f}%" if hi > lo else "0%"
+    )  # 98: marker stays in view
     fill = {"irrigate": C["amber-900"], "watch": C["amber-700"], "fine": C["teal-700"]}
     plants = []
     for r in m.itertuples():
@@ -263,6 +282,7 @@ def update(rule, day):
                     for h, v in sky.dropna().iterrows()
                 ],
                 *bed_effect(rule, schedule),
+                size_chip(),
                 *(
                     [
                         chip(
