@@ -294,3 +294,20 @@ def test_a_thermal_only_v2_model_trains_scores_its_oof_subsets_and_new_plants(tm
                                features=feats, only=lock, summary_path=tmp_path / "lock.parquet")  # fmt: skip
     assert info["n_plants"] == len(lock) and (tmp_path / "lock.parquet").exists()
     assert set(tables["fusion_external_benchmark"]["sensors"]) <= {"thermal", "thermal_r160", "thermal_r80"}
+
+
+def test_ablation_table_has_the_benchmark_and_canary_columns(tmp_path, fake_derived):
+    from uiwue.fusion import v2
+
+    keys = _cv_keys()
+    feats = tmp_path / "thermal_features.parquet"
+    _fake_features(keys).to_parquet(feats)
+    rs = v2.assemble(_fake_cache(tmp_path / "cache", keys), feats, exclude=(), labels=_labels(keys))
+    out = tmp_path / "ablation.parquet"
+    v2.ablate(rs, ["tfeat_only"], "cpu", 20, out, feats, epochs=3, min_ref=2, folds=3, d_model=16, layers=1, heads=2)
+    t = pd.read_parquet(out)
+    assert {"tfeat_only", "benchmark_logistic", "benchmark_logistic_prelabels"} <= set(t["variant"])
+    assert {"all", "no_clip"} <= set(t["plants"])
+    assert {"day_m1_auc", "day1_ci_low", "placebo_auc_main", "recovery_auc"} <= set(t.columns)
+    bench = t[(t["variant"] == "benchmark_logistic") & (t["group"] == "all") & (t["plants"] == "all")]
+    assert bench["placebo_auc_main"].notna().all()

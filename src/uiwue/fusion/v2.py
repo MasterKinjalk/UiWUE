@@ -897,6 +897,49 @@ def benchmark_rows(
             extra |= {f"day{d}_ci_low": c["ci_low"].get(d, np.nan) for d in (0, 1, 2, 3)}
             extra |= {f"day_m{-d}_auc": pc["auc"].get(d, np.nan) for d in range(CANARY_DAYS[0], CANARY_DAYS[1] + 1)}
             out.append(dict(variant="benchmark_logistic", plants=plants, sensors=name, **row, **extra))
+    out += _benchmark_prelabels(daily, sets["thermal"], out, groups, n_boot, plants)
+    return out
+
+
+def _benchmark_prelabels(daily, feats, rows, groups, n_boot, plants) -> list[dict]:
+    """The benchmark's features and model trained the way the fusion models are: every plant-day
+    before the cutoff is a negative and the deficit beds' day 0 is left out (variant
+    benchmark_logistic_prelabels). It separates the effect of the labels from that of the model."""
+    from uiwue.detect.benchmark import lopo_predict
+
+    d = daily["days_since_cutoff"]
+    deficit = daily["bed"] != "W1"
+    lab = daily.assign(y=(deficit & (d >= 1)).astype(int))
+    tr = lab[(d <= TRAIN_DAYS[1]) & ~(deficit & (d == 0))]
+    frames = {
+        "stress": daily[d.between(*TRAIN_DAYS)],
+        "pre": daily[d.between(*CANARY_DAYS)],
+        "plac": daily[daily["date"].between(*(pd.Timestamp(x) for x in core.PLACEBO))],
+    }
+    scored = {}
+    for k, fr in frames.items():
+        fr = fr.copy()
+        fr["prob"] = lopo_predict(tr, feats, "logistic", predict=fr)
+        scored[k] = fr
+    base = {r["group"]: r for r in rows if r["sensors"] == "thermal" and r["variant"] == "benchmark_logistic"}
+    out = []
+    for g in groups:
+        if g not in base:
+            continue
+        curve = _curve(scored["stress"], g, n_boot)
+        (e, elo, ehi), _, _ = _per_plant_auc(scored["stress"], g, n_boot, EARLY_DAYS)
+        (fa, _, _), _, _ = _per_plant_auc(scored["stress"], g, 0, FULL_DAYS)
+        c, pc = curve.set_index("day"), _curve(scored["pre"], g, 0).set_index("day")
+        row = dict(base[g])  # the placebo bed model does not depend on the labels: the benchmark's
+        row.update(
+            variant="benchmark_logistic_prelabels", plants=plants, early_auc=e, early_ci_low=elo, early_ci_high=ehi,
+            full_auc=fa, onset_day=onset_day(curve) if len(curve) else np.nan,
+            placebo_auc_main=_per_plant_auc(scored["plac"], g, 0)[0][0],
+            **{f"day{x}_auc": c["auc"].get(x, np.nan) for x in (0, 1, 2, 3)},
+            **{f"day{x}_ci_low": c["ci_low"].get(x, np.nan) for x in (0, 1, 2, 3)},
+            **{f"day_m{-x}_auc": pc["auc"].get(x, np.nan) for x in range(CANARY_DAYS[0], CANARY_DAYS[1] + 1)},
+        )  # fmt: skip
+        out.append(row)
     return out
 
 
@@ -1076,7 +1119,7 @@ def ablate(
         pd.DataFrame(rows).to_parquet(out, index=False)
     if features is not None:
         bench = lambda ev, plants: [
-            r | dict(variant="benchmark_logistic" + tag)
+            r | dict(variant=r["variant"] + tag)
             for r in benchmark_rows(features, pids, ev, n_boot, plants=plants, baseline=baseline)
         ]
         rows += bench(None, "all") + bench(pids - clips, "no_clip")
