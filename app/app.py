@@ -14,6 +14,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:  # pages import helpers that sit next to this file
     sys.path.insert(0, str(HERE))
+try:  # a fresh clone without `pip install -e .`: use the package from src/
+    import uiwue  # noqa: F401
+except ImportError:
+    sys.path.insert(0, str(HERE.parent / "src"))
 
 import components  # noqa: F401  (registers the shared figure theme before pages load)
 import dash
