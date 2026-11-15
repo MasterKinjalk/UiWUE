@@ -506,7 +506,8 @@ is clear of bed differences. The benchmark keeps onset day 2 there, with day 1 a
 
 The selection rule was applied with a short script over the ablation table (the rule is
 quoted in "Protocol"); `fusion_v2` in `fusion_benchmark` reproduces the ablation's
-`tfeat_only+win6` row exactly (same folds and seed).
+`tfeat_only+win6` row exactly (same folds and seed). The run scripts, the selection script and
+the logs are in `runs/logs/v2/` (not in git).
 
 Outputs: `derived/detect/fusion_v2_ablation.parquet` (every variant and round),
 `fusion_benchmark`, `fusion_auc_by_day`, `fusion_severity` (model `fusion_v2`),
