@@ -23,23 +23,46 @@ from uiwue import core
 
 SENSORS = ("rgb", "thermal", "depth", "hsi")
 FRAME_GLOB = {"thermal": "thermal_*.tif", "depth": "depth_*.tif", "hsi": "hsi_*.jp2"}
-FRAMES = {"rgb": (7,), "thermal": None, "depth": (7,), "hsi": None}  # None = every frame
+# Depth and RGB: 15 frames on a 3 x 5 grid of robot positions; frame 7 is the centre view.
+# Thermal: 5 frames on a 8 cm sweep along the row; projecting the plant (frame-7 RGB optical
+# axis) through the ADA calibration puts it at 26-80 % of the image width from frame 0 to 4
+# and at 48-61 % in frame 2. Frames 0, 1, 3, 4 are off-centre views that bring neighbours in,
+# so only frame 2 is used (as ADA's 3d_viewer and the LoRA stage). Verified 2026-11-14.
+FRAMES = {"rgb": (7,), "thermal": (2,), "depth": (7,), "hsi": None}  # None = every frame
+# Hyperspectral is used at 9, 12 and 15 h only (Master Plan 6.5): the 06 h cubes are dark
+# (flat-field values up to 1e8) and the 18 h cubes are often saturated.
+SLOTS = {"hsi": (9, 12, 15)}
 SIZE = 224
 
 # Logitech C920 band centres (approximate, µm). DOFA takes wavelengths in µm.
 RGB_WAVELENGTHS = (0.61, 0.54, 0.465)
 # Fixed scalings to roughly zero mean, unit spread (documented constants, not fitted).
 REFLECTANCE_SCALE = (0.5, 0.25)  # (x - 0.5) / 0.25 for RGB in 0-1 and HSI reflectance
+REFLECTANCE_RANGE = (0.0, 2.0)  # flat-field reflectance is clipped to this (leaves near the lens exceed 1)
 THERMAL_SCALE = (27.5, 8.75)  # °C
-DISPARITY_SCALE = (1.6, 0.6)  # 1 / metres; the Pico Flexx sits ~0.4-1.0 m above the plants
+# 1 / metres. The Pico Flexx sees soil at 0.45-0.52 m (disparity 1.9-2.2) and canopy tops at
+# 0.27 m (3.7), tall controls up to 0.19 m (5.2). Centring on 0.40 m (2.5) maps soil to about
+# -0.7 and the tallest canopy to +3.6, the range ImageBind's standardised SUN RGB-D disparity
+# covers (about -1.2 to +3.7). The earlier (1.6, 0.6) put every pixel at +0.5 to +7.
+DISPARITY_SCALE = (2.5, 0.75)
 CROP = {"rgb": 0.5, "thermal": 1.0, "depth": 1.0, "hsi": 1.0}  # centre square, fraction of the short side
 
-# Hyperspectral flat-field dark reference, as in the ADA code (analysis/hyperspectral).
-DARK_REFERENCE = Path(
-    os.environ.get(
-        "UIWUE_HSI_DARK", Path(core.REPO).parent / "ada2025" / "analysis" / "hyperspectral" / "black_reference.npy"
-    )
-)
+
+def _dark_reference() -> Path:
+    """ADA's flat-field dark reference (analysis/hyperspectral/black_reference.npy).
+
+    UIWUE_HSI_DARK, else the ada2025 clone in external/ or next to the repo. The old
+    default (only next to the repo) did not exist in this layout, and a missing file
+    silently turned the flat-field correction off.
+    """
+    if "UIWUE_HSI_DARK" in os.environ:
+        return Path(os.environ["UIWUE_HSI_DARK"])
+    rel = Path("ada2025") / "analysis" / "hyperspectral" / "black_reference.npy"
+    candidates = [core.REPO / "external" / rel, core.REPO.parent / rel]
+    return next((p for p in candidates if p.exists()), candidates[0])
+
+
+DARK_REFERENCE = _dark_reference()
 
 # Variants: the same run seen through a cheaper or reduced sensor (Part B). Each
 # gets its own embedding table and can replace the full sensor at evaluation.
@@ -89,7 +112,7 @@ def list_runs(data_dir: Path, sensor: str, plants: list[str] | None = None) -> p
             best = {}
             for hdir in (h for h in ddir.iterdir() if h.is_dir() and h.name.isdigit()):
                 slot, n = core.slot_for_hour(int(hdir.name)), len(list(hdir.glob(FRAME_GLOB[sensor])))
-                if slot is None or n == 0:
+                if slot is None or n == 0 or slot not in SLOTS.get(sensor, core.SLOTS):
                     continue
                 rank = (int(hdir.name) == slot, n)
                 if slot not in best or rank > best[slot][0]:
@@ -190,38 +213,63 @@ def load_depth(path: str, frames=FRAMES["depth"]) -> Sample:
 
 
 def read_hsi(path: str, dark_reference: Path | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Flat-field-corrected cube (H, W, B) and band wavelengths (nm), via hyperio as in the ADA code."""
+    """Flat-field-corrected cube (H, W, B) and band wavelengths (nm), via hyperio as in the ADA code.
+
+    Identical to ADA's `HSI.read(jp2, dark_reference=black_reference.npy)` (checked on real
+    cubes); ADA's Savitzky-Golay smoothing is not applied. Raises if the dark reference is
+    missing or the cube is dark/saturated, so the run is reported as failed, not embedded.
+    """
     from hyperio import HSI
 
     jp2 = min(Path(path).glob(FRAME_GLOB["hsi"]))
     dark_path = Path(dark_reference or DARK_REFERENCE)
-    dark = np.load(dark_path) if dark_path.exists() else None
-    cube = np.asarray(HSI.read(jp2, dark_reference=dark), dtype=np.float32)
+    if not dark_path.exists():
+        raise FileNotFoundError(f"HSI dark reference not found: {dark_path} (set UIWUE_HSI_DARK)")
+    cube = np.asarray(HSI.read(jp2, dark_reference=np.load(dark_path)), dtype=np.float32)
+    sample = cube[::8, ::8]
+    if not np.isfinite(sample).all() or np.percentile(sample, 99) > 3 * REFLECTANCE_RANGE[1]:
+        raise ValueError(f"{jp2}: dark or saturated cube (p99 reflectance {np.percentile(sample, 99):.3g})")
     meta = json.loads(jp2.with_suffix(".json").read_text())
-    return cube, np.asarray(meta["wavelengths"], dtype=np.float32)
+    wl = np.asarray(meta["wavelengths"], dtype=np.float32)
+    # A truncated cube (hyperio warns "cube has 256 channels") must fail its run here, in the
+    # loader: with 300 wavelengths it would reach DOFA and the band masks and stop the whole job.
+    if cube.shape[-1] != len(wl):
+        raise ValueError(f"{jp2}: {cube.shape[-1]} channels but {len(wl)} wavelengths (truncated cube)")
+    return cube, wl
+
+
+def hsi_bands(wl_nm: np.ndarray, variant: str) -> np.ndarray | None:
+    """Band indices kept by a spectral variant (rgb3, mask<nm>); None for full and spatial variants.
+
+    Band selection commutes with the per-band resize and the per-pixel scaling, so a
+    spectral variant equals the full model input with these channels taken (embed.py
+    uses this instead of building 33 copies of the cube per run).
+    """
+    if variant == "rgb3":  # the three bands closest to an RGB camera
+        return np.array([int(np.abs(wl_nm - w * 1000).argmin()) for w in RGB_WAVELENGTHS])
+    if variant.startswith("mask"):  # one 20 nm window removed
+        lo = float(variant[4:])
+        return np.flatnonzero(~((wl_nm >= lo) & (wl_nm < lo + HSI_WINDOW_NM)))
+    if variant == "full" or (variant.startswith("s") and variant[1:].isdigit()):
+        return None
+    raise ValueError(variant)
 
 
 def hsi_variant(cube: np.ndarray, wl_nm: np.ndarray, variant: str) -> tuple[np.ndarray, np.ndarray]:
     """(C, H, W) reflectance and wavelengths for one HSI variant (spatial or spectral reduction)."""
     x = np.moveaxis(cube, -1, 0)
-    if variant.startswith("s") and variant[1:].isdigit():  # spatial detail removed, token count kept
-        x = resize_chw(x, int(variant[1:]))
-    elif variant == "rgb3":  # the three bands closest to an RGB camera
-        idx = [int(np.abs(wl_nm - w * 1000).argmin()) for w in RGB_WAVELENGTHS]
+    idx = hsi_bands(wl_nm, variant)
+    if idx is not None:
         x, wl_nm = x[idx], wl_nm[idx]
-    elif variant.startswith("mask"):  # one 20 nm window removed
-        lo = float(variant[4:])
-        keep = ~((wl_nm >= lo) & (wl_nm < lo + HSI_WINDOW_NM))
-        x, wl_nm = x[keep], wl_nm[keep]
-    elif variant != "full":
-        raise ValueError(variant)
+    elif variant != "full":  # spatial detail removed, token count kept
+        x = resize_chw(x, int(variant[1:]))
     return x, wl_nm
 
 
 def load_hsi(path: str, variant: str = "full", cube=None) -> Sample:
     cube, wl = read_hsi(path) if cube is None else cube
     x, wl = hsi_variant(centre_square(cube, CROP["hsi"]), wl, variant)
-    x = (x - REFLECTANCE_SCALE[0]) / REFLECTANCE_SCALE[1]
+    x = (np.clip(x, *REFLECTANCE_RANGE) - REFLECTANCE_SCALE[0]) / REFLECTANCE_SCALE[1]
     return Sample(resize_chw(x, SIZE)[None], tuple(float(w) / 1000 for w in wl))
 
 

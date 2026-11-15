@@ -1,0 +1,42 @@
+{
+  "model": "fusion+lora_thermal",
+  "finished": "2026-11-15T04:01:17+00:00",
+  "seconds": 454.1,
+  "sensors": [
+    "rgb",
+    "depth",
+    "thermal",
+    "hsi"
+  ],
+  "dims": {
+    "rgb": 768,
+    "depth": 1024,
+    "thermal": 1024,
+    "hsi": 768
+  },
+  "runs": 5616,
+  "plants": 39,
+  "config": {
+    "folds": 5,
+    "epochs": 100,
+    "patience": 10,
+    "batch": 256,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "d_model": 256,
+    "layers": 2,
+    "heads": 4,
+    "modality_dropout": 0.3,
+    "val_frac": 0.2,
+    "n_boot": 2000,
+    "seed": 20250903,
+    "lora_rank": 8,
+    "lora_blocks": 4,
+    "lora_lr": 0.0001,
+    "lora_epochs": 15,
+    "lora_batch": 16,
+    "workers": 6,
+    "extra": {}
+  },
+  "device": "cuda"
+}

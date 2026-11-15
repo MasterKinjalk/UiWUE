@@ -1,0 +1,61 @@
+{
+  "model": "fusion_v2",
+  "variant": "tfeat_only+win6",
+  "finished": "2026-11-15T06:44:14+00:00",
+  "seconds": 236.5,
+  "tokens": [
+    "tfeat"
+  ],
+  "dims": {
+    "rgb": 768,
+    "depth": 1024,
+    "thermal": 1024,
+    "hsi": 768,
+    "tfeat": 4,
+    "env": 4
+  },
+  "runs": 24624,
+  "plants": 171,
+  "plants_per_bed": {
+    "W1": 57,
+    "W2": 57,
+    "W3": 57
+  },
+  "config": {
+    "folds": 5,
+    "epochs": 100,
+    "patience": 10,
+    "batch": 256,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "d_model": 256,
+    "layers": 2,
+    "heads": 4,
+    "modality_dropout": 0.3,
+    "val_frac": 0.2,
+    "n_boot": 2000,
+    "seed": 20250903,
+    "lora_rank": 8,
+    "lora_blocks": 4,
+    "lora_lr": 0.0001,
+    "lora_epochs": 15,
+    "lora_batch": 16,
+    "workers": 4,
+    "extra": {},
+    "parts": [
+      "delta",
+      "ref"
+    ],
+    "emb": false,
+    "thermal_emb": true,
+    "tfeat": true,
+    "env": false,
+    "adv": 0.0,
+    "hardneg": 1.0,
+    "min_ref": 5,
+    "input_dropout": 0.0,
+    "window": 6
+  },
+  "device": "cuda",
+  "lockbox_excluded": 45
+}

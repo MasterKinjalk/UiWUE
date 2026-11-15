@@ -9,7 +9,8 @@
     S3 severe:  S2 and a written wilting/yellowing symptom on or before that day
   The threshold is the truth module's onset shift (5 raw units).
 - turgor: the clip shift at the run (NaN where there is no clip).
-- train: the run is inside the training window (up to the end of stress, day 12).
+- train: the run is inside the training window (up to the end of stress, day 12), except
+  the cutoff day's runs after 11:00 (positive, but too soon after watering to show stress).
 """
 
 from __future__ import annotations
@@ -43,7 +44,12 @@ def run_labels(
     cutoff = pd.Timestamp(core.CUTOFF)
     after = (d["date"] > cutoff) | ((d["date"] == cutoff) & (d["hour"] > CUTOFF_HOUR))
     d["y_deficit"] = ((d["treatment"] == "deficit") & after).astype(int)
-    d["train"] = d["date"] <= pd.Timestamp(core.REWATER)
+    # The 12, 15 and 18 h runs of the cutoff day are positive by definition but come 1-7 h
+    # after the last watering, so nothing in the image can separate them from the morning's
+    # negatives except bed cues. They are scored (day 0 of the curves) but not trained on.
+    # Controls on that afternoon are correct negatives and stay in.
+    day0_after = (d["date"] == cutoff) & (d["y_deficit"] == 1)
+    d["train"] = (d["date"] <= pd.Timestamp(core.REWATER)) & ~day0_after
 
     d["turgor"] = np.nan
     d["stage"] = -1

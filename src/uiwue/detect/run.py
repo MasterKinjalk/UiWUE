@@ -65,6 +65,56 @@ SCORES_CATALOGUE = pd.DataFrame(
             1,
             "Predicted leaf-clip shift from the turgor head, out of fold.",
         ),
+        # Written by python -m uiwue.fusion.predict to fusion_external_scores_runs: plants that the
+        # fusion model never saw, scored by the 5 fold models. Own names, so that load_traits can
+        # join both scores tables without clashing columns.
+        (
+            "detect_fusion_ext_prob",
+            "Stress probability (fusion model, external plants)",
+            "0-1",
+            1,
+            "Mean P(deficit) of the 5 fold models on plants outside the training set (external test).",
+        ),
+        (
+            "detect_fusion_ext_stage",
+            "Severity stage (fusion model, external plants)",
+            "stage",
+            1,
+            "Expected stage 0-3 from the ordinal head, mean of the 5 fold models, external plants.",
+        ),
+        (
+            "detect_fusion_ext_turgor",
+            "Turgor deviation (fusion model, external plants)",
+            "raw units",
+            1,
+            "Predicted leaf-clip shift from the turgor head, mean of the 5 fold models, external plants.",
+        ),
+        # Written by python -m uiwue.fusion.v2 train to fusion_v2_scores_runs: fusion v2 (docs/fusion.md
+        # section 8), out of fold on the development plants (the lock-box plants are not in it).
+        (
+            "detect_fusion_v2_prob",
+            "Stress probability (fusion v2)",
+            "0-1",
+            1,
+            (
+                "Out-of-fold P(deficit) from fusion v2: each sensor's change from the plant's baseline and from "
+                "the control plants in the same run, plus the hand-made thermal features; 5 folds grouped by plant."
+            ),
+        ),
+        (
+            "detect_fusion_v2_stage",
+            "Severity stage (fusion v2)",
+            "stage",
+            1,
+            "Expected stage 0-3 from fusion v2's ordinal head (S0 healthy to S3 severe), out of fold.",
+        ),
+        (
+            "detect_fusion_v2_turgor",
+            "Turgor deviation (fusion v2)",
+            "raw units",
+            1,
+            "Predicted leaf-clip shift from fusion v2's turgor head, out of fold.",
+        ),
     ],
     columns=["column", "label", "unit", "direction", "description"],
 )

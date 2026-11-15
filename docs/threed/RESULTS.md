@@ -27,6 +27,7 @@ run.
 | E2 bed check | Before the cutoff, W2 grew more slowly than W1 in every size trait: heights by 20-24 % of the W1 rate (Holm p < 1e-8), hull volume 19 %, `n_points` 27 %, leaf area 9 % (Holm 0.009) and projected area 8 % (Holm 0.048). Shape traits show no difference. |
 | E3 first traits (plan design, 15 h, Holm) | **`n_points`, `leaf_area_est`, `hull_volume` and `projected_area` on day 4 (2025-09-07)**, one day before the first written symptom of the analysed plants. `height_p95` follows on day 5, the other heights on day 7. 57 control and 49 deficit plants. |
 | E3 sensitivity (all daytime slots) | The same traits and all three heights on day 4. 70 control and 66 deficit plants. |
+| E3 step 3b, lead against teammates | On the same 30 plants, leaf minus air temperature reaches onset on day 4 and the first 3D traits on day 5: **thermal leads 3D by one day**. RGB colour (day 7) comes before any 3D onset on its 18 plants. |
 | E4 daily rhythm | No growing midday height dip. With dark runs excluded, the midday dip of `leaf_area_est` deepens by 1.21 cm²/day under deficit (p = 0.005). Deficit plants regain 0.42 mm more median height per day overnight (p = 4e-4, Holm onset day 4). |
 | E5 structural proxy for turgor | **`leaf_area_est`, lag +1 day: pooled W2 r = −0.58** (n = 402, p < 1e-16). 8 of 9 W2 and 9 of 9 W3 clip plants have rho −0.24 to −0.86. After each plant's time trend is removed, `height_p50` tracks turgor best (r = −0.41, lag +1). |
 
@@ -58,12 +59,13 @@ run.
   - the `schema.RESULT_FILES` CSVs, each with a `source` column set to `real`;
   - `e3_onset.csv`, which also has the `unit` and `onset_day_unadjusted` columns;
   - the secondary tables `e1_noise_cyl.csv`, `e3_onset_daytime.csv`, `e3_onset_cyl.csv` (each
-    with its daily tests), `e4_models.csv`, `e4_models_nodark.csv`,
+    with its daily tests), `e3_team_leads.csv` (lead time against the thermal and RGB team
+    tables; real runs only), `e4_models.csv`, `e4_models_nodark.csv`,
     `e0b_qc_agreement_variants.csv` and `e5_turgor_variants.csv`;
   - the figures (section 6) and `summary.md`.
 - `--synthetic` writes a demonstration on synthetic tables to `results/synthetic/` and never
   touches the real results.
-- Tests: `.venv/Scripts/python.exe -m pytest -q tests/threed`. All 80 pass. The synthetic tests
+- Tests: `.venv/Scripts/python.exe -m pytest -q tests/threed`. All pass. The synthetic tests
   show that each method recovers effects built in on purpose.
 
 ## 3. Design facts every result depends on
@@ -280,8 +282,37 @@ cluster-free traits do not detect stress earlier than the clustered ones.
   lead the symptom scoring can show.
 - All slopes exclude 0. A significant treatment effect over the window does not depend on the
   onset rule.
-- Lead times against teammates' NDVI and leaf-air temperature onsets (plan E3, step 3b) are not
-  computed yet.
+- Against the teammates' signals (next subsection), thermal comes first, then 3D, then colour.
+
+### E3 step 3b: lead time against the teammates' signals
+
+- Same rule as E3 (15 h, change from the plant's own baseline, Mann-Whitney per day, Holm, two
+  consecutive days), applied to the thermal and RGB team tables and to the 3D traits **on the
+  same plants** (`e3_team_leads.csv`). Temperatures and NGRDI use the change in their own units,
+  since they cross zero.
+- The thermal table covers 30 W1/W2 plants (13 control, 17 deficit), the RGB table 18 (9 + 9).
+  No NDVI table is on `main` yet; RGB NGRDI stands in for the visible colour change.
+
+| Teammate signal | Its onset (Holm) | First 3D traits on the same plants (Holm) | 3D minus teammate |
+|---|---|---|---|
+| `thermal_leaf_air_dt`, leaf minus air | **day 4** | `n_points`, `leaf_area_est` day 5; `hull_volume` day 7 | **+1 day** (thermal first) |
+| `thermal_leaf_t`, leaf temperature | day 6 (day 0 unadjusted) | as above | −1 day |
+| `thermal_leaf_ref_dt`, leaf minus control-bed leaf | day 0 | as above | not usable (see below) |
+| `rgb_ngrdi`, `rgb_green_cover` | day 7 | none with Holm; heights and volume day 8 unadjusted | ≥ +1 day (colour first, or no 3D onset) |
+
+- **Leaf minus air temperature leads the earliest 3D traits by one day.** Stomata close before
+  the canopy visibly shrinks, so this order is what the physiology predicts.
+- `thermal_leaf_ref_dt` reaches the rule on day 0, a few hours after the last watering. That is
+  the bed-level offset of each run (the beds are imaged 10-25 min apart, and the W3 end of the
+  greenhouse is warmer; `docs/fusion.md` section 8), not stress. `thermal_leaf_t` shows the same
+  day-0 shift without the correction.
+- On the 18 RGB plants only 4 deficit plants keep a QC-passing 15 h baseline in the depth table,
+  too few for a Holm onset. The colour change (day 7) comes before any 3D onset there.
+- The team's own AUC-based onsets (`derived/detect/onsets.parquet`, all deficit plants of W2
+  and W3) give the same order: leaf minus air day 3 (robust rule day 4), `depth_leaf_area_est`
+  day 5, `rgb_ngrdi` day 6.
+- On all 144 W1/W2 plants the 3D traits reach onset on day 4 (above). The thermal table covers
+  fewer plants, so the like-for-like lead is the one in this table.
 
 ### E4: daily rhythm
 

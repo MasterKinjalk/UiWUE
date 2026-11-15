@@ -23,7 +23,9 @@ two tracks are compared on the same footing. Writes derived/detect/:
   fusion_severity.parquet     Part C: within-day rank agreement of the stage and turgor heads
   fusion_scores_runs.parquet  detect_fusion_prob / _stage / _turgor per run (out of fold)
   fusion_run_info.json
-Checkpoints go to runs/fusion/<stage>/fold<k>.pt (not in git).
+Checkpoints go to runs/fusion/<stage>/ (not in git): fold<k>.pt (the fusion head, its
+standardiser, config and the fold's plants; for LoRA stages also the tuned adapter weights)
+and placebo_fold<k>.pt (the bed model). uiwue.fusion.predict scores new plants with them.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ import argparse
 import copy
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from itertools import combinations
 from pathlib import Path
@@ -45,7 +48,7 @@ from uiwue.detect.benchmark import FULL_DAYS, TRAIN_DAYS, _curve, _per_plant_auc
 from uiwue.detect.data import SETUP_LABEL, cost_rank
 from uiwue.detect.run import SCORES_CATALOGUE
 from uiwue.fusion import inputs
-from uiwue.fusion.embed import CACHE, load_table, table_path
+from uiwue.fusion.embed import CACHE, load_table
 from uiwue.fusion.fusion import FusionModel, expected_stage, fusion_loss
 from uiwue.fusion.labels import TURGOR_SCALE, run_labels
 from uiwue.stats import GROUPS, onset_day
@@ -66,6 +69,8 @@ class Config:
     lr: float = 1e-3
     weight_decay: float = 0.01
     d_model: int = 256
+    layers: int = 2
+    heads: int = 4
     modality_dropout: float = 0.3
     val_frac: float = 0.2
     n_boot: int = 2000
@@ -96,10 +101,12 @@ class RunSet:
         return [v for s, v in self.emb if s == sensor]
 
 
-def baseline_of(keys: pd.DataFrame, emb: np.ndarray, has: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def baseline_of(
+    keys: pd.DataFrame, emb: np.ndarray, has: np.ndarray, window=core.BASELINE
+) -> tuple[np.ndarray, np.ndarray]:
     """Each run's baseline: mean embedding of the plant's runs in the baseline window at the
     same hour (any hour if none at that hour). Returns (base, ok)."""
-    lo, hi = (pd.Timestamp(d) for d in core.BASELINE)
+    lo, hi = (pd.Timestamp(d) for d in window)
     in_win = has & keys["date"].between(lo, hi).to_numpy()
     base, ok = np.zeros_like(emb), np.zeros(len(keys), bool)
     plant = (keys["bed"] + "_" + keys["plant"]).to_numpy()
@@ -118,14 +125,29 @@ def baseline_of(keys: pd.DataFrame, emb: np.ndarray, has: np.ndarray) -> tuple[n
     return base, ok
 
 
-def assemble(cache: Path = CACHE, sensors=SENSOR_ORDER, labels: pd.DataFrame | None = None) -> RunSet:
-    """Align every cached (sensor, variant) table on the union of runs and attach labels."""
+def load_tables(caches: Path | list[Path], sensors=SENSOR_ORDER) -> dict[tuple[str, str], tuple]:
+    """Every cached (sensor, variant) table; several cache folders (e.g. plants embedded in
+    batches) are concatenated, keeping the first copy of a run."""
+    caches = [Path(caches)] if isinstance(caches, str | Path) else [Path(c) for c in caches]
+    parts: dict[tuple[str, str], list] = {}
+    for cache in caches:
+        for s in sensors:
+            for p in sorted(cache.glob(f"emb_{s}_*.npz")):
+                parts.setdefault((s, p.stem.split(f"emb_{s}_", 1)[1]), []).append(load_table(p))
     tables = {}
-    for s in sensors:
-        for v in ["full", *[p.stem.split(f"emb_{s}_", 1)[1] for p in sorted(Path(cache).glob(f"emb_{s}_*.npz"))]]:
-            p = table_path(cache, s, v)
-            if p.exists() and (s, v) not in tables:
-                tables[(s, v)] = load_table(p)
+    order = sorted(parts, key=lambda sv: (list(sensors).index(sv[0]), sv[1] != "full", sv[1]))  # full first
+    for sv in order:
+        got = parts[sv]
+        keys = pd.concat([k for k, _ in got], ignore_index=True)
+        emb = np.concatenate([e for _, e in got])
+        first = ~keys.duplicated(core.KEYS).to_numpy()
+        tables[sv] = (keys[first].reset_index(drop=True), emb[first])
+    return tables
+
+
+def assemble(cache: Path | list[Path] = CACHE, sensors=SENSOR_ORDER, labels: pd.DataFrame | None = None) -> RunSet:
+    """Align every cached (sensor, variant) table on the union of runs and attach labels."""
+    tables = load_tables(cache, sensors)
     present_sensors = [s for s in sensors if (s, "full") in tables]
     if not present_sensors:
         raise FileNotFoundError(f"no embeddings in {cache}; run python -m uiwue.fusion.embed first")
@@ -220,12 +242,18 @@ def _usable(rs: RunSet, idx: np.ndarray, setup: dict[str, str]) -> np.ndarray:
     return idx[ok]
 
 
+def build_model(dims: dict[str, int], cfg: Config) -> FusionModel:
+    return FusionModel(
+        dims, d_model=cfg.d_model, layers=cfg.layers, heads=cfg.heads, modality_dropout=cfg.modality_dropout
+    )
+
+
 def fit_head(rs: RunSet, train_idx, val_idx, cfg: Config, device: str, target="y_deficit", aux=True):
     """Stage 1: train the fusion head on cached embeddings, early stopping on val loss."""
     torch.manual_seed(cfg.seed)
     setup = full_setup(rs)
     train_idx, val_idx = _usable(rs, train_idx, setup), _usable(rs, val_idx, setup)
-    model = FusionModel(rs.dims, d_model=cfg.d_model, modality_dropout=cfg.modality_dropout).to(device)
+    model = build_model(rs.dims, cfg).to(device)
     if len(train_idx) == 0:
         return None  # nothing to learn from (e.g. no pre-cutoff runs for the placebo model)
     for s in rs.sensors:  # standardisation from this fold's training plants only (rule 6)
@@ -362,8 +390,19 @@ def within_day_rho(keys: pd.DataFrame, pred: np.ndarray, truth: np.ndarray, min_
 # --------------------------------------------------------------------------- #
 # stage 1 cross-validation
 # --------------------------------------------------------------------------- #
-def cross_validate(rs: RunSet, cfg: Config, device: str, fit=fit_head, ckpt_dir: Path | None = None) -> dict:
-    """Out-of-fold predictions for every setup, from one model per fold (+ a placebo model)."""
+def cross_validate(
+    rs: RunSet,
+    cfg: Config,
+    device: str,
+    fit=fit_head,
+    ckpt_dir: Path | None = None,
+    fold_state: Callable[[], dict] | None = None,
+) -> dict:
+    """Out-of-fold predictions for every setup, from one model per fold (+ a placebo model).
+
+    With ckpt_dir, each fold's model and placebo model are saved with the plants they were
+    trained on; `fold_state()` adds stage-specific weights (the LoRA adapters) to fold<k>.pt.
+    """
     keys = rs.keys
     train_rows = keys["train"].fillna(False).to_numpy()
     pre_rows = keys["date"].between(*(pd.Timestamp(d) for d in core.PLACEBO)).to_numpy()
@@ -384,7 +423,16 @@ def cross_validate(rs: RunSet, cfg: Config, device: str, fit=fit_head, ckpt_dir:
         _, stage[test], turg[test] = predict(model, rs, test, full_setup(rs), device)
         if ckpt_dir is not None:
             ckpt_dir.mkdir(parents=True, exist_ok=True)
-            torch.save({"model": model.state_dict(), "dims": rs.dims, "config": asdict(cfg)}, ckpt_dir / f"fold{k}.pt")
+            plants = dict(
+                sensors=list(rs.sensors), dims=dict(rs.dims), config=asdict(cfg),
+                train_pids=sorted(keys["pid"].iloc[train].unique()), test_pids=sorted(keys["pid"].iloc[test].unique()),
+            )  # fmt: skip
+            extra = fold_state() if fold_state is not None else {}
+            torch.save({"model": model.state_dict(), **plants, **extra}, ckpt_dir / f"fold{k}.pt")
+            if pmodel is not None:
+                torch.save(
+                    {"model": pmodel.state_dict(), **plants, "target": "y_bed"}, ckpt_dir / f"placebo_fold{k}.pt"
+                )
         print(f"  fold {k + 1}/{cfg.folds}: {keys.iloc[test]['pid'].nunique()} held-out plants")
     return dict(prob=prob, placebo=pprob, stage=stage, turgor=turg, setups=all_setups)
 
@@ -413,7 +461,12 @@ def results(rs: RunSet, cv: dict, model_name: str, n_boot: int, groups=("all", "
                 bench.append(row)
         for c in cs:
             curves.append(
-                c.assign(signal=f"model:{name}:{model_name}", kind="model", column=f"model:{name}:{model_name}")
+                c.assign(
+                    signal=f"model:{name}:{model_name}",
+                    kind="model",
+                    column=f"model:{name}:{model_name}",
+                    model=model_name,
+                )
             )
     hsi = pd.DataFrame(hsi)
     if not hsi.empty:
@@ -441,6 +494,17 @@ def results(rs: RunSet, cv: dict, model_name: str, n_boot: int, groups=("all", "
     )
 
 
+def save_oof(rs: RunSet, cv: dict, run_dir: Path) -> None:
+    """Out-of-fold P(deficit) and placebo P(bed) of every setup, per run, beside the checkpoints
+    (runs/fusion/<model>/oof_{prob,placebo}.parquet, not in git), so other plant subsets (e.g.
+    plants without turgor clips) can be scored later without retraining."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    keys = rs.keys[[*core.KEYS, "pid", "days_since_cutoff"]].reset_index(drop=True)
+    for what in ("prob", "placebo"):
+        cols = pd.DataFrame({name: v for name, v in cv[what].items()})
+        pd.concat([keys, cols], axis=1).to_parquet(run_dir / f"oof_{what}.parquet", index=False)
+
+
 def _hsi_analysis(v: str) -> str:
     if v == "full":
         return "all 300 bands, 224 px"
@@ -449,6 +513,15 @@ def _hsi_analysis(v: str) -> str:
     if v.startswith("s"):
         return f"spatial detail of {v[1:]} px"
     return "20 nm window masked"
+
+
+def model_of(table: pd.DataFrame) -> pd.Series:
+    """Each row's model. Tables written before 2026-11-15 have no `model` column in the per-day
+    curves; there it is the last part of `signal` ("model:<sensors>:<model>"). A second stage's
+    write failed on those with KeyError 'model'."""
+    if "model" in table:
+        return table["model"].fillna(table["signal"].str.split(":").str[-1]) if "signal" in table else table["model"]
+    return table["signal"].str.split(":").str[-1]
 
 
 def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None = None) -> Path:
@@ -466,7 +539,7 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
             out_df["date"] = pd.to_datetime(out_df["date"]).dt.date
         else:
             old = pd.read_parquet(path) if path.exists() else None
-            out_df = df if old is None else pd.concat([old[old["model"] != model_name], df], ignore_index=True)
+            out_df = df if old is None else pd.concat([old[model_of(old) != model_name], df], ignore_index=True)
         out_df.to_parquet(path, index=False)
     SCORES_CATALOGUE.to_csv(out / "catalogue.csv", index=False)
     return out
@@ -477,24 +550,26 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
 # --------------------------------------------------------------------------- #
 class _LiveImages(torch.utils.data.Dataset):
     def __init__(self, paths: list[str | None], base_paths: list[list[str]], sensor: str, aug: bool, seed: int):
-        self.paths, self.base_paths, self.sensor, self.aug = paths, base_paths, sensor, aug
-        self.rng = np.random.default_rng(seed)
+        self.paths, self.base_paths, self.sensor, self.aug, self.seed = paths, base_paths, sensor, aug, seed
 
     def __len__(self):
         return len(self.paths)
 
-    def _load(self, path):
+    def _load(self, path, rng):
         if self.sensor == "thermal":  # one centre frame so runs stack
             s = inputs.load_thermal(path, frames=(2,))
         else:
             s = inputs.load(self.sensor, path)
         x = torch.from_numpy(s.frames)
-        return (inputs.augment(x, self.rng) if self.aug else x), s.wavelengths
+        return (inputs.augment(x, rng) if self.aug else x), s.wavelengths
 
     def __getitem__(self, i):
+        # One generator per (epoch seed, item): a generator made in __init__ is copied into every
+        # DataLoader worker, so all workers drew the same flips, crops and baseline runs.
+        rng = np.random.default_rng([self.seed, i])
         try:
-            x, wl = self._load(self.paths[i])
-            xb, _ = self._load(self.base_paths[i][int(self.rng.integers(len(self.base_paths[i])))])
+            x, wl = self._load(self.paths[i], rng)
+            xb, _ = self._load(self.base_paths[i][int(rng.integers(len(self.base_paths[i])))], rng)
             return i, x, xb, wl
         except Exception:  # noqa: BLE001  (an unreadable run is dropped from the batch)
             return i, None, None, None
@@ -617,7 +692,12 @@ def cross_validate_lora(rs: RunSet, stage: LoRAStage, cfg: Config, device: str, 
         rs_.emb, rs_.base, rs_.has = ({k: v.copy() for k, v in d.items()} for d in frozen)
         return stage.fit(rs_, tr, va, cfg_, dev)
 
-    return cross_validate(rs, cfg, device, fit=fit, ckpt_dir=ckpt_dir)
+    def fold_state():
+        from uiwue.fusion.encoders import lora_state_dict
+
+        return dict(lora=lora_state_dict(stage.encoder), lora_sensor=stage.sensor)
+
+    return cross_validate(rs, cfg, device, fit=fit, ckpt_dir=ckpt_dir, fold_state=fold_state)
 
 
 # --------------------------------------------------------------------------- #
@@ -634,20 +714,27 @@ def main(argv=None) -> None:
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--lora-epochs", type=int, default=Config.lora_epochs)
+    ap.add_argument("--lora-batch", type=int, default=Config.lora_batch)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--runs-dir", type=Path, default=RUNS_DIR, help="where fold checkpoints go (runs/fusion)")
     a = ap.parse_args(argv)
-    cfg = Config(folds=a.folds, epochs=a.epochs, n_boot=a.n_boot, workers=a.workers)
+    cfg = Config(
+        folds=a.folds, epochs=a.epochs, n_boot=a.n_boot, workers=a.workers,
+        lora_epochs=a.lora_epochs, lora_batch=a.lora_batch,
+    )  # fmt: skip
 
     t0 = time.time()
     rs = assemble(a.cache)
     print(f"{len(rs.keys)} runs, {rs.keys['pid'].nunique()} plants, sensors {rs.sensors}")
     if a.stage == "frozen":
         name = "fusion"
-        cv = cross_validate(rs, cfg, a.device, ckpt_dir=RUNS_DIR / name)
+        cv = cross_validate(rs, cfg, a.device, ckpt_dir=a.runs_dir / name)
     else:
         name = f"fusion+lora_{a.lora_sensor}"
-        cv = cross_validate_lora(rs, LoRAStage(rs, a.lora_sensor, a.data_dir, cfg), cfg, a.device, RUNS_DIR / name)
+        cv = cross_validate_lora(rs, LoRAStage(rs, a.lora_sensor, a.data_dir, cfg), cfg, a.device, a.runs_dir / name)
     out = write(results(rs, cv, name, cfg.n_boot), name, a.out)
+    save_oof(rs, cv, a.runs_dir / name)
     info = dict(
         model=name, finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),
         seconds=round(time.time() - t0, 1), sensors=rs.sensors, dims=rs.dims, runs=len(rs.keys),

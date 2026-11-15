@@ -46,15 +46,18 @@ def vegetation_mask(
 ) -> np.ndarray:
     """Per-point vegetation mask (plan 4.4).
 
-    - ``learned`` given (bool per point, e.g. a plant mask from the RGB): ``learned & h > h_min``.
+    - ``learned`` given (bool per point, e.g. the centre-plant mask from the RGB): points with
+      colour ``learned & h > h_min``; points without colour (``has_rgb`` False; the mask cannot
+      be read there) ``h > h_min_dark``. Without ``has_rgb`` every point is ``learned & h > h_min``.
     - normal light, point has colour: ``ExG > exg_threshold & h > h_min``.
     - dark frame, or point without colour (outside the RGB view or hidden from it):
       ``h > h_min_dark``.
     """
     h = np.asarray(height)
-    if learned is not None:
-        return np.asarray(learned, bool) & (h > h_min)
     tall = h > h_min_dark
+    if learned is not None:
+        plant = np.asarray(learned, bool) & (h > h_min)
+        return plant if has_rgb is None else np.where(np.asarray(has_rgb, bool), plant, tall)
     if exg is None or dark:
         return tall
     has = np.isfinite(exg) if has_rgb is None else np.asarray(has_rgb, bool)
@@ -131,9 +134,41 @@ def refine_centre(local: np.ndarray, veg: np.ndarray, radius: float = REFINE_RAD
 
 
 VOXEL = 0.0025  # m, merged-frame clustering grid
+VOTE_SHARE = 0.5  # a voxel is plant when at least this share of its votes says so (votes=)
 
 
-def isolate_plant_multi(locs: list[np.ndarray], vegs: list[np.ndarray], voxel: float = VOXEL, **kw) -> list[Isolation]:
+def _block_sum(vox: np.ndarray, *values: np.ndarray) -> list[np.ndarray]:
+    """Sum of each per-voxel array over every voxel's 3 x 3 x 3 neighbourhood (occupied voxels
+    only; ``vox`` are unique integer voxel coordinates)."""
+    lo = vox.min(0) - 1
+    span = vox.max(0) - lo + 2
+
+    def code(v):
+        return ((v[:, 0] - lo[0]) * span[1] + (v[:, 1] - lo[1])) * span[2] + (v[:, 2] - lo[2])
+
+    keys = code(vox)
+    order = np.argsort(keys)
+    sk = keys[order]
+    out = [np.zeros(len(vox)) for _ in values]
+    for d in np.array(np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1])).reshape(3, -1).T:
+        nk = code(vox + d)
+        j = np.clip(np.searchsorted(sk, nk), 0, len(sk) - 1)
+        hit = sk[j] == nk
+        src = order[j[hit]]
+        for o, v in zip(out, values, strict=True):
+            o[hit] += v[src]
+    return out
+
+
+def isolate_plant_multi(
+    locs: list[np.ndarray],
+    vegs: list[np.ndarray],
+    voxel: float = VOXEL,
+    *,
+    votes: list[np.ndarray] | None = None,
+    min_share: float = VOTE_SHARE,
+    **kw,
+) -> list[Isolation]:
     """One isolation for all frames of a run, so every frame keeps the same plant.
 
     ``locs`` are the frames' plane-local coordinates in one shared plant-centred frame (the
@@ -141,17 +176,26 @@ def isolate_plant_multi(locs: list[np.ndarray], vegs: list[np.ndarray], voxel: f
     on a ``voxel`` grid, clustered once with :func:`isolate_plant`, and the kept voxels are mapped
     back to each frame's points. Per-frame ``clipped_fraction`` and ``centroid_offset`` are
     computed from the frame's own kept points.
+
+    ``votes`` (learned plant mask, one float array per frame: 1 plant, 0 not, NaN no vote) turns
+    ``vegs`` into the candidate points and decides per voxel: each frame with a vote in the voxel
+    casts the mean vote of its points there, and the voxel is vegetation when at least
+    ``min_share`` of the frames say plant, or when no point in it has a vote (points without
+    colour). So every frame keeps the same voxels even where the frames' 2D masks disagree, and a
+    point the RGB camera cannot see takes the label of its voxel.
     """
     search = kw.get("search_radius", SEARCH_RADIUS)
     cyl = kw.get("cylinder_radius", CYLINDER_RADIUS)
     band = kw.get("wall_band", WALL_BAND)
     nc = kw.get("not_centred", NOT_CENTRED)
-    sels, pts, fid = [], [], []
+    sels, pts, fid, vts = [], [], [], []
     for i, (loc, veg) in enumerate(zip(locs, vegs, strict=True)):
         s = np.flatnonzero(np.asarray(veg, bool) & (np.hypot(loc[:, 0], loc[:, 1]) < search))
         sels.append(s)
         pts.append(loc[s])
         fid.append(np.full(len(s), i))
+        if votes is not None:
+            vts.append(np.asarray(votes[i], float)[s])
     out = [
         Isolation(np.zeros(len(loc), bool), 0, float("nan"), float("nan"), float("nan"), True, False) for loc in locs
     ]
@@ -161,7 +205,22 @@ def isolate_plant_multi(locs: list[np.ndarray], vegs: list[np.ndarray], voxel: f
     vox, inv = np.unique(np.floor(pts / voxel).astype(np.int64), axis=0, return_inverse=True)
     inv = inv.ravel()
     centres = (vox + 0.5) * voxel
-    iso = isolate_plant(centres, np.ones(len(centres), bool), **kw)
+    veg_vox = np.ones(len(centres), bool)
+    if votes is not None:
+        # one vote per frame and voxel (the mean of the frame's points there), so a frame that
+        # sees a voxel with more points does not outvote the others
+        vt = np.concatenate(vts)
+        cast = np.isfinite(vt)
+        key, kinv = np.unique(inv[cast] * len(locs) + fid[cast], return_inverse=True)
+        frame_vote = np.bincount(kinv, weights=vt[cast]) / np.bincount(kinv)
+        kvox = key // len(locs)
+        n_frames = np.bincount(kvox, minlength=len(vox)).astype(float)
+        n_plant = np.bincount(kvox, weights=frame_vote, minlength=len(vox))
+        # at ToF density a 2.5 mm voxel holds 1-3 points per frame, so most voxels see only some
+        # of the frames; the share is taken over the voxel's 3 x 3 x 3 block (7.5 mm) instead
+        n_frames, n_plant = _block_sum(vox, n_frames, n_plant)
+        veg_vox = (n_frames == 0) | (n_plant >= min_share * n_frames)
+    iso = isolate_plant(centres, veg_vox, **kw)
     if iso.no_plant:
         return out
     keep_pt = iso.mask[inv] & (np.hypot(pts[:, 0], pts[:, 1]) <= cyl)

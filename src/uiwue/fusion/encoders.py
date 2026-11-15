@@ -4,7 +4,7 @@
   weights). Its patch embedding is generated from each band's wavelength, so the
   same model takes 3 webcam bands or all 300 Pika L bands.
 - Thermal and depth: ImageBind's dedicated single-channel encoders
-  (`imagebind_huge`; its thermal and depth trunks are ViT-S/16, projected to 1024).
+  (`imagebind_huge`; thermal trunk ViT-B/16, depth trunk ViT-S/16, both projected to 1024).
   Weights are CC BY-NC 4.0: research use only, stated in docs/fusion.md.
 
 Every encoder maps (B, C, 224, 224) to (B, dim). `encode_frames` averages the
@@ -14,10 +14,14 @@ embeddings of a run's frames.
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Sequence
+from pathlib import Path
 
 import torch
 from torch import nn
+
+from uiwue import core
 
 DOFA_DIM = 768
 IMAGEBIND_DIM = 1024
@@ -55,9 +59,28 @@ class DOFAEncoder(Encoder):
         self.dim = model.fc_norm.normalized_shape[0]
 
     def forward(self, x, wavelengths=None):
+        """TorchGeo's DOFA.forward_features, with the patch embedding kept in float32.
+
+        DOFA generates its patch-embedding kernels from a sine/cosine code of each
+        wavelength in nm (positions up to ~1025). Under bf16 autocast that code is
+        computed in bf16 and the kernels come out wrong (30 % median error per band on
+        the 300 Pika L bands, verified 2026-11-14), so this step runs with autocast off.
+        The transformer blocks still run under the caller's autocast.
+        """
         if wavelengths is None:
             raise ValueError("DOFA needs the band wavelengths (µm)")
-        return self.model.forward_features(x, list(wavelengths))
+        m = self.model
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            waves = torch.tensor(list(wavelengths), device=x.device, dtype=torch.float32)
+            x, _ = m.patch_embed(x.float(), waves)
+        x = x + m.pos_embed[:, 1:, :]
+        cls = (m.cls_token + m.pos_embed[:, :1, :]).expand(x.shape[0], -1, -1)
+        x = torch.cat((cls, x), dim=1)
+        for block in m.blocks:
+            x = block(x)
+        if m.global_pool:  # mean over patch tokens, then fc_norm (not in the MAE checkpoint: identity init)
+            return m.fc_norm(x[:, 1:, :].mean(dim=1))
+        return m.norm(x)[:, 0]
 
     def blocks(self):
         return list(self.model.blocks)
@@ -73,18 +96,59 @@ def tiny_dofa(sensor: str = "rgb") -> DOFAEncoder:
 # --------------------------------------------------------------------------- #
 # ImageBind (thermal, depth)
 # --------------------------------------------------------------------------- #
+IMAGEBIND_URL = "https://dl.fbaipublicfiles.com/imagebind/imagebind_huge.pth"
+# imagebind_huge(pretrained=True) downloads to ".checkpoints/" relative to the working directory,
+# so a run started elsewhere downloads 4.8 GB again. The path is fixed here instead.
+IMAGEBIND_CKPT = Path(os.environ.get("UIWUE_IMAGEBIND_CKPT", core.REPO / ".checkpoints" / "imagebind_huge.pth"))
+
+
+def _imagebind_model_module():
+    """imagebind.models.imagebind_model, imported without running imagebind/__init__.py.
+
+    The package __init__ imports imagebind.data, which needs pkg_resources (gone from
+    setuptools >= 81; the lock pins 84.2), torchaudio and pytorchvideo. The thermal and
+    depth branches use none of them, so the bare package is registered and only the
+    model modules are imported (they need einops, ftfy, regex, iopath, timm).
+    """
+    import importlib
+    import importlib.util
+    import sys
+    import types
+
+    if "imagebind" not in sys.modules:
+        spec = importlib.util.find_spec("imagebind")
+        if spec is None:
+            raise ImportError("pip install --no-deps git+https://github.com/facebookresearch/ImageBind")
+        pkg = types.ModuleType("imagebind")
+        pkg.__path__ = list(spec.submodule_search_locations)
+        sys.modules["imagebind"] = pkg
+    return importlib.import_module("imagebind.models.imagebind_model")
+
+
+def load_imagebind(path: Path | str = IMAGEBIND_CKPT) -> nn.Module:
+    """imagebind_huge with the real checkpoint, loaded strictly (no missing or unexpected keys)."""
+    path = Path(path)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part = path.with_suffix(".part")
+        torch.hub.download_url_to_file(IMAGEBIND_URL, str(part), progress=True)
+        part.replace(path)
+    model = _imagebind_model_module().imagebind_huge(pretrained=False)
+    model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True, mmap=True), strict=True)
+    return model
+
+
 class ImageBindEncoder(Encoder):
     """One ImageBind modality branch: preprocessor -> trunk -> head (no L2 postprocessing,
-    so the embedding keeps its magnitude)."""
+    so the embedding keeps its magnitude). Thermal is a ViT-B/16 trunk (768 wide), depth a
+    ViT-S/16 (384 wide); both heads project the [CLS] token to 1024."""
 
     def __init__(self, sensor: str, model: nn.Module | None = None):
         super().__init__()
         if sensor not in ("thermal", "depth"):
             raise ValueError(sensor)
         if model is None:
-            from imagebind.models import imagebind_model
-
-            model = imagebind_model.imagebind_huge(pretrained=True)
+            model = load_imagebind()
         # Keep only this modality; the rest of imagebind_huge (~1.2 B parameters) is dropped.
         self.sensor = sensor
         self.preprocessor = model.modality_preprocessors[sensor]
@@ -121,8 +185,11 @@ class LoRALinear(nn.Module):
         self.base = base
         for p in self.base.parameters():
             p.requires_grad_(False)
-        self.a = nn.Parameter(torch.empty(rank, base.in_features))
-        self.b = nn.Parameter(torch.zeros(base.out_features, rank))
+        # On the base layer's device and dtype: LoRAStage adds LoRA after moving the encoder to
+        # the GPU, and adapters created on the CPU failed there ("mat2 is on cpu").
+        kw = dict(device=base.weight.device, dtype=base.weight.dtype)
+        self.a = nn.Parameter(torch.empty(rank, base.in_features, **kw))
+        self.b = nn.Parameter(torch.zeros(base.out_features, rank, **kw))
         nn.init.kaiming_uniform_(self.a, a=math.sqrt(5))
         self.scale = alpha / rank
         self.drop = nn.Dropout(dropout)
@@ -152,3 +219,28 @@ def add_lora(encoder: Encoder, last_n: int = 4, rank: int = 8, alpha: float = 16
 
 def lora_parameters(module: nn.Module) -> list[nn.Parameter]:
     return [p for m in module.modules() if isinstance(m, LoRALinear) for p in (m.a, m.b)]
+
+
+def lora_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
+    """Only the adapter weights (A and B of every LoRALinear), on the CPU: what a tuned fold adds
+    to the pretrained encoder. Rebuild with build_encoder + add_lora + load_lora_state_dict."""
+    return {
+        f"{n}.{k}": getattr(m, k).detach().cpu()
+        for n, m in module.named_modules()
+        if isinstance(m, LoRALinear)
+        for k in "ab"
+    }
+
+
+def load_lora_state_dict(module: nn.Module, state: dict[str, torch.Tensor]) -> None:
+    """Load adapter weights saved by lora_state_dict; the module must already carry the same LoRA layers."""
+    layers = {n: m for n, m in module.named_modules() if isinstance(m, LoRALinear)}
+    expected = {f"{n}.{k}" for n in layers for k in "ab"}
+    if set(state) != expected:
+        raise ValueError(
+            f"LoRA layers differ: {len(set(state) ^ expected)} names do not match (blocks or rank changed?)"
+        )
+    with torch.no_grad():
+        for name, t in state.items():
+            n, k = name.rsplit(".", 1)
+            getattr(layers[n], k).copy_(t)
