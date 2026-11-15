@@ -296,7 +296,10 @@ models are rerun with the 2-Sep baseline (`_base0902`).
 
 ### Ablation: every variant on the development plants
 
-171 plants (57 per bed), out of fold, 2,000 plant resamples; `fusion_v2_ablation`, `round == "final"` (earlier rounds on 43-121 plants are in the same table). Thermal setup; "own placebo" is the detection model's score over 24-29 Aug, "bed model" the placebo bed model's; rows ending `_base0902` use a baseline from 2 Sep only.
+171 plants (57 per bed), out of fold, 2,000 plant resamples; `fusion_v2_ablation`,
+`round == "final"` (the earlier rounds, on 43-121 plants, are in the same table). Thermal
+setup. "Own placebo" is the detection model's score over 24-29 Aug, "bed model" the placebo
+bed model's; rows ending `_base0902` use a baseline from 2 Sep only.
 
 | Variant | Early AUC (days 1-4) [95 % CI] | Onset day | AUC day 1 [lower] | AUC day 2 [lower] | AUC 2 Sep (day -1) | AUC day 0 | Own placebo | Bed model | No-clip early AUC | Stage ρ | Turgor ρ |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -443,7 +446,8 @@ detection blurs the heads' day-to-day ranking. Severity is not what the selectio
 Scored at 00:48 on 15 Nov, after the design was frozen (commit 1887795), by the five fold
 models of each design averaged (`predict.py --lockbox`); the benchmark was fitted on every
 development plant-day and applied to the lock-box (`v2 bench-lockbox`). 30 deficit plants,
-15 controls (`fusion_lockbox_benchmark`, `plants == "all"`; the canary and severity columns are in `fusion_v2_ablation`, `round == "lockbox"`):
+15 controls (`fusion_lockbox_benchmark`, `plants == "all"`; the canary and severity columns
+are in `fusion_v2_ablation`, `round == "lockbox"`):
 
 | Lock-box, thermal | **v2** (`tfeat_only+win6`) | v1 design | Benchmark (logistic) |
 |---|---|---|---|
@@ -454,7 +458,8 @@ development plant-day and applied to the lock-box (`v2 bench-lockbox`). 30 defic
 | Own score in the placebo window | 0.75 | 0.74 | 0.74 |
 | Placebo bed model | 1.00 | 0.92 | 0.62 |
 | Plants without clips (40) | 1.000, onset 0 | 0.992, onset 0 | 0.986, onset 2 |
-| Size alone (`depth_projected_area`) | 0.447 [0.274, 0.615], onset 6 | | |
+
+Size alone on the lock-box (`depth_projected_area`): 0.447 [0.274, 0.615], onset day 6.
 
 The lock-box confirms the early AUC (1.000: every deficit plant above every control over
 days 1-4; v1 design 0.993, benchmark 0.989) but not the clean early onset. On these 45 plants v2
@@ -470,18 +475,21 @@ is clear of bed differences. The benchmark keeps onset day 2 there, with day 1 a
 ### Tried and not adopted, and not tried
 
 - **Not adopted** (all in the ablation table): the absolute embedding (`v1`, `now+delta+ref`,
-  `v1+tfeat`: their own placebo scores are the highest); the baseline change alone (`delta`); the
-  weather token (`env`); the bed adversary (`adv`, `adv2`); late pre-cutoff negatives weighted up
-  (`hn`); the head without attention (`mean`); the 6 h causal window (`win6`).
+  `v1+tfeat`: the highest own placebo scores, and `now+delta+ref` reaches onset day 0); the
+  baseline change alone (`delta`); the image-encoder tokens with the hand-made token
+  (`ref+tfeat`, `delta+ref+tfeat`, `fused_tfeat`: onset 2-3); the weather token (`env`); the bed
+  adversary (`adv`, `adv2`); late pre-cutoff negatives weighted up (`hn`); the head without
+  attention (`mean`); the window on the fused tokens (`delta+ref+tfeat+win6`).
 - **Not tried, and why.**
   - Per-bed normalisation: it needs the bed at inference, which rule 2 forbids.
   - LoRA on the thermal encoder for v2: the hand-made token already reaches the ceiling of the
     early AUC, and the ImageBind thermal token adds nothing to it in the fused variants.
   - Hyperspectral as plant-masked mean spectra or indices: a second decode of every cube
     (about 1 GB per plant) while the embedding pipeline was the bottleneck of the night.
-  - Patch tokens, more registered thermal frames, a learned temporal model, an onset (hazard)
-    formulation: the noise that limits early detection is shared by every plant of a bed in a
-    run (above), which none of them can average out.
+  - Patch tokens, more registered thermal frames, a learned temporal model beyond the fixed
+    window, an onset (hazard) formulation. The part of the noise that limits early detection is
+    shared by every plant of a bed (a run's offset, the 2-Sep shift). Averaging a plant's own
+    runs helps only where the noise is independent between runs, which is what the window does.
 
 ### Commands and timings
 
