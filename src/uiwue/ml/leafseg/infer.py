@@ -56,9 +56,7 @@ class LeafSegmenter:
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.processor = Mask2FormerImageProcessor.from_pretrained(model)
-        self.model = (
-            Mask2FormerForUniversalSegmentation.from_pretrained(model).to(self.device).eval()
-        )
+        self.model = Mask2FormerForUniversalSegmentation.from_pretrained(model).to(self.device).eval()
         self.threshold = threshold
 
     @torch.no_grad()
@@ -66,7 +64,7 @@ class LeafSegmenter:
         img = cv2.undistort(rgb, calib.K_RGB, calib.RGB_DISTORTION) if undistort else rgb
         h, w = img.shape[:2]
         # Mask2Former's pixel decoder needs sizes divisible by 32.
-        sh, sw = (int(round(h * scale / 32)) * 32, int(round(w * scale / 32)) * 32)
+        sh, sw = (int(round(h * scale / 32)) * 32, int(round(w * scale / 32)) * 32)  # noqa: RUF046
         small = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
         out = self.model(pixel_values=normalise_rgb(small)[None].to(self.device))
         res = self.processor.post_process_instance_segmentation(
@@ -80,9 +78,7 @@ class LeafSegmenter:
         masks = masks.cpu().numpy().astype(bool)
         labels = np.array([s["label_id"] for s in info])
         scores = np.array([s["score"] for s in info])
-        return Segmentation(
-            masks[labels == 0], scores[labels == 0], masks[labels == 1], scores[labels == 1]
-        )
+        return Segmentation(masks[labels == 0], scores[labels == 0], masks[labels == 1], scores[labels == 1])
 
 
 def overlay(img: np.ndarray, masks: np.ndarray, alpha: float = 0.5, seed: int = 0) -> np.ndarray:
@@ -94,9 +90,7 @@ def overlay(img: np.ndarray, masks: np.ndarray, alpha: float = 0.5, seed: int = 
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--plant", required=True)
@@ -127,9 +121,7 @@ def main() -> None:
             leaf_scores=r.leaf_scores,
         )
         both = np.concatenate([overlay(und, r.plants), overlay(und, r.leaves, seed=1)], axis=1)
-        cv2.imwrite(
-            f"{stem}.jpg", cv2.cvtColor(cv2.resize(both, None, fx=0.5, fy=0.5), cv2.COLOR_RGB2BGR)
-        )
+        cv2.imwrite(f"{stem}.jpg", cv2.cvtColor(cv2.resize(both, None, fx=0.5, fy=0.5), cv2.COLOR_RGB2BGR))
         print(f"frame {k}: {len(r.plants)} plants, {len(r.leaves)} leaves -> {stem}.npz")
 
 

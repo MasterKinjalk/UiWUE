@@ -110,22 +110,13 @@ def colorize(depth_img: np.ndarray, rgb_img: np.ndarray, t_depth_to_rgb: np.ndar
     valid_depth = (z_depth > 0) & ~np.isnan(z_depth)
     x_depth = (u_coords - cx_d) * z_depth / fx_d
     y_depth = (v_coords - cy_d) * z_depth / fy_d
-    points_depth_h = np.stack([x_depth, y_depth, z_depth, np.ones_like(z_depth)], axis=0).reshape(
-        4, -1
-    )
+    points_depth_h = np.stack([x_depth, y_depth, z_depth, np.ones_like(z_depth)], axis=0).reshape(4, -1)
     points_rgb_h = t_depth_to_rgb @ points_depth_h
     z_rgb = points_rgb_h[2].reshape(height, width)
     safe_z = np.where(z_rgb > 0, z_rgb, 1.0)
     u_rgb = (fx_rgb * points_rgb_h[0].reshape(height, width) / safe_z + cx_rgb).astype(np.float32)
     v_rgb = (fy_rgb * points_rgb_h[1].reshape(height, width) / safe_z + cy_rgb).astype(np.float32)
-    invalid_rgb = (
-        ~valid_depth
-        | (z_rgb <= 0)
-        | (u_rgb < 0)
-        | (u_rgb >= rgb_w)
-        | (v_rgb < 0)
-        | (v_rgb >= rgb_h)
-    )
+    invalid_rgb = ~valid_depth | (z_rgb <= 0) | (u_rgb < 0) | (u_rgb >= rgb_w) | (v_rgb < 0) | (v_rgb >= rgb_h)
     u_rgb[invalid_rgb] = -1.0
     v_rgb[invalid_rgb] = -1.0
     colorized = cv2.remap(

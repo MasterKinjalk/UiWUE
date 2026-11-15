@@ -134,10 +134,10 @@ def fit_lmm(data: pd.DataFrame, formula: str, group: str = "plant_id", reml: boo
         warnings.simplefilter("ignore")
         try:
             return model.fit(reml=reml, method="lbfgs", maxiter=300)
-        except Exception:
+        except Exception:  # noqa: BLE001 - statsmodels raises many types; try the default optimiser
             try:
                 return model.fit(reml=reml)
-            except Exception:
+            except Exception:  # noqa: BLE001 - an unfittable model is reported as None
                 return None
 
 
@@ -233,9 +233,7 @@ def daily_tests(
     return out
 
 
-def onset_day(
-    daily: pd.DataFrame, p_col: str = "p_holm", alpha: float = 0.05, consecutive: int = 2
-) -> date | None:
+def onset_day(daily: pd.DataFrame, p_col: str = "p_holm", alpha: float = 0.05, consecutive: int = 2) -> date | None:
     """First day of the first run of ``consecutive`` significant days (adjacent in the sequence
     of tested days, so a day without data does not break a run). None if there is no such run."""
     if daily.empty:
@@ -292,9 +290,7 @@ def noise_floor(
                 "noise": float(run_mad[t].median()) if len(run_mad) else np.nan,
                 "noise_within_column": float(col_mad[t].median()) if len(col_mad) else np.nan,
                 "n_runs": int(run_mad[t].notna().sum()),
-                "frames_per_run": float(n_run[n_run >= min_frames].median())
-                if (n_run >= min_frames).any()
-                else np.nan,
+                "frames_per_run": float(n_run[n_run >= min_frames].median()) if (n_run >= min_frames).any() else np.nan,
             }
         )
     return pd.DataFrame(rows)
@@ -312,9 +308,7 @@ def noise_from_run_mad(runs: pd.DataFrame, traits: Iterable[str]) -> pd.DataFram
                 "noise": float(v.median()) if v.notna().any() else np.nan,
                 "noise_within_column": np.nan,
                 "n_runs": int(v.notna().sum()),
-                "frames_per_run": float(runs["n_frames_ok"].median())
-                if "n_frames_ok" in runs.columns
-                else np.nan,
+                "frames_per_run": float(runs["n_frames_ok"].median()) if "n_frames_ok" in runs.columns else np.nan,
             }
         )
     return pd.DataFrame(rows)
@@ -379,7 +373,7 @@ def detrend_by(df: pd.DataFrame, cols: Sequence[str], group: str, time_col: str)
     out = df.copy()
     t = pd.to_datetime(out[time_col], utc=True)
     days = (t - t.min()).dt.total_seconds().to_numpy() / 86400.0
-    for _, idx in out.groupby(group).groups.items():
+    for idx in out.groupby(group).groups.values():
         pos = out.index.get_indexer(idx)
         x = days[pos]
         for c in cols:
@@ -391,9 +385,7 @@ def detrend_by(df: pd.DataFrame, cols: Sequence[str], group: str, time_col: str)
     return out
 
 
-def turgor_per_run(
-    runs: pd.DataFrame, turgor: pd.DataFrame, lag_days: int = 0, window_min: float = 15.0
-) -> pd.Series:
+def turgor_per_run(runs: pd.DataFrame, turgor: pd.DataFrame, lag_days: int = 0, window_min: float = 15.0) -> pd.Series:
     """Turgor value for each run: median of the plant's leaf-clip readings within
     +-``window_min`` of ``timestamp_utc - lag_days``. With a positive lag the turgor reading
     comes before the trait (turgor leads). NaN for plants without a clip."""

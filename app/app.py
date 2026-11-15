@@ -15,10 +15,10 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:  # pages import helpers that sit next to this file
     sys.path.insert(0, str(HERE))
 
-import components  # noqa: E402, F401  (registers the shared figure theme before pages load)
-import dash  # noqa: E402
-import dash_bootstrap_components as dbc  # noqa: E402
-from dash import html  # noqa: E402
+import components  # noqa: F401  (registers the shared figure theme before pages load)
+import dash
+import dash_bootstrap_components as dbc
+from dash import html
 
 app = dash.Dash(
     __name__,

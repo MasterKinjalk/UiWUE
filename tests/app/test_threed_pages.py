@@ -26,9 +26,9 @@ APP_DIR = ROOT / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-import threed_data as td  # noqa: E402
+import threed_data as td
 
-from uiwue.threed import schema  # noqa: E402
+from uiwue.threed import schema
 
 PAGES = ["/", "/threed-browser", "/threed-compare", "/threed-export"]
 DAY = date(2025, 9, 8)
@@ -169,9 +169,7 @@ def with_trigger(prop_ids: list[str], fn, *args):
     from dash._utils import AttributeDict
 
     def run():
-        context_value.set(
-            AttributeDict(triggered_inputs=[{"prop_id": p, "value": None} for p in prop_ids])
-        )
+        context_value.set(AttributeDict(triggered_inputs=[{"prop_id": p, "value": None} for p in prop_ids]))
         return fn(*args)
 
     return copy_context().run(run)
@@ -227,9 +225,7 @@ def test_options_and_lookup():
 
 def test_filter_runs():
     df = td.load_runs()
-    f = td.filter_runs(
-        df, beds=["W2"], start="2025-09-01", end="2025-09-02", hours=[15], qc_pass_only=True
-    )
+    f = td.filter_runs(df, beds=["W2"], start="2025-09-01", end="2025-09-02", hours=[15], qc_pass_only=True)
     assert set(f["bed"]) == {"W2"} and set(f["hour"]) == {15}
     assert f["date"].min() >= date(2025, 9, 1) and f["date"].max() <= date(2025, 9, 2)
     assert f["qc_pass"].all()
@@ -264,7 +260,7 @@ def test_synthetic_results_are_labelled():
 
 def test_trajectories_baseline_and_qc():
     df = td.load_runs()
-    pp, s = td.trajectories(df, "height_p75", "treatment", normalise=True)
+    _, s = td.trajectories(df, "height_p75", "treatment", normalise=True)
     base = s[s["day"].isin(pd.to_datetime(list(schema.BASELINE_DATES)))]
     assert base["mean"].abs().max() < 10  # % change is near zero on the baseline days
     late = s[s["day"] == pd.Timestamp("2025-09-14")].set_index("group")["mean"]
@@ -272,9 +268,9 @@ def test_trajectories_baseline_and_qc():
     _, all_runs = td.trajectories(df, "height_p75", include_failed=True)
     _, passing = td.trajectories(df, "height_p75", include_failed=False)
     assert all_runs["n"].sum() >= passing["n"].sum()
-    pp, s = td.trajectories(df, "height_p75", "plants", plant_ids=["W1_J5", "W2_J5"])
+    _, s = td.trajectories(df, "height_p75", "plants", plant_ids=["W1_J5", "W2_J5"])
     assert set(s["group"]) == {"W1_J5", "W2_J5"} and (s["n"] == 1).all()
-    pp, s = td.trajectories(df, "height_p75", "bed", start="2025-09-01", end="2025-09-05")
+    _, s = td.trajectories(df, "height_p75", "bed", start="2025-09-01", end="2025-09-05")
     assert s["day"].min() >= pd.Timestamp("2025-09-01") and set(s["group"]) == {"W1", "W2"}
 
 
@@ -324,9 +320,7 @@ def test_real_files_are_used(real_root):
 
 
 def test_result_with_missing_columns(real_root):
-    pd.DataFrame({"trait": ["height_p75"]}).to_csv(
-        real_root / schema.RESULTS_DIR / "e2_bed_baseline.csv", index=False
-    )
+    pd.DataFrame({"trait": ["height_p75"]}).to_csv(real_root / schema.RESULTS_DIR / "e2_bed_baseline.csv", index=False)
     res = td.load_result("e2_bed_baseline.csv")
     assert not res.ok and "lacks the columns" in res.note
 
@@ -364,20 +358,14 @@ def test_browser_dates_keep_and_click(dash_app):
     b = page("threed_browser")
     dates = [d.isoformat() for d in td.run_dates(td.load_runs(), "W2", "J5")]
     idx = dates.index("2025-09-08")
-    out = with_trigger(
-        ["tb-plant.value"], b.update_dates, "W2", "J5", None, idx, dates, "2025-09-03"
-    )
-    mx, marks, value, store, opts, d2 = out
+    out = with_trigger(["tb-plant.value"], b.update_dates, "W2", "J5", None, idx, dates, "2025-09-03")
+    mx, marks, value, _store, opts, d2 = out
     assert dates[value] == "2025-09-08" and mx == len(dates) - 1 and d2 == "2025-09-03"
     assert any("off" in str(m) for m in marks.values())
     click = {"points": [{"x": "2025-08-25", "customdata": ["2025-08-25", 9]}]}
-    out = with_trigger(
-        ["tb-series.clickData"], b.update_dates, "W2", "J5", click, idx, dates, "2025-09-03"
-    )
+    out = with_trigger(["tb-series.clickData"], b.update_dates, "W2", "J5", click, idx, dates, "2025-09-03")
     assert out[3][out[2]] == "2025-08-25"
-    opts, hour = with_trigger(
-        ["tb-series.clickData"], b.update_hours, out[2], out[3], click, "W2", "J5", 15
-    )
+    opts, hour = with_trigger(["tb-series.clickData"], b.update_hours, out[2], out[3], click, "W2", "J5", 15)
     assert hour == 9 and [o["value"] for o in opts] == list(schema.SLOTS)
     opts, hour = with_trigger(["tb-date.value"], b.update_hours, idx, dates, None, "W2", "J5", 12)
     assert hour == 12
@@ -447,25 +435,17 @@ def test_browser_real_cloud_with_temperature(real_root, dash_app):
 # ---------------------------------------------------------------- Compare callbacks
 def test_compare_trajectories(dash_app):
     c = page("threed_compare")
-    fig, count = c.update_trajectories(
-        "height_p75", "treatment", [], 15, "2025-08-20", "2025-09-19", False, False
-    )
+    fig, count = c.update_trajectories("height_p75", "treatment", [], 15, "2025-08-20", "2025-09-19", False, False)
     names = [t.name for t in fig.data if t.showlegend is not False]
-    assert any(n.startswith("control") for n in names) and any(
-        n.startswith("deficit") for n in names
-    )
+    assert any(n.startswith("control") for n in names) and any(n.startswith("deficit") for n in names)
     assert any(t.fill == "toself" for t in fig.data)  # SD band
     assert fig.layout.yaxis.title.text == "height_p75 (mm)"
     assert {s.x0 for s in fig.layout.shapes if s.type == "line"} >= {"2025-09-03", "2025-09-15"}
     assert "10 plants" in count
-    fig, _ = c.update_trajectories(
-        "projected_area", "plants", ["W1_J5", "W2_J5"], 12, None, None, True, True
-    )
+    fig, _ = c.update_trajectories("projected_area", "plants", ["W1_J5", "W2_J5"], 12, None, None, True, True)
     assert "change from baseline (%)" in fig.layout.yaxis.title.text
     assert {t.legendgroup for t in fig.data} == {"W1_J5", "W2_J5"}
-    fig, count = c.update_trajectories(
-        "height_p75", "bed", [], 15, "2025-10-01", "2025-10-02", False, False
-    )
+    fig, count = c.update_trajectories("height_p75", "bed", [], 15, "2025-10-01", "2025-10-02", False, False)
     assert not fig.data and count.startswith("0 plants")
     assert c.toggle_plants("plants") is False and c.toggle_plants("bed") is True
 
@@ -483,9 +463,9 @@ def test_compare_result_card_synthetic_and_missing(dash_app, tmp_path, monkeypat
     td.clear_caches()
     text = str(c.update_card("height_p75"))
     assert "not available yet" in text and "e3_onset.csv" in text and "e1_noise.csv" in text
-    heat, depr, note = c.update_diurnal("height_p75", "treatment", [], None, None, False, "dev")
+    heat, _depr, note = c.update_diurnal("height_p75", "treatment", [], None, None, False, "dev")
     assert traces(heat, "heatmap") and "computed from the table" in note
-    fig, rho = c.update_turgor("height_p75", "W2_J5", False, None, None)
+    _fig, rho = c.update_turgor("height_p75", "W2_J5", False, None, None)
     assert "not available yet" in str(rho)
 
 
@@ -500,9 +480,7 @@ def test_compare_result_card_from_files(real_root, dash_app):
 
 def test_compare_diurnal_and_turgor(real_root, dash_app):
     c = page("threed_compare")
-    heat, depr, note = c.update_diurnal(
-        "height_p75", "bed", [], "2025-08-28", "2025-09-18", False, "abs"
-    )
+    heat, depr, _note = c.update_diurnal("height_p75", "bed", [], "2025-08-28", "2025-09-18", False, "abs")
     hm = traces(heat, "heatmap")
     assert len(hm) == 2 and list(hm[0].y) == [f"{h:02d} h" for h in schema.SLOTS]
     assert len(traces(depr, "scatter")) >= 4
@@ -571,12 +549,8 @@ def render_page(client, path: str) -> tuple[dict, list[int], str]:
         body = {
             "output": dep["output"],
             "outputs": outs if dep["output"].startswith("..") else outs[0],
-            "inputs": [
-                dict(i, value=values.get(f"{i['id']}.{i['property']}")) for i in dep["inputs"]
-            ],
-            "state": [
-                dict(s, value=values.get(f"{s['id']}.{s['property']}")) for s in dep["state"]
-            ],
+            "inputs": [dict(i, value=values.get(f"{i['id']}.{i['property']}")) for i in dep["inputs"]],
+            "state": [dict(s, value=values.get(f"{s['id']}.{s['property']}")) for s in dep["state"]],
             "changedPropIds": changed,
         }
         return client.post("/_dash-update-component", json=body)

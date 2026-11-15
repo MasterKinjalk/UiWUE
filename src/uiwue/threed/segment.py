@@ -120,9 +120,7 @@ def isolate_plant(
     return Isolation(mask, len(keep_labels), clipped, outside, off, False, off > not_centred)
 
 
-def refine_centre(
-    local: np.ndarray, veg: np.ndarray, radius: float = REFINE_RADIUS, min_points: int = 20
-):
+def refine_centre(local: np.ndarray, veg: np.ndarray, radius: float = REFINE_RADIUS, min_points: int = 20):
     """(da, db) shift of the plant centre to the centroid of vegetation within ``radius`` of it
     (plan 4.5 step 1); (0, 0) when there are too few points."""
     r = np.hypot(local[:, 0], local[:, 1])
@@ -135,9 +133,7 @@ def refine_centre(
 VOXEL = 0.0025  # m, merged-frame clustering grid
 
 
-def isolate_plant_multi(
-    locs: list[np.ndarray], vegs: list[np.ndarray], voxel: float = VOXEL, **kw
-) -> list[Isolation]:
+def isolate_plant_multi(locs: list[np.ndarray], vegs: list[np.ndarray], voxel: float = VOXEL, **kw) -> list[Isolation]:
     """One isolation for all frames of a run, so every frame keeps the same plant.
 
     ``locs`` are the frames' plane-local coordinates in one shared plant-centred frame (the
@@ -157,10 +153,7 @@ def isolate_plant_multi(
         pts.append(loc[s])
         fid.append(np.full(len(s), i))
     out = [
-        Isolation(
-            np.zeros(len(loc), bool), 0, float("nan"), float("nan"), float("nan"), True, False
-        )
-        for loc in locs
+        Isolation(np.zeros(len(loc), bool), 0, float("nan"), float("nan"), float("nan"), True, False) for loc in locs
     ]
     if not pts or sum(len(p) for p in pts) == 0:
         return out

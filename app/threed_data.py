@@ -165,7 +165,7 @@ def _read_runs(path: str, stamp: int) -> tuple[pd.DataFrame | None, str | None]:
         df = pd.read_parquet(path)
         schema.validate_runs(df)
         return _prepare(df), None
-    except Exception as exc:  # a half-written or wrong file must not take the app down
+    except Exception as exc:  # noqa: BLE001 - a half-written or wrong file must not take the app down
         return None, f"{type(exc).__name__}: {exc}"
 
 
@@ -323,7 +323,7 @@ def _read_cloud(path: str, stamp: int) -> dict | None:
             plant = np.asarray(z["plant"], bool) if "plant" in files else np.ones(n, bool)
             temp = np.asarray(z["temp"], np.float32) if "temp" in files else None
             frame = int(z["frame"]) if "frame" in files else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional file; the page degrades
         return None
     if temp is not None and not np.isfinite(temp).any():
         temp = None
@@ -445,7 +445,7 @@ def unreliable_traits() -> set[str]:
 def _read_csv(path: str, stamp: int) -> tuple[pd.DataFrame | None, str | None]:
     try:
         return pd.read_csv(path), None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - optional file; the page degrades
         return None, f"{type(exc).__name__}: {exc}"
 
 
@@ -468,13 +468,11 @@ def _synthetic_result(name: str) -> pd.DataFrame:
             m = day.groupby("treatment")[t].mean()
             signal = abs(float(m.get("control", np.nan)) - float(m.get("deficit", np.nan)))
             snr = signal / noise if noise > 0 else np.nan
-            rows.append(
-                {"trait": t, "noise": noise, "signal": signal, "snr": snr, "reliable": snr >= 3}
-            )
+            rows.append({"trait": t, "noise": noise, "signal": signal, "snr": snr, "reliable": snr >= 3})
         return pd.DataFrame(rows)
     if name == "e3_onset.csv":
         for t in schema.TRAITS:
-            per_plant, summary = trajectories(
+            _per_plant, summary = trajectories(
                 df,
                 t,
                 "treatment",
@@ -528,7 +526,7 @@ def sensor_map() -> dict[str, str]:
 def _sensor_map(path: str, stamp: int) -> tuple[tuple[str, str], ...]:
     try:
         sheet = pd.read_excel(path, sheet_name="Sensor Guide", header=None)
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional file; the page degrades
         return ()
     pairs, in_leaf = [], False
     for _, row in sheet.iterrows():
@@ -568,7 +566,7 @@ def load_turgor(plant_id: str) -> pd.DataFrame | None:
 def _leaf_readings(path: str, stamp: int) -> pd.DataFrame | None:
     try:
         df = pd.read_parquet(path, columns=["utc_timestamp", "sensor_number", "turgic_value"])
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional file; the page degrades
         return None
     df["sensor_number"] = df["sensor_number"].astype(str)
     df["utc_timestamp"] = pd.to_datetime(df["utc_timestamp"], utc=True)
@@ -619,11 +617,7 @@ def trajectories(
     d = filter_runs(d, start=start, end=end)
     d = d.assign(group=d[GROUPINGS[grouping]].astype(str))
     per_plant = d.groupby(["group", "plant_id", "day"], as_index=False)["value"].mean()
-    summary = (
-        per_plant.groupby(["group", "day"])["value"]
-        .agg(mean="mean", sd="std", n="count")
-        .reset_index()
-    )
+    summary = per_plant.groupby(["group", "day"])["value"].agg(mean="mean", sd="std", n="count").reset_index()
     summary["sd"] = summary["sd"].fillna(0.0)
     return per_plant, summary
 
@@ -698,9 +692,7 @@ def export_columns(traits: list[str] | None = None, include_mad: bool = True) ->
     return cols + list(schema.QC_FLAGS) + ["qc_pass"]
 
 
-def export_frame(
-    df: pd.DataFrame, traits: list[str] | None = None, include_mad: bool = True
-) -> pd.DataFrame:
+def export_frame(df: pd.DataFrame, traits: list[str] | None = None, include_mad: bool = True) -> pd.DataFrame:
     """Contract columns only (no loader helpers), dates as ISO text, ready for CSV."""
     out = df[export_columns(traits, include_mad)].copy()
     out["date"] = [d.isoformat() for d in out["date"]]
@@ -812,8 +804,10 @@ def source_banner():
         return dbc.Alert(
             [
                 html.Strong("Synthetic data. "),
-                f"The traits, 3D clouds and results shown are generated for development "
-                f"({src.reason}); they are not measurements. RGB frames, where shown, are real. ",
+                (
+                    f"The traits, 3D clouds and results shown are generated for development "
+                    f"({src.reason}); they are not measurements. RGB frames, where shown, are real. "
+                ),
                 html.Span(table_summary(df), className="text-nowrap"),
             ],
             color="warning",

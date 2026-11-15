@@ -64,9 +64,7 @@ class DiscScene:
         depth, on_disc = self.depth_along(depth_rays())
         depth = depth.astype(np.float32)
         if self.noise:
-            depth += (
-                np.random.default_rng(seed).normal(0, self.noise, depth.shape).astype(np.float32)
-            )
+            depth += np.random.default_rng(seed).normal(0, self.noise, depth.shape).astype(np.float32)
         return depth, on_disc
 
     def dense_points(self, factor: int = 3) -> np.ndarray:
@@ -77,9 +75,7 @@ class DiscScene:
         ys = np.linspace(r[..., 1].min(), r[..., 1].max(), calib.DEPTH_H * factor)
         rays = np.stack(np.meshgrid(xs, ys), -1)
         z, _ = self.depth_along(rays)
-        return np.column_stack(
-            [rays[..., 0].ravel() * z.ravel(), rays[..., 1].ravel() * z.ravel(), z.ravel()]
-        )
+        return np.column_stack([rays[..., 0].ravel() * z.ravel(), rays[..., 1].ravel() * z.ravel(), z.ravel()])
 
     def truth(self, n_mc: int = 400_000, seed: int = 1) -> dict:
         """True traits of the disc (heights in mm, areas in cm2, angle in degrees)."""
@@ -115,9 +111,7 @@ def run_chain(scene: DiscScene, refined: bool = False):
         cloud = build_cloud(depth)
     # soil: everything around the plant (the disc covers the centre)
     centre_guess = scene.ground_point()
-    fit = ground.fit_reference(
-        cloud.xyz, centre_guess, np.ones(len(cloud), bool), radius=0.2, min_inliers=500
-    )
+    fit = ground.fit_reference(cloud.xyz, centre_guess, np.ones(len(cloud), bool), radius=0.2, min_inliers=500)
     assert fit.accepted, fit.reason
     plane = fit.plane
     centre = plane.project(centre_guess)
@@ -125,9 +119,7 @@ def run_chain(scene: DiscScene, refined: bool = False):
     veg = segment.vegetation_mask(loc[:, 2])  # no colour: height > 15 mm
     iso = segment.isolate_plant(loc, veg, xyz=cloud.xyz)
     m = iso.mask
-    tr = traits.frame_traits(
-        loc[m], cloud.pixel_area[m], xyz=cloud.xyz[m], plane_normal=plane.normal
-    )
+    tr = traits.frame_traits(loc[m], cloud.pixel_area[m], xyz=cloud.xyz[m], plane_normal=plane.normal)
     return tr, fit, iso
 
 
@@ -188,7 +180,7 @@ def test_e0c_refined_depth_path_within_5_percent(tilt):
     """The --depth-model path: a dense (3x) exact point set resampled onto the ToF grid by
     points_to_depth_grid (z-buffer per pixel) gives the same traits within 5 %."""
     scene = DiscScene(tilt_deg=tilt)
-    tr, fit, iso = run_chain(scene, refined=True)
+    tr, _fit, _iso = run_chain(scene, refined=True)
     truth = scene.truth()
     for k in [
         "height_p50",

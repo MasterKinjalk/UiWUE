@@ -34,9 +34,7 @@ GROUP_LABELS = {"treatment": "Treatment", "bed": "Bed", "plants": "Plants"}
 
 
 # ---------------------------------------------------------------- figures (pure functions)
-def trajectory_figure(
-    per_plant: pd.DataFrame, summary: pd.DataFrame, trait: str, normalise: bool
-) -> go.Figure:
+def trajectory_figure(per_plant: pd.DataFrame, summary: pd.DataFrame, trait: str, normalise: bool) -> go.Figure:
     """Mean line with a ±1 SD band per group, thin lines per plant, calendar marked."""
     if summary.empty:
         return td.message_figure("No runs match these settings.", 480)
@@ -353,11 +351,7 @@ def result_card(trait: str) -> list:
     else:
         out.append(html.Div(e1.note, className="text-muted small"))
 
-    out.append(
-        html.Div(
-            "Stress onset (E3, 15 h, % change from baseline)", className="fw-semibold small mt-3"
-        )
-    )
+    out.append(html.Div("Stress onset (E3, 15 h, % change from baseline)", className="fw-semibold small mt-3"))
     if row3:
         slope, lo, hi = (_num(row3.get(k)) for k in ("slope_interaction", "ci_low", "ci_high"))
         slope_unit = str(row3.get("unit") or f"{u}/day")
@@ -365,8 +359,7 @@ def result_card(trait: str) -> list:
             ci = "" if lo is None or hi is None else f" [{lo:+.3g}, {hi:+.3g}]"
             out.append(
                 html.Div(
-                    f"deficit − control slope: {slope:+.3g} {slope_unit}{ci}, "
-                    f"{_p(row3.get('p_value'))}",
+                    f"deficit − control slope: {slope:+.3g} {slope_unit}{ci}, {_p(row3.get('p_value'))}",
                     className="small",
                 )
             )
@@ -518,9 +511,7 @@ def layout(**_):
                                 _label("Group by"),
                                 dbc.RadioItems(
                                     id="tc-group",
-                                    options=[
-                                        {"label": v, "value": k} for k, v in GROUP_LABELS.items()
-                                    ],
+                                    options=[{"label": v, "value": k} for k, v in GROUP_LABELS.items()],
                                     value="treatment",
                                     inline=True,
                                     class_name="small",
@@ -547,9 +538,7 @@ def layout(**_):
                                 _label("Hour slot"),
                                 dcc.Dropdown(
                                     id="tc-slot",
-                                    options=[
-                                        {"label": f"{s:02d} h", "value": s} for s in schema.SLOTS
-                                    ],
+                                    options=[{"label": f"{s:02d} h", "value": s} for s in schema.SLOTS],
                                     value=15,
                                     clearable=False,
                                 ),
@@ -582,8 +571,7 @@ def layout(**_):
                                     id="tc-normalise",
                                     value=False,
                                     class_name="small",
-                                    label="Baseline-normalise (% change from each "
-                                    "plant's 2025-09-01/02 mean)",
+                                    label="Baseline-normalise (% change from each plant's 2025-09-01/02 mean)",
                                 )
                             ],
                             md=4,
@@ -739,9 +727,7 @@ def update_card(trait):
 def update_diurnal(trait, grouping, plants, start, end, include_failed, deviation):
     df = td.load_runs()
     picked = (plants or None) if grouping == "plants" else None
-    mats = td.diurnal_matrix(
-        df, trait, grouping, start, end, bool(include_failed), deviation == "dev", picked
-    )
+    mats = td.diurnal_matrix(df, trait, grouping, start, end, bool(include_failed), deviation == "dev", picked)
     heat = diurnal_figure(mats, trait, deviation == "dev")
     res = td.load_result("e4_diurnal.csv")
     if res.ok:
@@ -770,9 +756,7 @@ def update_turgor(trait, clip, include_failed, start, end):
         msg = "No plant with a leaf clip is in the trait table."
         return td.message_figure(msg, 380), html.Div()
     df = td.load_runs()
-    runs = td.filter_runs(
-        df, plant_ids=[clip], start=start, end=end, qc_pass_only=not include_failed
-    )
+    runs = td.filter_runs(df, plant_ids=[clip], start=start, end=end, qc_pass_only=not include_failed)
     turgor = td.load_turgor(clip)
     if turgor is not None:
         lo = pd.Timestamp(td.parse_date(start) or schema.BASELINE_DATES[0], tz="UTC")

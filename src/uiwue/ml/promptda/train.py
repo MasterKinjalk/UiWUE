@@ -87,13 +87,9 @@ def evaluate(model, loader, accelerator) -> dict:
     )
     s = torch.zeros(2, device=dev, dtype=torch.float64)
     for batch in loader:
-        pred = model(
-            pixel_values=batch["pixel_values"], prompt_depth=batch["prompt_depth"]
-        ).predicted_depth
+        pred = model(pixel_values=batch["pixel_values"], prompt_depth=batch["prompt_depth"]).predicted_depth
         h, w = pred.shape[-2:]
-        base = F.interpolate(batch["prompt_depth"], (h, w), mode="bilinear", align_corners=False)[
-            :, 0
-        ]
+        base = F.interpolate(batch["prompt_depth"], (h, w), mode="bilinear", align_corners=False)[:, 0]
         other = batch["sup_other"]
         z = batch["sup"][..., 2]
         e_m = (sample_at(pred.float(), batch["sup"]) - z).abs()[other]
@@ -107,9 +103,7 @@ def evaluate(model, loader, accelerator) -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default="data/derived/promptda")
     p.add_argument("--model", default="models/promptda-vitl", help="local dir or HF repo id")
     p.add_argument("--out", default="runs/promptda-vitl")
@@ -138,9 +132,7 @@ def main() -> None:
     val_plants = set(args.val_plants)
     train_ds = PromptDADataset(args.data, exclude=val_plants, n_points=args.n_points, augment=True)
     val_ds = PromptDADataset(args.data, plants=val_plants, n_points=args.n_points, augment=False)
-    accelerator.print(
-        f"train {len(train_ds)} samples, val {len(val_ds)} samples ({sorted(val_plants)})"
-    )
+    accelerator.print(f"train {len(train_ds)} samples, val {len(val_ds)} samples ({sorted(val_plants)})")
     train_dl = DataLoader(
         train_ds,
         args.batch_size,
@@ -150,9 +142,7 @@ def main() -> None:
         drop_last=True,
         persistent_workers=args.workers > 0,
     )
-    val_dl = DataLoader(
-        val_ds, args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True
-    )
+    val_dl = DataLoader(val_ds, args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     model = PromptDepthAnythingForDepthEstimation.from_pretrained(args.model)
     backbone = [p_ for n, p_ in model.named_parameters() if n.startswith("backbone.")]
@@ -190,9 +180,7 @@ def main() -> None:
     while step < total:
         for batch in train_dl:
             with accelerator.accumulate(model):
-                pred = model(
-                    pixel_values=batch["pixel_values"], prompt_depth=batch["prompt_depth"]
-                ).predicted_depth
+                pred = model(pixel_values=batch["pixel_values"], prompt_depth=batch["prompt_depth"]).predicted_depth
                 loss = depth_loss(pred.float(), batch)
                 accelerator.backward(loss)
                 accelerator.clip_grad_norm_(model.parameters(), 1.0)
@@ -201,12 +189,9 @@ def main() -> None:
                 opt.zero_grad(set_to_none=True)
             step += 1
             if step % args.log_every == 0:
-                accelerator.log(
-                    {"train_l1_mm": 1000 * loss.item(), "lr": sched.get_last_lr()[-1]}, step=step
-                )
+                accelerator.log({"train_l1_mm": 1000 * loss.item(), "lr": sched.get_last_lr()[-1]}, step=step)
                 accelerator.print(
-                    f"step {step}/{total}  l1 {1000 * loss.item():.2f} mm  "
-                    f"{(time.time() - t0) / step:.2f} s/step"
+                    f"step {step}/{total}  l1 {1000 * loss.item():.2f} mm  {(time.time() - t0) / step:.2f} s/step"
                 )
             if len(val_ds) and (step % args.eval_every == 0 or step == total):
                 m = evaluate(model, val_dl, accelerator)
@@ -217,9 +202,7 @@ def main() -> None:
                     accelerator.wait_for_everyone()
                     if accelerator.is_main_process:
                         accelerator.unwrap_model(model).save_pretrained(out / "best")
-                        (out / "best" / "metrics.json").write_text(
-                            json.dumps({"step": step, **m}, indent=2)
-                        )
+                        (out / "best" / "metrics.json").write_text(json.dumps({"step": step, **m}, indent=2))
             if step >= total:
                 break
 

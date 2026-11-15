@@ -178,10 +178,7 @@ def layout(**_):
                                     multi=True,
                                     value=[],
                                     placeholder="All traits",
-                                    options=[
-                                        {"label": td.trait_label(t), "value": t}
-                                        for t in schema.TRAITS
-                                    ],
+                                    options=[{"label": td.trait_label(t), "value": t} for t in schema.TRAITS],
                                 ),
                             ],
                             md=6,
@@ -307,7 +304,5 @@ def download_csv(_, beds, plants, start, end, hours, traits, qc_only, mad):
 )
 def download_summary(_, beds, plants, start, end, hours, traits, qc_only, mad):
     sel = selection(beds, plants, start, end, hours, qc_only)
-    text = td.method_summary(
-        sel, filter_text(beds, plants, start, end, hours, traits, qc_only, mad), traits or None
-    )
+    text = td.method_summary(sel, filter_text(beds, plants, start, end, hours, traits, qc_only, mad), traits or None)
     return dcc.send_string(text, f"{file_stem('method_summary')}.md")

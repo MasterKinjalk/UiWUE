@@ -32,9 +32,7 @@ IGNORE = ["*.bin", "*.msgpack", "*.h5", "*.onnx", "*.ot"]
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--models-dir", default=str(ROOT / "models"))
     p.add_argument("--gated", action="store_true", help="also download gated models (SAM 3)")
     p.add_argument("--only", nargs="+", help="download only these names")

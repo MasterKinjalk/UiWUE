@@ -97,15 +97,11 @@ def leaf_sensor_map(xlsx: Path = METADATA_XLSX) -> pd.DataFrame:
 def air_sensor_map(xlsx: Path = METADATA_XLSX) -> pd.DataFrame:
     """Air sensor number -> bed. Columns: sensor_number (int), bed."""
     sec = _sensor_section(Path(xlsx), "Air Sensors")
-    return pd.DataFrame(
-        {"sensor_number": sec[0].astype(int), "bed": sec[2].astype(str).str.strip()}
-    )
+    return pd.DataFrame({"sensor_number": sec[0].astype(int), "bed": sec[2].astype(str).str.strip()})
 
 
 # ---------------------------------------------------------------- turgor
-def load_turgor(
-    path: Path = LEAF_READINGS, xlsx: Path = METADATA_XLSX, max_rel_dev: float = 0.2
-) -> pd.DataFrame:
+def load_turgor(path: Path = LEAF_READINGS, xlsx: Path = METADATA_XLSX, max_rel_dev: float = 0.2) -> pd.DataFrame:
     """Leaf-clip readings with their plant. Columns: utc_timestamp, sensor_number, bed, plant,
     plant_id, turgor_value. A higher value means lower turgor. Values more than ``max_rel_dev``
     (relative) away from the sensor's median are drop-outs or spikes and are removed."""
@@ -159,9 +155,7 @@ def load_par(xlsx: Path = METADATA_XLSX) -> pd.DataFrame:
     body.columns = ["no", "time", "value"]
     t = pd.to_datetime(body["time"].astype(str), format="%d.%m.%Y %H:%M:%S", errors="coerce")
     t = t.dt.tz_localize("Europe/Berlin", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
-    out = pd.DataFrame(
-        {"utc_timestamp": t, "par_mv": pd.to_numeric(body["value"], errors="coerce")}
-    )
+    out = pd.DataFrame({"utc_timestamp": t, "par_mv": pd.to_numeric(body["value"], errors="coerce")})
     return out.dropna().sort_values("utc_timestamp").reset_index(drop=True)
 
 
@@ -226,18 +220,14 @@ def is_drought_note(note: str | None, keywords: tuple[str, ...] = DROUGHT_KEYWOR
     return any(k in s for k in keywords)
 
 
-def first_symptoms(
-    bbch: pd.DataFrame | None = None, keywords: tuple[str, ...] = DROUGHT_KEYWORDS
-) -> pd.DataFrame:
+def first_symptoms(bbch: pd.DataFrame | None = None, keywords: tuple[str, ...] = DROUGHT_KEYWORDS) -> pd.DataFrame:
     """First written drought symptom per plant. Columns: bed, plant, first_symptom_date, note.
     Plants without such a note are absent."""
     if bbch is None:
         bbch = load_bbch()
     hit = bbch[bbch["note"].map(lambda n: is_drought_note(n, keywords))]
     first = hit.sort_values("date").groupby(["bed", "plant"], as_index=False).first()
-    return first.rename(columns={"date": "first_symptom_date"})[
-        ["bed", "plant", "first_symptom_date", "note"]
-    ]
+    return first.rename(columns={"date": "first_symptom_date"})[["bed", "plant", "first_symptom_date", "note"]]
 
 
 # ---------------------------------------------------------------- ADA QC labels
@@ -273,9 +263,7 @@ def load_ada_qc(path: Path = ADA_QC_JSON) -> pd.DataFrame:
             if view == "rgb":
                 c["n_rgb_dark"] += "Dark" in issues
                 c["n_rgb_medium_dark"] += "Medium Dark" in issues
-            if "Not Centered" in issues and (
-                view in ("depth", "intensity", "rgb") or view.startswith("3d")
-            ):
+            if "Not Centered" in issues and (view in ("depth", "intensity", "rgb") or view.startswith("3d")):
                 c["n_not_centred"] += 1
                 c["n_depth_not_centred"] += view == "depth"
             c["n_no_plant"] += "no plant" in issues

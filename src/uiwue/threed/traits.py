@@ -16,9 +16,7 @@ INCLINATION_CAP_DEG = 75.0
 MIN_POINTS = 10  # fewer plant points -> traits are NaN
 
 
-def estimate_normals(
-    xyz: np.ndarray, radius: float = NORMAL_RADIUS, max_nn: int = NORMAL_MAX_NN
-) -> np.ndarray:
+def estimate_normals(xyz: np.ndarray, radius: float = NORMAL_RADIUS, max_nn: int = NORMAL_MAX_NN) -> np.ndarray:
     """PCA normals over the ``max_nn`` nearest neighbours within ``radius`` (the same
     neighbourhood as Open3D's ``KDTreeSearchParamHybrid(radius, max_nn)``). Points with fewer
     than 3 neighbours get NaN."""
@@ -131,7 +129,5 @@ def frame_traits(
     out["canopy_radius"] = 1000 * float(np.percentile(r, 95))
     out["droop_index"] = float(p50 / p95) if p95 > 0 else float("nan")
     hull2d = _hull_area_2d(local[:, :2])
-    out["compactness"] = (
-        float(proj.sum() / hull2d) if np.isfinite(hull2d) and hull2d > 0 else float("nan")
-    )
+    out["compactness"] = float(proj.sum() / hull2d) if np.isfinite(hull2d) and hull2d > 0 else float("nan")
     return out

@@ -32,20 +32,20 @@ import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
-import argparse  # noqa: E402
-import hashlib  # noqa: E402
-import sys  # noqa: E402
-import time  # noqa: E402
-import traceback  # noqa: E402
-from dataclasses import dataclass  # noqa: E402
-from datetime import UTC, datetime, timedelta  # noqa: E402
-from pathlib import Path  # noqa: E402
+import argparse
+import hashlib
+import sys
+import time
+import traceback
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+import numpy as np
+import pandas as pd
 
-from uiwue.threed import ground, qc, schema, segment, traits  # noqa: E402
-from uiwue.threed.cloud import (  # noqa: E402
+from uiwue.threed import ground, qc, schema, segment, traits
+from uiwue.threed.cloud import (
     Cloud,
     build_cloud,
     depth_to_rgb,
@@ -56,7 +56,7 @@ from uiwue.threed.cloud import (  # noqa: E402
     points_to_depth_grid,
     project_to_rgb,
 )
-from uiwue.threed.io import (  # noqa: E402
+from uiwue.threed.io import (
     CENTRE_FRAME,
     Run,
     list_runs,
@@ -140,9 +140,7 @@ def on_plane(plane: ground.Plane, xy) -> np.ndarray:
     return np.array([xy[0], xy[1], plane.z_at(xy[0], xy[1])])
 
 
-def footprint(
-    plane: ground.Plane, centre: np.ndarray, radius: float, n_ring: int = 6
-) -> np.ndarray:
+def footprint(plane: ground.Plane, centre: np.ndarray, radius: float, n_ring: int = 6) -> np.ndarray:
     """Sample points of the disc of ``radius`` around ``centre`` on ``plane``."""
     e1, e2 = plane.basis()
     pts = [centre]
@@ -238,9 +236,7 @@ def process_run(
     # -- frame geometry: plant centre and cylinder coverage per frame
     o7 = frame_offset(pos_d[k7])
     rel = {k: frame_offset(pos_d[k]) - o7 for k in depths}  # p_k = p_7 - rel[k]
-    plane7 = (
-        prior.plane7 if prior and prior.plane7 is not None else None
-    ) or ground.Plane.horizontal(SOIL_Z_GUESS)
+    plane7 = (prior.plane7 if prior and prior.plane7 is not None else None) or ground.Plane.horizontal(SOIL_Z_GUESS)
 
     def centre7_for(plane):
         if not no_pose:
@@ -252,11 +248,7 @@ def process_run(
     for k in depths:
         pk = plane7.shifted(rel[k])
         cov[k] = coverage(pk, c7 - rel[k], pos_d[k], pos_r.get(k) if not no_pose else None)
-    used = [
-        k
-        for k in depths
-        if cov[k][0] >= FOOTPRINT_MIN_DEPTH and (no_pose or cov[k][1] >= FOOTPRINT_MIN_RGB)
-    ]
+    used = [k for k in depths if cov[k][0] >= FOOTPRINT_MIN_DEPTH and (no_pose or cov[k][1] >= FOOTPRINT_MIN_RGB)]
     build = sorted(set(used) | {k7})
     if plan_only:
         out["build"] = build
@@ -274,9 +266,7 @@ def process_run(
             clouds[k] = build_cloud(depths[k], nirs[k], rgb, t, rgb_scale=1 / RGB_REDUCE)
         else:
             dref, rmask = res if isinstance(res, tuple) else (res, res > 0)
-            c = build_cloud(
-                dref, nirs[k], rgb, t, rgb_scale=1 / RGB_REDUCE, median=False, fill_holes=False
-            )
+            c = build_cloud(dref, nirs[k], rgb, t, rgb_scale=1 / RGB_REDUCE, median=False, fill_holes=False)
             c.refined = np.asarray(rmask, bool)[c.rc[:, 0], c.rc[:, 1]]
             clouds[k] = c
 
@@ -329,8 +319,7 @@ def process_run(
 
     # -- isolation once over all used frames (same plant in every frame), then per-frame traits
     geo = {}
-    for k in clouds:
-        c = clouds[k]
+    for k, c in clouds.items():
         pk = plane7.shifted(rel[k])
         loc = pk.to_local(c.xyz, c7 - rel[k])
         dark = segment.is_dark(c.brightness)
@@ -339,9 +328,7 @@ def process_run(
     isos = dict(
         zip(
             iso_frames,
-            segment.isolate_plant_multi(
-                [geo[k][1] for k in iso_frames], [geo[k][3] for k in iso_frames]
-            ),
+            segment.isolate_plant_multi([geo[k][1] for k in iso_frames], [geo[k][3] for k in iso_frames]),
             strict=True,
         )
     )
@@ -408,9 +395,7 @@ def process_run(
                 centroid_offset_mm=1000 * iso.centroid_offset,
                 n_clusters=iso.n_clusters,
                 n_filled=int(c.filled[m].sum()) if c.filled is not None else 0,
-                refined_frac=float(c.refined[m].mean())
-                if c.refined is not None and m.any()
-                else np.nan,
+                refined_frac=float(c.refined[m].mean()) if c.refined is not None and m.any() else np.nan,
                 refined_frac_view=float(c.refined.mean()) if c.refined is not None else np.nan,
             )
         rows.append(row)
@@ -419,9 +404,7 @@ def process_run(
     # -- run row
     ts = [fr["depth_ts"][k] for k in used if k in fr["depth_ts"]]
     usedf = fdf[fdf["used"]]
-    bright = (
-        float(np.nanmedian(usedf["brightness"])) if usedf["brightness"].notna().any() else np.nan
-    )
+    bright = float(np.nanmedian(usedf["brightness"])) if usedf["brightness"].notna().any() else np.nan
     d = schema.folder_date(run.date)
     meta = dict(
         bed=run.bed,
@@ -563,9 +546,7 @@ def _plan(run: Run, data_dir: str, prior: PlantRef | None) -> tuple[Run, list[in
     return run, res.get("build", []) if res["status"] == "ok" else []
 
 
-def precompute_refined(
-    runs: list[Run], refs: dict, data_dir: Path, out_dir: Path, model: str, jobs: int = 8
-) -> dict:
+def precompute_refined(runs: list[Run], refs: dict, data_dir: Path, out_dir: Path, model: str, jobs: int = 8) -> dict:
     """GPU pre-pass: refine every frame :func:`process_run` will build and cache it on the ToF
     grid. Resumable (cached frames are skipped). Returns timing statistics."""
     import torch
@@ -573,9 +554,7 @@ def precompute_refined(
 
     from uiwue.ml.promptda.infer import DepthRefiner
 
-    plans = Parallel(n_jobs=jobs)(
-        delayed(_plan)(r, str(data_dir), refs.get(r.plant_id)) for r in runs
-    )
+    plans = Parallel(n_jobs=jobs)(delayed(_plan)(r, str(data_dir), refs.get(r.plant_id)) for r in runs)
     todo = [(r, k) for r, ks in plans for k in ks if not refined_path(out_dir, r, k).exists()]
     stats = {"frames": 0, "missing": 0, "s_model": 0.0, "s_grid": 0.0, "s_total": 0.0}
     if not todo:
@@ -668,9 +647,7 @@ def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=
     )
     # (d) side view
     sel = np.hypot(loc[:, 0], loc[:, 1]) < 0.15
-    ax[1, 0].scatter(
-        loc[sel, 0] * 1000, loc[sel, 2] * 1000, s=0.5, c=np.where(iso.mask[sel], "g", "0.6")
-    )
+    ax[1, 0].scatter(loc[sel, 0] * 1000, loc[sel, 2] * 1000, s=0.5, c=np.where(iso.mask[sel], "g", "0.6"))
     ax[1, 0].axhline(0, color="k")
     ax[1, 0].axvline(-85, ls="--")
     ax[1, 0].axvline(85, ls="--")
@@ -692,11 +669,9 @@ def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=
     ax[1, 1].add_patch(plt.Circle((0, 0), 85, fill=False))
     ax[1, 1].set_aspect("equal")
     ax[1, 1].legend(markerscale=10, fontsize=7)
-    ax[1, 1].set_title(
-        f"isolated plant per frame, plant-centred top view (mm)\nframes used: {r['frames_used']}"
-    )
+    ax[1, 1].set_title(f"isolated plant per frame, plant-centred top view (mm)\nframes used: {r['frames_used']}")
     # (f) reference plane residuals of pooled soil candidates
-    pts, nv = g["pool"]
+    pts, _nv = g["pool"]
     pl = g["plane7"]
     res_ = pl.height(pts) * 1000
     rr = np.hypot(pts[:, 0] - cc[0], pts[:, 1] - cc[1]) < 0.05
@@ -709,9 +684,7 @@ def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=
     )
     plt.colorbar(sc, ax=ax[1, 2], fraction=0.04, label="height above plane (mm)")
     ax[1, 2].set_aspect("equal")
-    ax[1, 2].set_title(
-        f"pooled points within 5 cm (all used frames)\n|h|<5mm: {np.mean(np.abs(res_[rr]) < 5):.2f}"
-    )
+    ax[1, 2].set_title(f"pooled points within 5 cm (all used frames)\n|h|<5mm: {np.mean(np.abs(res_[rr]) < 5):.2f}")
     txt = (
         f"p50/p75/p95 {r['height_p50']:.0f}/{r['height_p75']:.0f}/{r['height_p95']:.0f} mm (mad p75 {r['height_p75_mad']:.1f}); "
         f"area {r['projected_area']:.0f} cm2; leaf {r['leaf_area_est']:.0f}; radius {r['canopy_radius']:.0f} mm; incl {r['inclination_mean']:.0f}; "
@@ -750,9 +723,7 @@ def _worker(
         }
     if res.get("cloud") is not None:
         d = schema.folder_date(run.date)
-        p = Path(out_dir) / schema.cloud_path(run.bed, run.plant, d, int(run.hour)).relative_to(
-            schema.DERIVED
-        )
+        p = Path(out_dir) / schema.cloud_path(run.bed, run.plant, d, int(run.hour)).relative_to(schema.DERIVED)
         p.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(p, **res["cloud"])
     res["cloud"] = None
@@ -812,9 +783,7 @@ class Store:
     def flush(self) -> None:
         if self.new_runs:
             new = qc.runs_table(self.new_runs)
-            df = (
-                new if self.old_runs is None else pd.concat([self.old_runs, new], ignore_index=True)
-            )
+            df = new if self.old_runs is None else pd.concat([self.old_runs, new], ignore_index=True)
             df = df.drop_duplicates(schema.KEYS, keep="last")
             df = df.sort_values(schema.KEYS).reset_index(drop=True)
             schema.validate_runs(df)
@@ -822,15 +791,9 @@ class Store:
             self.old_runs, self.new_runs = df, []
         if self.new_frames:
             new = pd.DataFrame(self.new_frames)
-            df = (
-                new
-                if self.old_frames is None
-                else pd.concat([self.old_frames, new], ignore_index=True)
-            )
+            df = new if self.old_frames is None else pd.concat([self.old_frames, new], ignore_index=True)
             df = df.drop_duplicates(schema.KEYS + ["frame"], keep="last")
-            _write_parquet(
-                df.sort_values(schema.KEYS + ["frame"]).reset_index(drop=True), self.frames_path
-            )
+            _write_parquet(df.sort_values(schema.KEYS + ["frame"]).reset_index(drop=True), self.frames_path)
             self.old_frames, self.new_frames = df, []
         if self.log:
             pd.DataFrame(self.log).to_csv(
@@ -849,9 +812,7 @@ def _parse_date(s: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data-dir", default="data")
     p.add_argument(
         "--out",
@@ -930,9 +891,7 @@ def main(argv: list[str] | None = None) -> int:
     missing = sorted({r.plant_id for r in todo} - set(refs))
     if missing:
         t0 = time.perf_counter()
-        res = Parallel(n_jobs=min(a.jobs, len(missing)))(
-            delayed(plant_reference)(pid, data_dir) for pid in missing
-        )
+        res = Parallel(n_jobs=min(a.jobs, len(missing)))(delayed(plant_reference)(pid, data_dir) for pid in missing)
         for pid, (ref, _log) in zip(missing, res, strict=True):
             refs[pid] = ref
             z = ref.plane7.z_at(*ref.centre_xy) if ref.plane7 is not None else float("nan")
@@ -952,9 +911,7 @@ def main(argv: list[str] | None = None) -> int:
 
     t0 = time.perf_counter()
     gen = Parallel(n_jobs=a.jobs, return_as="generator_unordered", batch_size=1)(
-        delayed(_worker)(
-            r, str(data_dir), refs.get(r.plant_id), str(out), not a.no_clouds, bool(a.depth_model)
-        )
+        delayed(_worker)(r, str(data_dir), refs.get(r.plant_id), str(out), not a.no_clouds, bool(a.depth_model))
         for r in todo
     )
     n_ok = n_err = 0

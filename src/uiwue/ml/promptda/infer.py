@@ -71,11 +71,7 @@ class DepthRefiner:
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype if self.device == "cuda" else torch.float32
-        self.model = (
-            PromptDepthAnythingForDepthEstimation.from_pretrained(model)
-            .to(self.device, self.dtype)
-            .eval()
-        )
+        self.model = PromptDepthAnythingForDepthEstimation.from_pretrained(model).to(self.device, self.dtype).eval()
 
     @torch.no_grad()
     def refine(self, rgb: np.ndarray, depth: np.ndarray, pos_depth, pos_rgb) -> Refined:
@@ -86,9 +82,7 @@ class DepthRefiner:
         prompt, _ = prep.splat_prompt(prep.to_output_px(own, crop, (prep.OUT_H, prep.OUT_W)))
         und = cv2.undistort(rgb, calib.K_RGB, calib.RGB_DISTORTION)
         x0, y0, cw, ch = crop
-        img = cv2.resize(
-            und[y0 : y0 + ch, x0 : x0 + cw], (prep.OUT_W, prep.OUT_H), interpolation=cv2.INTER_AREA
-        )
+        img = cv2.resize(und[y0 : y0 + ch, x0 : x0 + cw], (prep.OUT_W, prep.OUT_H), interpolation=cv2.INTER_AREA)
         px = normalise_rgb(img)[None].to(self.device, self.dtype)
         pr = torch.from_numpy(prompt)[None, None].to(self.device, self.dtype)
         pred = self.model(pixel_values=px, prompt_depth=pr).predicted_depth[0].float().cpu().numpy()
@@ -105,9 +99,7 @@ class DepthRefiner:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", default="models/promptda-vitl")
     p.add_argument("--data-dir", default="data")
     p.add_argument("--plant", required=True)

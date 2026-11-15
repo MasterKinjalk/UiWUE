@@ -115,8 +115,7 @@ class PhenoBenchInstances(Dataset):
             nh, nw = max(s, round(h * f)), max(s, round(w * f))
             img = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
             sem, plants, leaves = (
-                cv2.resize(a, (nw, nh), interpolation=cv2.INTER_NEAREST)
-                for a in (sem, plants, leaves)
+                cv2.resize(a, (nw, nh), interpolation=cv2.INTER_NEAREST) for a in (sem, plants, leaves)
             )
             ys, xs = np.nonzero(plants)
             if len(ys) and rng.random() < 0.8:  # most crops centred on a plant pixel
@@ -135,8 +134,7 @@ class PhenoBenchInstances(Dataset):
         else:
             img = cv2.resize(img, (s, s), interpolation=cv2.INTER_LINEAR)
             sem, plants, leaves = (
-                cv2.resize(a, (s, s), interpolation=cv2.INTER_NEAREST)
-                for a in (sem, plants, leaves)
+                cv2.resize(a, (s, s), interpolation=cv2.INTER_NEAREST) for a in (sem, plants, leaves)
             )
 
         masks, classes = instance_masks(*(np.ascontiguousarray(a) for a in (sem, plants, leaves)))

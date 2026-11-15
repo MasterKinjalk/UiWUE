@@ -80,11 +80,7 @@ def test_parity_matches_ada_code():
         depth = -depth
     depth[depth <= 0] = 0.0
     sh, pos = s1.cc.shift_matrix, s1.cc.robot_to_depth_position
-    t = (
-        s1.T_DEPTH_TO_RGB
-        @ np.linalg.inv(sh(pos(s1._get_robot_position(rr))))
-        @ sh(pos(s1._get_robot_position(rd)))
-    )
+    t = s1.T_DEPTH_TO_RGB @ np.linalg.inv(sh(pos(s1._get_robot_position(rr)))) @ sh(pos(s1._get_robot_position(rd)))
     da, col = s1._colorize_depth_with_rgb(depth, s1._load_rgb_image(rdir, 7), t)
     pts, cols = s1._depth_to_colorized_point_cloud(da, col)
     c = cols.astype(np.float32)

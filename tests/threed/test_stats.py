@@ -162,7 +162,7 @@ def test_e0b_perfect_and_flipped_flags(runs5):
     perfect["qc_not_centred"] = False
     perfect.loc[j.index, "qc_dark"] = (j["n_rgb_dark"] >= 8).to_numpy()
     perfect.loc[j.index, "qc_not_centred"] = (j["n_not_centred"] >= 1).to_numpy()
-    main, var = ex.e0b(perfect, ada)
+    main, _var = ex.e0b(perfect, ada)
     m = main.set_index("flag")
     assert m.loc["qc_dark", "precision"] == 1 and m.loc["qc_dark", "recall"] == 1
     assert m.loc["qc_not_centred", "recall"] == 1
@@ -184,15 +184,11 @@ def test_noise_floor_separates_viewpoint_from_tof_noise(runs5):
     # across the whole grid the 30 mm column offsets dominate: an upper bound on noise
     assert nf.loc["height_p75", "noise"] > 5 * nf.loc["height_p75", "noise_within_column"]
     # traits without viewpoint offsets: both estimates agree
-    assert nf.loc["projected_area", "noise"] == pytest.approx(
-        nf.loc["projected_area", "noise_within_column"], rel=0.3
-    )
+    assert nf.loc["projected_area", "noise"] == pytest.approx(nf.loc["projected_area", "noise_within_column"], rel=0.3)
     # if the pipeline used only the centre column, the two estimates coincide
     centre = frames.assign(ok=frames["frame"] % 3 == 1)
     nc = stats.noise_floor(centre, ["height_p75"]).set_index("trait")
-    assert nc.loc["height_p75", "noise"] == pytest.approx(
-        nc.loc["height_p75", "noise_within_column"]
-    )
+    assert nc.loc["height_p75", "noise"] == pytest.approx(nc.loc["height_p75", "noise_within_column"])
     assert nc.loc["height_p75", "frames_per_run"] == 5
 
 
@@ -299,15 +295,13 @@ def test_turgor_corr_recovers_coupling(runs10):
     assert pooled.loc["height_p75", "rho"] < -0.8  # height falls as the clip value rises
     assert abs(pooled.loc["compactness", "rho"]) < 0.3
     assert set(res["lag_days"]) == {-2, -1, 0, 1, 2}
-    per = res[
-        (res["method"] == "spearman") & (res["trait"] == "height_p75") & (res["lag_days"] == 0)
-    ]
+    per = res[(res["method"] == "spearman") & (res["trait"] == "height_p75") & (res["lag_days"] == 0)]
     assert per.loc[per["bed"] == "W2", "rho"].median() < -0.8
 
 
 def test_e5_names_best_proxy(runs10):
     turgor = ex.synthetic_turgor(runs10)
-    res, best = ex.e5(runs10, ["height_p75", "compactness"], turgor)
+    _res, best = ex.e5(runs10, ["height_p75", "compactness"], turgor)
     assert best["trait"] == "height_p75" and best["significant"]
     assert best["r"] < -0.8
 
@@ -360,9 +354,9 @@ def test_detrend_removes_each_plants_line():
 
 
 def test_e3_daytime_slots_and_e4_without_dark_runs(runs10):
-    od, dd, _ = ex.e3(runs10, ["height_p75"], symptoms=None, slots=ex.DAYTIME_SLOTS)
+    od, _dd, _ = ex.e3(runs10, ["height_p75"], symptoms=None, slots=ex.DAYTIME_SLOTS)
     assert od.iloc[0]["onset_day"] in (1, 2)
-    diurnal, models = ex.e4(runs10, ["height_p75"], None, None, exclude_dark=True)
+    diurnal, _models = ex.e4(runs10, ["height_p75"], None, None, exclude_dark=True)
     # synthetic 06 h runs are dark: without them there is no overnight recovery
     assert diurnal["overnight_recovery"].isna().all()
     assert diurnal["midday_depression"].notna().any()

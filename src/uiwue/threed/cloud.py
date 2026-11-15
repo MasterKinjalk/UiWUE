@@ -72,10 +72,7 @@ def median3(depth: np.ndarray, min_neighbours: int = MIN_NEIGHBOURS) -> np.ndarr
     s = np.sort(np.where(np.isfinite(win), win, np.inf), axis=-1)  # valid values first
     lo = np.clip((n_valid - 1) // 2, 0, 8)
     hi = np.clip(n_valid // 2, 0, 8)
-    med = 0.5 * (
-        np.take_along_axis(s, lo[..., None], -1)[..., 0]
-        + np.take_along_axis(s, hi[..., None], -1)[..., 0]
-    )
+    med = 0.5 * (np.take_along_axis(s, lo[..., None], -1)[..., 0] + np.take_along_axis(s, hi[..., None], -1)[..., 0])
     keep = (depth > 0) & (n_valid >= min_neighbours)
     return np.where(keep, med, 0).astype(np.float32)
 
@@ -194,12 +191,7 @@ def project_to_rgb(xyz: np.ndarray, t_depth_to_rgb: np.ndarray):
         (-RGB_EDGE_MARGIN - k[1, 2]) / k[1, 1],
         (calib.RGB_H - 1 + RGB_EDGE_MARGIN - k[1, 2]) / k[1, 1],
     )
-    ok &= (
-        (xn > lim_x[0] - 0.05)
-        & (xn < lim_x[1] + 0.05)
-        & (yn > lim_y[0] - 0.05)
-        & (yn < lim_y[1] + 0.05)
-    )
+    ok &= (xn > lim_x[0] - 0.05) & (xn < lim_x[1] + 0.05) & (yn > lim_y[0] - 0.05) & (yn < lim_y[1] + 0.05)
     xd, yd = distort(xn, yn, calib.RGB_DISTORTION)
     u = k[0, 0] * xd + k[0, 2]
     v = k[1, 1] * yd + k[1, 2]

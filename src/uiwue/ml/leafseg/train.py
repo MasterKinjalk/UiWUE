@@ -104,9 +104,7 @@ def evaluate(model, processor, loader, accelerator) -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default="data/phenobench/PhenoBench")
     p.add_argument("--model", default="models/m2f-swinl-inst", help="local dir or HF repo id")
     p.add_argument("--out", default="runs/leafseg-m2f")
@@ -141,9 +139,7 @@ def main() -> None:
 
     train_ds = PhenoBenchInstances(args.data, "train", args.size, augment=True)
     val_ds = PhenoBenchInstances(args.data, "val", args.size, augment=False)
-    val_sub = Subset(
-        val_ds, list(range(0, len(val_ds), max(1, len(val_ds) // args.n_eval)))[: args.n_eval]
-    )
+    val_sub = Subset(val_ds, list(range(0, len(val_ds), max(1, len(val_ds) // args.n_eval)))[: args.n_eval])
     accelerator.print(f"train {len(train_ds)} images, val {len(val_ds)} (AP on {len(val_sub)})")
     train_dl = DataLoader(
         train_ds,
@@ -155,9 +151,7 @@ def main() -> None:
         pin_memory=True,
         persistent_workers=args.workers > 0,
     )
-    val_dl = DataLoader(
-        val_sub, args.batch_size, shuffle=False, num_workers=args.workers, collate_fn=collate
-    )
+    val_dl = DataLoader(val_sub, args.batch_size, shuffle=False, num_workers=args.workers, collate_fn=collate)
 
     processor = Mask2FormerImageProcessor.from_pretrained(args.model)
     model = Mask2FormerForUniversalSegmentation.from_pretrained(
@@ -167,9 +161,7 @@ def main() -> None:
         num_queries=args.num_queries,
         ignore_mismatched_sizes=True,
     )
-    bb = [
-        p_ for n, p_ in model.named_parameters() if ".encoder." in n and "pixel_level_module" in n
-    ]
+    bb = [p_ for n, p_ in model.named_parameters() if ".encoder." in n and "pixel_level_module" in n]
     bb_ids = {id(p_) for p_ in bb}
     rest = [p_ for p_ in model.parameters() if id(p_) not in bb_ids]
     opt = torch.optim.AdamW(
@@ -182,9 +174,7 @@ def main() -> None:
     warmup = min(500, total // 10)
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt,
-        lambda s: (
-            (s + 1) / warmup if s < warmup else (1 - (s - warmup) / max(1, total - warmup)) ** 0.9
-        ),
+        lambda s: (s + 1) / warmup if s < warmup else (1 - (s - warmup) / max(1, total - warmup)) ** 0.9,
     )
     model, opt, train_dl, sched = accelerator.prepare(model, opt, train_dl, sched)
 
@@ -205,12 +195,9 @@ def main() -> None:
             opt.zero_grad(set_to_none=True)
             step += 1
             if step % args.log_every == 0:
-                accelerator.log(
-                    {"train_loss": loss.item(), "lr": sched.get_last_lr()[-1]}, step=step
-                )
+                accelerator.log({"train_loss": loss.item(), "lr": sched.get_last_lr()[-1]}, step=step)
                 accelerator.print(
-                    f"step {step}/{total}  loss {loss.item():.3f}  "
-                    f"{(time.time() - t0) / step:.2f} s/step"
+                    f"step {step}/{total}  loss {loss.item():.3f}  {(time.time() - t0) / step:.2f} s/step"
                 )
             if step % args.eval_every == 0 or step == total:
                 accelerator.wait_for_everyone()
@@ -223,9 +210,7 @@ def main() -> None:
                         best = score
                         accelerator.unwrap_model(model).save_pretrained(out / "best")
                         processor.save_pretrained(out / "best")
-                        (out / "best" / "metrics.json").write_text(
-                            json.dumps({"step": step, **m}, indent=2)
-                        )
+                        (out / "best" / "metrics.json").write_text(json.dumps({"step": step, **m}, indent=2))
                 accelerator.wait_for_everyone()
             if step >= total:
                 break

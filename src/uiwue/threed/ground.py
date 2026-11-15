@@ -18,12 +18,8 @@ import numpy as np
 RANSAC_DIST = 0.005  # m, inlier distance (plan 4.3)
 RANSAC_ITERS = 500
 MIN_INLIERS = 150
-MAX_TILT_DEG = (
-    15.0  # plan start value 10; soil of edge-row pots (A2, A6, A8, B3) is tilted 9.5-13 deg
-)
-SOIL_RADIUS = (
-    0.05  # m, soil candidates within this distance of the plant centre (pots are ~11 cm wide)
-)
+MAX_TILT_DEG = 15.0  # plan start value 10; soil of edge-row pots (A2, A6, A8, B3) is tilted 9.5-13 deg
+SOIL_RADIUS = 0.05  # m, soil candidates within this distance of the plant centre (pots are ~11 cm wide)
 MAX_PRIOR_DIFF = 0.020  # m, reject a fit whose level at the centre differs more from the prior
 
 

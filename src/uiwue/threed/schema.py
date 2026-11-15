@@ -155,9 +155,7 @@ def synthetic_runs(
                     growth = size * (40 + 4.3 * day) - 13.0 * stress * deficit
                     dip = (-3.0 - 1.5 * stress * deficit) if hour in (12, 15) else 0.0
                     h75 = max(5.0, growth + dip + rng.normal(0, 3))
-                    area = max(
-                        1.0, size * (20 + 9 * day) - 25 * stress * deficit + rng.normal(0, 8)
-                    )
+                    area = max(1.0, size * (20 + 9 * day) - 25 * stress * deficit + rng.normal(0, 8))
                     vals = {
                         "height_p50": 0.7 * h75,
                         "height_p75": h75,
@@ -179,9 +177,7 @@ def synthetic_runs(
                         "date": d,
                         "hour": hour,
                         "slot": hour,
-                        "timestamp_utc": pd.Timestamp(
-                            ts + timedelta(minutes=int(rng.integers(0, 40)))
-                        ),
+                        "timestamp_utc": pd.Timestamp(ts + timedelta(minutes=int(rng.integers(0, 40)))),
                         "treatment": BED_TREATMENT[bed],
                         "days_since_cutoff": ds,
                         "n_frames_ok": int(rng.integers(3, 6)),

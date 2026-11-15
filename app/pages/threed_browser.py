@@ -248,10 +248,7 @@ def side_panel(row, bed: str, plant: str, d, hour, unreliable: set[str]) -> list
             color="success" if row["qc_pass"] else "danger",
             class_name="me-1",
         ),
-        *[
-            dbc.Badge(f.removeprefix("qc_").replace("_", " "), color="danger", class_name="me-1")
-            for f in blocking
-        ],
+        *[dbc.Badge(f.removeprefix("qc_").replace("_", " "), color="danger", class_name="me-1") for f in blocking],
         *[
             dbc.Badge(
                 f.removeprefix("qc_").replace("_", " "),
@@ -339,10 +336,7 @@ def date_marks(dates: list) -> dict:
 
 
 def colour_options(has_temp: bool) -> list[dict]:
-    return [
-        {"label": label, "value": v, "disabled": v == "temp" and not has_temp}
-        for v, label in COLOURS
-    ]
+    return [{"label": label, "value": v, "disabled": v == "temp" and not has_temp} for v, label in COLOURS]
 
 
 def hour_options(hours: list[int]) -> list[dict]:
@@ -391,9 +385,7 @@ def layout(bed=None, plant=None, date=None, hour=None, **_):
                         dbc.Col(
                             [
                                 _label("Plant"),
-                                dcc.Dropdown(
-                                    id="tb-plant", options=plants, value=plant, clearable=False
-                                ),
+                                dcc.Dropdown(id="tb-plant", options=plants, value=plant, clearable=False),
                             ],
                             md=2,
                         ),
@@ -489,9 +481,7 @@ def layout(bed=None, plant=None, date=None, hour=None, **_):
     graph = {"config": GRAPH_CONFIG, "responsive": True}
     views = dbc.Row(
         [
-            dbc.Col(
-                dcc.Loading(dcc.Graph(id="tb-cloud", **graph), delay_show=300), id="tb-col1", md=12
-            ),
+            dbc.Col(dcc.Loading(dcc.Graph(id="tb-cloud", **graph), delay_show=300), id="tb-col1", md=12),
             dbc.Col(
                 dcc.Loading(dcc.Graph(id="tb-cloud2", **graph), delay_show=300),
                 id="tb-col2",
@@ -515,9 +505,7 @@ def layout(bed=None, plant=None, date=None, hour=None, **_):
             dbc.Card(
                 dbc.CardBody(
                     [
-                        html.Div(
-                            "Click a point to show that run in 3D.", className="text-muted small"
-                        ),
+                        html.Div("Click a point to show that run in 3D.", className="text-muted small"),
                         dcc.Graph(id="tb-series", config=GRAPH_CONFIG, responsive=True),
                     ],
                     class_name="p-2",
@@ -618,11 +606,7 @@ def render_cloud(bed, plant, idx, dates, hour, colour, plant_only):
         return td.message_figure("No run for this selection.", 560), colour_options(False)
     cloud = td.load_cloud(bed, plant, d, hour)
     has_temp = cloud is not None and cloud.get("temp") is not None
-    note = (
-        "no temperature in this cloud, coloured by height"
-        if colour == "temp" and not has_temp
-        else ""
-    )
+    note = "no temperature in this cloud, coloured by height" if colour == "temp" and not has_temp else ""
     shown = "height" if note else colour
     title = cloud_title(bed, plant, d, hour, cloud, note)
     top = colour_top(bed, plant)
@@ -655,9 +639,7 @@ def render_second(on, d2, bed, plant, hour, colour, plant_only):
     has_temp = cloud is not None and cloud.get("temp") is not None
     shown = "height" if colour == "temp" and not has_temp else colour
     title = cloud_title(bed, plant, d2, h2, cloud)
-    fig = cloud_figure(
-        cloud, shown, bool(plant_only), title, f"{bed}_{plant}_2", colour_top(bed, plant)
-    )
+    fig = cloud_figure(cloud, shown, bool(plant_only), title, f"{bed}_{plant}_2", colour_top(bed, plant))
     return fig, 6, {}, False
 
 

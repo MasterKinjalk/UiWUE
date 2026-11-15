@@ -76,7 +76,7 @@ def test_colour_sampling_of_a_uniform_image():
 
 def test_rgb_projection_lands_inside_the_image():
     pos = np.zeros(3)
-    u, v, z, ok, _ = project_to_rgb(np.array([[0.0, 0.0, 0.47]]), depth_to_rgb(pos, pos))
+    u, v, _z, ok, _ = project_to_rgb(np.array([[0.0, 0.0, 0.47]]), depth_to_rgb(pos, pos))
     assert ok[0] and 0 < u[0] < calib.RGB_W and 0 < v[0] < calib.RGB_H
 
 

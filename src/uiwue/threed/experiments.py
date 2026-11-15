@@ -21,21 +21,21 @@ import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_v, "4")  # a pipeline batch shares this machine
 
-import argparse  # noqa: E402
-import sys  # noqa: E402
-from datetime import UTC, date, datetime, timedelta  # noqa: E402
-from pathlib import Path  # noqa: E402
+import argparse
+import sys
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
-import matplotlib  # noqa: E402
+import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.dates as mdates  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.colors import LinearSegmentedColormap
 
-from uiwue.threed import envdata, schema, stats  # noqa: E402
+from uiwue.threed import envdata, schema, stats
 
 # ---------------------------------------------------------------- constants
 TIER1 = ("A2", "A8", "J5", "R1", "R7")  # the paper's plants, in W1 and W2
@@ -58,9 +58,7 @@ ALPHA = 0.05
 
 COLORS = {"control": "#2a78d6", "deficit": "#eb6834"}  # validated categorical slots 1 and 2
 INK, MUTED, GRID = "#0b0b0b", "#898781", "#e4e3df"
-DIVERGING = LinearSegmentedColormap.from_list(
-    "bgr", ["#1c5cab", "#f0efec", "#d03b3b"]
-).with_extremes(
+DIVERGING = LinearSegmentedColormap.from_list("bgr", ["#1c5cab", "#f0efec", "#d03b3b"]).with_extremes(
     bad="#a9a8a3"  # no data: mid grey, distinct from the near-white zero
 )
 CYL_TRAITS = (  # pipeline extras: all vegetation in the plant cylinder, no clustering
@@ -189,9 +187,7 @@ def _paper_model_rows(mi: pd.DataFrame, label: str, scored: bool) -> list[dict]:
     return rows
 
 
-def e0a(
-    runs: pd.DataFrame | None, parity: pd.DataFrame | None
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def e0a(runs: pd.DataFrame | None, parity: pd.DataFrame | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Paper parity. Scored rows use the parity table (0.60 m - 25th percentile depth of ExG > 5
     points, frame 7). An informational row repeats the model on our soil-relative
     ``height_p75`` (qc_pass runs). Returns (table, model input of the scored rows)."""
@@ -249,11 +245,7 @@ def _agreement(pred: pd.Series, truth: pd.Series) -> dict:
     fn = int((~pred & truth).sum())
     prec = tp / (tp + fp) if tp + fp else np.nan
     rec = tp / (tp + fn) if tp + fn else np.nan
-    f1 = (
-        2 * prec * rec / (prec + rec)
-        if np.isfinite(prec) and np.isfinite(rec) and prec + rec
-        else np.nan
-    )
+    f1 = 2 * prec * rec / (prec + rec) if np.isfinite(prec) and np.isfinite(rec) and prec + rec else np.nan
     return {
         "precision": prec,
         "recall": rec,
@@ -299,9 +291,7 @@ def unit_of(trait: str) -> str:
     return schema.TRAITS.get(trait, schema.TRAITS.get(trait.removeprefix("cyl_"), ""))
 
 
-def e1(
-    runs: pd.DataFrame, frames: pd.DataFrame | None, traits: list[str] | None = None
-) -> pd.DataFrame:
+def e1(runs: pd.DataFrame, frames: pd.DataFrame | None, traits: list[str] | None = None) -> pd.DataFrame:
     """Noise (median frame-to-frame MAD over qc_pass runs), signal (|control - deficit| of the
     baseline change on 2025-09-14, 15 h) and their ratio per trait. ``traits`` defaults to the
     contract traits; the pipeline's ``cyl_*`` extras can be passed for the secondary analysis."""
@@ -341,9 +331,7 @@ def e1(
     out = noise.merge(pd.DataFrame(sig_rows), on="trait")
     with np.errstate(divide="ignore", invalid="ignore"):
         out["snr"] = out["signal"] / out["noise"].where(out["noise"] > 0)
-        out["snr_within_column"] = out["signal"] / out["noise_within_column"].where(
-            out["noise_within_column"] > 0
-        )
+        out["snr_within_column"] = out["signal"] / out["noise_within_column"].where(out["noise_within_column"] > 0)
     out["reliable"] = (out["snr"] >= SNR_MIN).fillna(False)
     out["unit"] = out["trait"].map(unit_of)
     cols = [
@@ -446,9 +434,7 @@ def e3(
     fit_rows = _in(norm, E3_WINDOW)
     test_rows = _in(norm, schema.TREATMENT_WINDOW)
     analysed = norm[norm["baseline_n"] > 0]  # plants without a baseline drop out
-    deficit_plants = analysed.loc[
-        analysed["treatment"] == "deficit", ["bed", "plant"]
-    ].drop_duplicates()
+    deficit_plants = analysed.loc[analysed["treatment"] == "deficit", ["bed", "plant"]].drop_duplicates()
     sym_date, sym_src = symptom_reference(deficit_plants, symptoms)
     rows, daily_all = [], []
     for t in traits:
@@ -506,18 +492,12 @@ def e3(
         "median_diff",
         "min_p",
     ]
-    daily_df = (
-        pd.concat(daily_all, ignore_index=True)[daily_cols]
-        if daily_all
-        else pd.DataFrame(columns=daily_cols)
-    )
+    daily_df = pd.concat(daily_all, ignore_index=True)[daily_cols] if daily_all else pd.DataFrame(columns=daily_cols)
     return out.reset_index(drop=True), daily_df, norm
 
 
 # ---------------------------------------------------------------- E4 daily rhythm
-def daily_covariates(
-    days: list[date], air: pd.DataFrame | None, par: pd.DataFrame | None, bed: str
-) -> pd.DataFrame:
+def daily_covariates(days: list[date], air: pd.DataFrame | None, par: pd.DataFrame | None, bed: str) -> pd.DataFrame:
     """Per-day mean VPD (air sensor used for ``bed``) and PAR between 09:00 and 15:00 local."""
     out = pd.DataFrame({"date": days})
     out["vpd_kpa"] = (
@@ -525,9 +505,7 @@ def daily_covariates(
         if air is not None
         else np.nan
     )
-    out["par_mv"] = (
-        envdata.daily_window_mean(par, "par_mv", days).to_numpy() if par is not None else np.nan
-    )
+    out["par_mv"] = envdata.daily_window_mean(par, "par_mv", days).to_numpy() if par is not None else np.nan
     return out
 
 
@@ -557,9 +535,7 @@ def e4(
     idx = ["bed", "plant", "plant_id", "treatment", "date"]
     v = p.groupby(idx + ["slot"], as_index=False)[traits].mean()
     days = sorted(set(v["date"]))
-    cov = pd.concat(
-        [daily_covariates(days, air, par, b).assign(bed=b) for b in beds], ignore_index=True
-    )
+    cov = pd.concat([daily_covariates(days, air, par, b).assign(bed=b) for b in beds], ignore_index=True)
     parts = []
     for t in traits:
         w = v.pivot_table(index=idx, columns="slot", values=t).reset_index()
@@ -594,13 +570,9 @@ def e4(
             ok = dd["trt"].nunique() == 2 and dd["plant_id"].nunique() >= 3
             res = stats.fit_lmm(dd, "y ~ dsc * trt + vpd") if ok else None
             dpar = dd.dropna(subset=["par"])
-            res_par = (
-                stats.fit_lmm(dpar, "y ~ dsc * trt + vpd + par") if ok and len(dpar) > 10 else None
-            )
+            res_par = stats.fit_lmm(dpar, "y ~ dsc * trt + vpd + par") if ok and len(dpar) > 10 else None
             inter, vpdt = stats.lmm_term(res, "dsc:trt"), stats.lmm_term(res, "vpd")
-            daily = stats.daily_tests(
-                _in(d.rename(columns={resp: "val"}), schema.TREATMENT_WINDOW), "val"
-            )
+            daily = stats.daily_tests(_in(d.rename(columns={resp: "val"}), schema.TREATMENT_WINDOW), "val")
             on = stats.onset_day(daily, "p_holm")
             on_raw = stats.onset_day(daily, "p_raw")
             model_rows.append(
@@ -658,9 +630,7 @@ def e5(
         # only deficit plants can show turgor loss; a control clip barely moves, and its rho
         # with a growing trait is a shared time trend, not water status
         deficit_beds = [b for b, t in schema.BED_TREATMENT.items() if t == "deficit"]
-        pooled = res[
-            (res["method"] == "spearman") & res["rho"].notna() & res["bed"].isin(deficit_beds)
-        ]
+        pooled = res[(res["method"] == "spearman") & res["rho"].notna() & res["bed"].isin(deficit_beds)]
         basis = "single-plant Spearman rho (no bed has two clip plants)"
     best = {}
     if len(pooled):
@@ -708,9 +678,7 @@ def _events(ax, label=False):
     for d, name in ((schema.CUTOFF, "cutoff"), (schema.REWATER, "re-water")):
         ax.axvline(pd.Timestamp(d), color=MUTED, linestyle="--", linewidth=0.8)
         if label:
-            ax.text(
-                pd.Timestamp(d), ax.get_ylim()[1], f" {name}", color=MUTED, fontsize=7, va="top"
-            )
+            ax.text(pd.Timestamp(d), ax.get_ylim()[1], f" {name}", color=MUTED, fontsize=7, va="top")
 
 
 def _save(fig, path: Path, tag: str):
@@ -768,9 +736,7 @@ def fig_e3_trajectories(norm: pd.DataFrame, onset: pd.DataFrame, path: Path, tag
     n = len(traits)
     ncol = min(3, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(
-        nrow, ncol, figsize=(4.2 * ncol, 2.8 * nrow), squeeze=False, sharex=True
-    )
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 2.8 * nrow), squeeze=False, sharex=True)
     for ax, t in zip(axes.flat, traits, strict=False):
         d = norm[["date", "treatment", "plant_id", t]].dropna()
         for pid, g in d.groupby("plant_id"):
@@ -785,9 +751,7 @@ def fig_e3_trajectories(norm: pd.DataFrame, onset: pd.DataFrame, path: Path, tag
             ax.plot(x, m.values, color=COLORS[trt], lw=2, label=trt)
         row = onset[onset["trait"] == t].iloc[0]
         if pd.notna(row["onset_date"]):
-            ax.axvline(
-                pd.Timestamp(row["onset_date"]), color=COLORS["deficit"], lw=1.2, linestyle=":"
-            )
+            ax.axvline(pd.Timestamp(row["onset_date"]), color=COLORS["deficit"], lw=1.2, linestyle=":")
         ax.axhline(0, color=MUTED, lw=0.6)
         _style(ax)
         _events(ax)
@@ -814,9 +778,7 @@ def fig_e3_onset(onset: pd.DataFrame, path: Path, tag: str):
     d = onset.iloc[::-1]
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(9, 0.35 * len(d) + 1.4), sharey=True)
     y = np.arange(len(d))
-    a1.scatter(
-        d["onset_day"], y, color=COLORS["deficit"], s=40, label="onset, Holm over days", zorder=3
-    )
+    a1.scatter(d["onset_day"], y, color=COLORS["deficit"], s=40, label="onset, Holm over days", zorder=3)
     a1.scatter(
         d["onset_day_unadjusted"],
         y,
@@ -868,13 +830,9 @@ def fig_e4_heatmap(runs: pd.DataFrame, trait: str, path: Path, tag: str, beds=("
     for b in beds:
         m = v[v["bed"] == b].groupby(["slot", "date"])["dev"].mean().unstack("date")
         mats[b] = m.reindex(index=slots, columns=days)
-    lim = np.nanpercentile(
-        np.abs(np.concatenate([m.to_numpy().ravel() for m in mats.values()])), 98
-    )
+    lim = np.nanpercentile(np.abs(np.concatenate([m.to_numpy().ravel() for m in mats.values()])), 98)
     lim = float(lim) if np.isfinite(lim) and lim > 0 else 1.0
-    fig, axes = plt.subplots(
-        len(beds), 1, figsize=(10, 1.7 * len(beds) + 0.8), sharex=True, squeeze=False
-    )
+    fig, axes = plt.subplots(len(beds), 1, figsize=(10, 1.7 * len(beds) + 0.8), sharex=True, squeeze=False)
     for ax, b in zip(axes[:, 0], beds, strict=True):
         im = ax.imshow(
             mats[b].to_numpy(),
@@ -894,8 +852,7 @@ def fig_e4_heatmap(runs: pd.DataFrame, trait: str, path: Path, tag: str, beds=("
     cb = fig.colorbar(im, ax=axes[:, 0].tolist(), shrink=0.9, pad=0.01)
     cb.set_label("% of the plant's daily mean", fontsize=8)
     fig.suptitle(
-        f"E4 daily rhythm of {trait}: bed mean deviation from each plant's daily mean "
-        "(dashed = cutoff / re-water)",
+        f"E4 daily rhythm of {trait}: bed mean deviation from each plant's daily mean (dashed = cutoff / re-water)",
         fontsize=9,
         x=0.01,
         ha="left",
@@ -914,9 +871,7 @@ def fig_e5(runs: pd.DataFrame, turgor: pd.DataFrame, best: dict, path: Path, tag
     n = len(plants)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(
-        nrow, ncol, figsize=(3.4 * ncol, 2.3 * nrow), squeeze=False, sharex=True, sharey=True
-    )
+    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 2.3 * nrow), squeeze=False, sharex=True, sharey=True)
 
     def z(s):
         return (s - s.mean()) / s.std() if s.std() > 0 else s * 0
@@ -980,12 +935,7 @@ def synthetic_turgor(runs: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
     for (bed, plant), _ in runs.groupby(["bed", "plant"]):
         deficit = schema.BED_TREATMENT[str(bed)] == "deficit"
         stress = np.clip(ds, 0, 12) * deficit
-        val = (
-            1830
-            + 3.0 * stress
-            + 2.0 * np.sin((hours - 9) / 24 * 2 * np.pi)
-            + rng.normal(0, 1.0, len(t))
-        )
+        val = 1830 + 3.0 * stress + 2.0 * np.sin((hours - 9) / 24 * 2 * np.pi) + rng.normal(0, 1.0, len(t))
         rows.append(
             pd.DataFrame(
                 {
@@ -1001,9 +951,7 @@ def synthetic_turgor(runs: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True)
 
 
-def synthetic_inputs(
-    seed: int = 0, plants_per_bed: int = 10, ada: pd.DataFrame | None = None
-) -> dict:
+def synthetic_inputs(seed: int = 0, plants_per_bed: int = 10, ada: pd.DataFrame | None = None) -> dict:
     """Synthetic runs (``schema.synthetic_runs``), a parity table built from them, QC flags
     copied from the real ADA labels with 15 % random flips, and synthetic turgor."""
     rng = np.random.default_rng(seed)
@@ -1036,8 +984,7 @@ def _md_table(df: pd.DataFrame, cols: list[str], fmt: int = 3) -> str:
             d[c] = d[c].map(lambda v: "" if pd.isna(v) else f"{v:.{fmt}g}")
     head = "| " + " | ".join(d.columns) + " |\n|" + "---|" * len(d.columns) + "\n"
     body = "".join(
-        "| " + " | ".join("" if pd.isna(v) else str(v) for v in r) + " |\n"
-        for r in d.itertuples(index=False)
+        "| " + " | ".join("" if pd.isna(v) else str(v) for v in r) + " |\n" for r in d.itertuples(index=False)
     )
     return head + body
 
@@ -1050,8 +997,7 @@ def write_summary(out: Path, source: str, sections: list[tuple[str, str]]):
     ]
     if source == "synthetic":
         lines.append(
-            "**SYNTHETIC DEMONSTRATION. These numbers come from `schema.synthetic_runs()` "
-            "and are not results.**\n"
+            "**SYNTHETIC DEMONSTRATION. These numbers come from `schema.synthetic_runs()` and are not results.**\n"
         )
     for title, body in sections:
         lines.append(f"\n## {title}\n\n{body}")
@@ -1077,9 +1023,7 @@ def _write_extra(df: pd.DataFrame, out: Path, name: str, source: str):
     _log(f"  wrote {out / name} ({len(df)} rows)")
 
 
-def _traits_for_e3_e5(
-    out: Path, e1_table: pd.DataFrame | None, all_traits: bool
-) -> tuple[list[str], str]:
+def _traits_for_e3_e5(out: Path, e1_table: pd.DataFrame | None, all_traits: bool) -> tuple[list[str], str]:
     if all_traits:
         return list(schema.TRAITS), "all traits (--all-traits)"
     t = e1_table
@@ -1105,15 +1049,9 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="default: RESULTS_DIR (synthetic: RESULTS_DIR/synthetic)",
     )
-    ap.add_argument(
-        "--synthetic", action="store_true", help="run on synthetic tables (demonstration)"
-    )
-    ap.add_argument(
-        "--all-traits", action="store_true", help="E2-E5 on all traits, not only E1-reliable ones"
-    )
-    ap.add_argument(
-        "--beds", nargs="+", default=["W1", "W2"], help="beds for E3/E4 (default W1 W2)"
-    )
+    ap.add_argument("--synthetic", action="store_true", help="run on synthetic tables (demonstration)")
+    ap.add_argument("--all-traits", action="store_true", help="E2-E5 on all traits, not only E1-reliable ones")
+    ap.add_argument("--beds", nargs="+", default=["W1", "W2"], help="beds for E3/E4 (default W1 W2)")
     a = ap.parse_args(argv)
 
     source = "synthetic" if a.synthetic else "real"
@@ -1189,9 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             main_t, var = e0b(runs, ada)
             if main_t["n_runs"].max() == 0:
-                _log(
-                    "  skipped: no run of the trait table has an ADA label (Tier-2 plants missing)"
-                )
+                _log("  skipped: no run of the trait table has an ADA label (Tier-2 plants missing)")
                 sections.append(("E0b QC agreement", "_skipped: no labelled runs in the table_\n"))
             else:
                 _write(main_t, out, "e0b_qc_agreement.csv", source)
@@ -1271,9 +1207,7 @@ def main(argv: list[str] | None = None) -> int:
         _log("E2 beds before the cutoff")
         t = e2(runs, traits)
         if t.empty:
-            _log(
-                f"  skipped: no 15 h qc_pass runs of W1 and W2 in {E2_WINDOW[0]} .. {E2_WINDOW[1]}"
-            )
+            _log(f"  skipped: no 15 h qc_pass runs of W1 and W2 in {E2_WINDOW[0]} .. {E2_WINDOW[1]}")
             sections.append(("E2 bed baseline", "_skipped: no pre-cutoff 15 h runs_\n"))
         else:
             _write(t, out, "e2_bed_baseline.csv", source)
@@ -1369,14 +1303,10 @@ def main(argv: list[str] | None = None) -> int:
         diurnal, models = e4(runs, traits, air, par, beds=tuple(a.beds))
         if diurnal.empty:
             _log(f"  skipped: E4 needs the 09 h and 15 h slots; table has {hours}")
-            sections.append(
-                ("E4 daily rhythm", f"_skipped: E4 needs all hours; slots present {hours}_\n")
-            )
+            sections.append(("E4 daily rhythm", f"_skipped: E4 needs all hours; slots present {hours}_\n"))
         else:
             _write(diurnal, out, "e4_diurnal.csv", source)
-            models.assign(source=source).to_csv(
-                out / "e4_models.csv", index=False, lineterminator="\n"
-            )
+            models.assign(source=source).to_csv(out / "e4_models.csv", index=False, lineterminator="\n")
             heat = [t for t in HEATMAP_TRAITS if t in traits][:3] or traits[:1]
             for t in heat:
                 fig_e4_heatmap(runs, t, out / f"e4_heatmap_{t}.png", tag, beds=tuple(a.beds))
@@ -1454,8 +1384,7 @@ def main(argv: list[str] | None = None) -> int:
             sections.append(
                 (
                     "E5 turgor",
-                    best_txt
-                    + _md_table(pooled, ["plant", "trait", "lag_days", "rho", "p_value", "n"]),
+                    best_txt + _md_table(pooled, ["plant", "trait", "lag_days", "rho", "p_value", "n"]),
                 )
             )
             variants = {

@@ -101,13 +101,11 @@ def project(points: np.ndarray, t_depth_to_rgb: np.ndarray) -> np.ndarray:
 def crop_for(uvz_self: np.ndarray) -> tuple[int, int, int, int]:
     """Fixed-size crop centred on the footprint of the frame's own depth points."""
     cu = float(np.median(uvz_self[:, 0])) if len(uvz_self) else calib.RGB_W / 2
-    x0 = int(round(np.clip(cu - CROP_W / 2, 0, calib.RGB_W - CROP_W)))
+    x0 = int(round(np.clip(cu - CROP_W / 2, 0, calib.RGB_W - CROP_W)))  # noqa: RUF046 (numpy scalar)
     return x0, 0, CROP_W, CROP_H
 
 
-def to_output_px(
-    uvz: np.ndarray, crop: tuple[int, int, int, int], out_hw: tuple[int, int]
-) -> np.ndarray:
+def to_output_px(uvz: np.ndarray, crop: tuple[int, int, int, int], out_hw: tuple[int, int]) -> np.ndarray:
     """RGB pixels -> pixel coordinates of an (h, w) grid over the crop; drops points outside."""
     x0, y0, cw, ch = crop
     h, w = out_hw
@@ -207,9 +205,7 @@ def build_run(
 
         und = cv2.undistort(rgb, calib.K_RGB, calib.RGB_DISTORTION)
         x0, y0, cw, ch = crop
-        img = cv2.resize(
-            und[y0 : y0 + ch, x0 : x0 + cw], (OUT_W, OUT_H), interpolation=cv2.INTER_AREA
-        )
+        img = cv2.resize(und[y0 : y0 + ch, x0 : x0 + cw], (OUT_W, OUT_H), interpolation=cv2.INTER_AREA)
 
         stem = f"{run.date}_{run.hour}_{k:02d}"
         cv2.imwrite(
@@ -243,9 +239,7 @@ def build_run(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="data/derived/promptda")
     p.add_argument("--plants", nargs="+", help="full IDs, e.g. W1_J5 (default: all on disk)")
@@ -269,16 +263,10 @@ def main() -> None:
 
     data_dir, out_dir = Path(args.data_dir), Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    rgb_runs = set(
-        list_runs(
-            data_dir, "rgb", args.plants, tuple(args.dates) if args.dates else None, args.hours
-        )
-    )
+    rgb_runs = set(list_runs(data_dir, "rgb", args.plants, tuple(args.dates) if args.dates else None, args.hours))
     runs = [
         r
-        for r in list_runs(
-            data_dir, "depth", args.plants, tuple(args.dates) if args.dates else None, args.hours
-        )
+        for r in list_runs(data_dir, "depth", args.plants, tuple(args.dates) if args.dates else None, args.hours)
         if r in rgb_runs
     ]
     if args.limit:
@@ -286,8 +274,7 @@ def main() -> None:
     print(f"{len(runs)} runs with depth + RGB")
 
     results = Parallel(n_jobs=args.jobs, verbose=5)(
-        delayed(build_run)(r, data_dir, out_dir, args.frames, i, args.all_views)
-        for i, r in enumerate(runs)
+        delayed(build_run)(r, data_dir, out_dir, args.frames, i, args.all_views) for i, r in enumerate(runs)
     )
     rows = [row for rs in results for row in rs]
     index = out_dir / "index.csv"

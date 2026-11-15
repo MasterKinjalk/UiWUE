@@ -17,9 +17,7 @@ from uiwue.threed import schema
 
 MIN_FRAMES_OK = 2  # a run needs at least this many usable frames (plan: 8 of 15 repeat views)
 FEW_POINTS = 300  # median n_points below this -> qc_few_points
-HIGH_SPREAD_MM = (
-    5.0  # height_p75_mad above max(this, HIGH_SPREAD_REL * height_p75) -> qc_high_spread
-)
+HIGH_SPREAD_MM = 5.0  # height_p75_mad above max(this, HIGH_SPREAD_REL * height_p75) -> qc_high_spread
 # The frames used are different viewpoints (up to 0.1 m apart), so occlusion alone makes p75
 # differ by a few % between frames on a tall canopy; 5 mm absolute flags 27 % of the 09-01..09-14
 # runs at 15 h. A run is flagged only if the spread is also above 5 % of the height.
@@ -70,22 +68,14 @@ def aggregate_run(frames: pd.DataFrame, meta: dict) -> dict:
 
     no_plant = len(good) == 0 or (len(used) > 0 and used["no_plant"].mean() > 0.5)
     row["qc_no_plant"] = bool(no_plant)
-    row["qc_few_points"] = (
-        bool(not no_plant and row["n_points"] < FEW_POINTS) or len(good) < MIN_FRAMES_OK
-    )
+    row["qc_few_points"] = bool(not no_plant and row["n_points"] < FEW_POINTS) or len(good) < MIN_FRAMES_OK
     spread = row["height_p75_mad"]
     limit = (
-        max(HIGH_SPREAD_MM, HIGH_SPREAD_REL * row["height_p75"])
-        if np.isfinite(row["height_p75"])
-        else HIGH_SPREAD_MM
+        max(HIGH_SPREAD_MM, HIGH_SPREAD_REL * row["height_p75"]) if np.isfinite(row["height_p75"]) else HIGH_SPREAD_MM
     )
     row["qc_high_spread"] = bool(np.isfinite(spread) and spread > limit)
-    row["qc_overlap"] = bool(
-        np.isfinite(row["clipped_fraction"]) and row["clipped_fraction"] > OVERLAP
-    )
-    row["qc_not_centred"] = bool(
-        np.isfinite(row["centroid_offset_mm"]) and row["centroid_offset_mm"] > 1000 * 0.03
-    )
+    row["qc_overlap"] = bool(np.isfinite(row["clipped_fraction"]) and row["clipped_fraction"] > OVERLAP)
+    row["qc_not_centred"] = bool(np.isfinite(row["centroid_offset_mm"]) and row["centroid_offset_mm"] > 1000 * 0.03)
     row["qc_dark"] = bool(meta.get("qc_dark", False))
     row["qc_ref_carried"] = bool(meta.get("qc_ref_carried", False))
     row["qc_no_pose"] = bool(meta.get("qc_no_pose", False))
@@ -98,9 +88,7 @@ def runs_table(rows: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     cols = schema.run_columns()
     df = df[cols + [c for c in df.columns if c not in cols]]
-    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True).astype(
-        "datetime64[ns, UTC]"
-    )
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True).astype("datetime64[ns, UTC]")
     for c, t in schema.RUN_META.items():
         if t in ("string", "int64"):
             df[c] = df[c].astype(t)

@@ -8,9 +8,7 @@ import pytest
 
 from uiwue.threed import envdata
 
-need_xlsx = pytest.mark.skipif(
-    not envdata.METADATA_XLSX.exists(), reason="metadata workbook absent"
-)
+need_xlsx = pytest.mark.skipif(not envdata.METADATA_XLSX.exists(), reason="metadata workbook absent")
 need_leaf = pytest.mark.skipif(not envdata.LEAF_READINGS.exists(), reason="leaf readings absent")
 need_air = pytest.mark.skipif(not envdata.AIR_READINGS.exists(), reason="air readings absent")
 need_ada = pytest.mark.skipif(not envdata.ADA_QC_JSON.exists(), reason="ADA QC labels absent")
