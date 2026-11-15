@@ -62,7 +62,7 @@ def test_bed_map_draws_three_beds_and_greys_pots_without_a_reading():
     assert len(fig.data) == 6  # a grey layer and a value layer per bed
     for bed, (grey, coloured) in zip(("W1", "W2", "W3"), (fig.data[0:2], fig.data[2:4], fig.data[4:6])):
         assert len(coloured.x) == 3 and len(grey.x) == 72 - 3, bed
-    assert list(fig.data[3].marker.line.color).count("#0b0b0b") == 1  # only the clip pot W2 A2 has a dark ring
+    assert list(fig.data[3].marker.line.color).count(pv.INK["primary"]) == 1  # only the clip pot W2 A2 has a dark ring
     lo, hi = fig.layout.coloraxis.cmin, fig.layout.coloraxis.cmax
     assert lo < hi and "05 Sep 12 h" in fig.layout.title.text and "day 2" in fig.layout.title.text
 
