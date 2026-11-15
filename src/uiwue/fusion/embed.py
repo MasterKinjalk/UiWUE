@@ -5,7 +5,7 @@
 
 Writes cache/fusion/emb_<sensor>_<variant>.npz (keys + float16 embeddings) and
 a manifest. Existing tables are skipped unless --overwrite. Each run's frames
-are embedded and averaged (thermal: all 5; RGB and depth: the centre frame).
+are embedded and averaged (inputs.FRAMES: the centre frame of RGB, depth and thermal).
 Variants are what Part B swaps in at evaluation: low-resolution thermal, and
 hyperspectral with spatial detail removed, only 3 bands, or one 20 nm window masked.
 """
@@ -67,7 +67,9 @@ class _Runs(torch.utils.data.Dataset):
         try:
             if self.sensor == "hsi":
                 cube = inputs.read_hsi(path)
-                for v in self.variants:
+                # Spectral variants (rgb3, mask<nm>) are channel subsets of "full" and are taken
+                # in embed_sensor: building 33 masked copies here held ~2 GB per run in the loader.
+                for v in {"full", *(v for v in self.variants if inputs.hsi_bands(cube[1], v) is None)}:
                     out[v] = inputs.load_hsi(path, v, cube=cube)
             else:
                 for v in self.variants:
@@ -81,6 +83,15 @@ def _collate(items):
     return items  # runs differ in frame count; batched per variant below
 
 
+def _variant(d: dict, v: str):
+    """(frames, wavelengths) of variant v; HSI spectral variants are cut from "full" (same values)."""
+    if v in d:
+        return d[v]
+    x, wl = d["full"]
+    idx = inputs.hsi_bands(np.asarray(wl) * 1000, v)
+    return x[:, idx], tuple(wl[i] for i in idx)
+
+
 @torch.no_grad()
 def embed_sensor(
     encoder: Encoder, runs: pd.DataFrame, variants: list[str], device: str, batch: int = 32, workers: int = 0
@@ -90,8 +101,11 @@ def embed_sensor(
     n = len(runs)
     out = {v: np.full((n, encoder.dim), np.nan, np.float32) for v in variants}
     ok, errors = np.zeros(n, bool), []
+    # A run's HSI input is 300 x 224 x 224 float32 (60 MB) per spatial variant; fewer runs per
+    # loader batch keeps the prefetched batches (2 per worker) to a few GB of RAM.
+    runs_per_batch = max(1, batch // 4) if encoder.sensor == "hsi" else batch
     loader = torch.utils.data.DataLoader(
-        _Runs(runs, encoder.sensor, variants), batch_size=batch, num_workers=workers, collate_fn=_collate
+        _Runs(runs, encoder.sensor, variants), batch_size=runs_per_batch, num_workers=workers, collate_fn=_collate
     )
     amp = (
         torch.autocast("cuda", dtype=torch.bfloat16)
@@ -101,11 +115,14 @@ def embed_sensor(
     for items in loader:
         good = [(i, d) for i, d, err in items if d is not None]
         errors += [err for _, d, err in items if d is None]
+        if any(v not in d for _, d in good for v in variants):  # HSI spectral variants: cut on the GPU
+            for _, d in good:
+                d["full"] = (d["full"][0].to(device), d["full"][1])
         for v in variants:
             # group runs with the same frame count and bands so they stack
             groups: dict[tuple, list] = {}
             for i, d in good:
-                x, wl = d[v]
+                x, wl = _variant(d, v)
                 groups.setdefault((x.shape, wl), []).append((i, x))
             for (_, wl), members in groups.items():
                 idx = [i for i, _ in members]
@@ -143,10 +160,13 @@ def main(argv=None) -> None:
             print(f"{sensor}: no runs under {a.data_dir / sensor}")
             continue
         t0 = time.time()
+        if a.device.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()
         enc = build_encoder(sensor)
         emb, ok, errors = embed_sensor(enc, runs, todo, a.device, a.batch, a.workers)
         for v in todo:
             save_table(table_path(a.cache, sensor, v), runs[ok], emb[v][ok])
+        peak = torch.cuda.max_memory_allocated() / 1e9 if a.device.startswith("cuda") else float("nan")
         manifest[sensor] = dict(
             encoder=type(enc).__name__,
             dim=enc.dim,
@@ -154,8 +174,12 @@ def main(argv=None) -> None:
             failed=len(errors),
             variants=variants,
             seconds=round(time.time() - t0, 1),
+            peak_gpu_gb=round(peak, 2),  # added 2026-11-14 for capacity planning
         )
-        print(f"{sensor}: {ok.sum()} runs x {len(todo)} variants in {time.time() - t0:.0f} s, {len(errors)} failed")
+        print(
+            f"{sensor}: {ok.sum()} runs x {len(todo)} variants in {time.time() - t0:.0f} s, {len(errors)} failed, "
+            f"peak GPU {peak:.2f} GB"
+        )
         for e in errors[:10]:
             print("   ", e)
         del enc
