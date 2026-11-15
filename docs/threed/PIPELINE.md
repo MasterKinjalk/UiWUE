@@ -433,3 +433,22 @@ What the numbers say:
 - Per-run figures come from `--diagnose` (`run.render_diagnostics`). The 3D cloud views, the
   dark-frame sheet and the frame-7 centring figure in `diagnostics/` were made with one-off
   scripts.
+
+## Team table (derived/threed)
+
+`python -m uiwue.threed.contract` publishes the pipeline table in the team contract
+(plan/Master-Plan.md, section 6) as `derived/threed/traits_runs.parquet` plus `catalogue.csv`.
+It is committed to git, and `uiwue.core.load_traits()` reads it.
+
+- `hour` is the scheduled slot. A re-run folder maps to the nearest slot at most 1 h away. When
+  two folders map to one slot, the scheduled folder wins if it has data, otherwise the re-run with
+  the most frames. The folder hour is kept as `depth_capture_hour`.
+- Every column has the `depth_` prefix. Traits, their `_mad`, the `cyl_*` traits, the QC flags,
+  and four diagnostics: soil distance, overlap fraction, off-centre distance, brightness.
+- Dates run from 2025-08-24, the team scope.
+- The catalogue gives a stress direction per trait from the E3 slopes. `inclination_sd` is 0,
+  because it is below the noise floor.
+
+On 2026-11-14 the table had 3,645 runs from 28 plants (2025-08-24 to 09-19, all five slots),
+was 1.3 MB, and passed `python -m uiwue.core.validate`. Rerun the converter after every
+pipeline batch.

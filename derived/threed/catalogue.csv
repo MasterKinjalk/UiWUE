@@ -1,0 +1,22 @@
+column,label,unit,direction,description
+depth_height_p50,"Canopy height, median",mm,-1,50th percentile of plant-point height above the soil plane
+depth_height_p75,"Canopy height, p75",mm,-1,75th percentile of plant-point height above the soil plane
+depth_height_p95,"Canopy height, p95",mm,-1,95th percentile of plant-point height above the soil plane
+depth_projected_area,Projected leaf area,cm²,-1,top-view area of the plant points (ground area per pixel)
+depth_leaf_area_est,Leaf area (tilt-corrected),cm²,-1,"projected area divided by cos(leaf inclination), capped 75°"
+depth_hull_volume,Canopy volume,cm³,-1,convex hull of plant points and their projection on the soil plane
+depth_canopy_radius,Canopy radius,mm,-1,95th percentile of horizontal distance from the plant centre
+depth_inclination_mean,"Leaf inclination, mean",°,-1,mean angle between surface normals and the soil normal (0° flat); rises in both beds from 09-03
+depth_inclination_sd,"Leaf inclination, spread",°,0,SD of leaf inclination; below the noise floor (E1)
+depth_droop_index,Droop index,ratio,-1,height_p50 / height_p95; falls when leaf tips sink
+depth_compactness,Compactness,ratio,-1,projected area / area of the 2D convex hull in top view
+depth_n_points,Plant point count,count,-1,ToF points on the isolated plant (scales with visible leaf area)
+depth_cyl_height_p50,"Cylinder height, median",mm,-1,height_p50 of all vegetation in the plant cylinder
+depth_cyl_height_p75,"Cylinder height, p75",mm,-1,height_p75 of all vegetation in the plant cylinder
+depth_cyl_height_p95,"Cylinder height, p95",mm,-1,height_p95 of all vegetation in the plant cylinder
+depth_cyl_projected_area,Cylinder projected area,cm²,-1,projected area of all vegetation in the plant cylinder
+depth_cyl_n_points,Cylinder point count,count,-1,vegetation points in the plant cylinder
+depth_soil_z_mm,Sensor to soil distance,mm,0,depth of the fitted soil plane below the camera
+depth_clipped_fraction,Overlap fraction,ratio,0,share of plant points at the 8.5 cm cylinder wall
+depth_centroid_offset_mm,Plant off-centre distance,mm,0,isolated plant centroid to expected centre
+depth_brightness,RGB brightness,0-255,0,mean RGB brightness of the frames used (dark below 10)
