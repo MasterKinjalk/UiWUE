@@ -84,9 +84,9 @@ Each colour has one meaning, and the meaning is the same on every page.
 - **Forbidden:** red and green as a pair, hue alone to tell two things apart, gradients other than
   the functional ramps above (legends, cloud height), shadows, transparency as decoration.
 
-`app/components.py` on `main` still uses the older palette (Okabe-Ito series, green / yellow / red
-status). Moving it to these tokens is Yuming's call, because the master plan routes that file
-through him. Until then, pages owned by others use these tokens directly.
+`app/components.py` reads these tokens from `tokens.json` (`components.C["teal-700"]`), and
+`app/app.py` injects `tokens.css`, so page CSS uses `var(--uw-teal-700)`. The shared page styles
+are in `app/assets/uiwue.css`.
 
 ## 3. Marks: status by shape (MUST)
 

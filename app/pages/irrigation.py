@@ -3,15 +3,26 @@
 from functools import lru_cache
 
 import dash
-import dash_bootstrap_components as dbc
 import numpy as np
-import plotly.graph_objects as go
-from components import INK, SERIES, STATUS, header, label_of, mark_stress_period, not_available
-from dash import Input, Output, callback, dcc, html
-from plotly.subplots import make_subplots
+import pandas as pd
+from components import (
+    RULE_SHORT,
+    C,
+    chip,
+    day_label,
+    header,
+    mark,
+    not_available,
+    readout,
+    select,
+    signed,
+    size_chip,
+    unit_of,
+)
+from dash import Input, Output, State, callback, ctx, dcc, html
 
 from uiwue.core import load_traits, read_table
-from uiwue.diurnal import RULES, SCHEDULES, status
+from uiwue.diurnal import PLACEBO_DAYS, RULES, SCHEDULES, status
 
 dash.register_page(
     __name__,
@@ -21,9 +32,8 @@ dash.register_page(
     description="which plants need water on a given day, under five alert rules, with their track record",
 )
 
-BEDS = {"W1": "W1 · watered control", "W2": "W2 · water deficit", "W3": "W3 · water deficit"}
-ROWS = "ABCDEFGHIJKLMNOPQR"
-DEFAULT_RULE, DEFAULT_DAY, DEFAULT_PLANT = "local_line", 4, "W2_H5"
+DEFAULT_RULE, DEFAULT_DAY = "control_ref", 4
+TILES = (("irrigate", "sand"), ("watch", "sand"), ("fine", "sky"), ("no scan", "gray"))
 
 
 def recommended(rule):
@@ -33,229 +43,264 @@ def recommended(rule):
 
 @lru_cache
 def scans(rule, schedule):
-    """Every run of every plant with its alert status under (rule, schedule), plus the threshold."""
+    """Every run of every thermal plant with its alert status under (rule, schedule), plus the threshold."""
     sch = read_table("diurnal", "schedules")
     k = sch[(sch.rule == rule) & (sch.schedule == schedule)].threshold.iloc[0]
     df = load_traits()
+    df = df[df.thermal_leaf_t.notna()]
     col = RULES[rule][0]
     return df.assign(status=status(df, col, SCHEDULES[schedule], k), value=df[col], pid=df.bed + "_" + df.plant), k
 
 
+def day_plants(s, day):
+    """One row per plant: its status at the last usable scan of the day, or 'no scan'."""
+    today = s[(s.days_since_cutoff == day) & s.status.notna()].sort_values("hour").groupby("pid").tail(1)
+    plants = s[["pid", "bed", "plant"]].drop_duplicates()
+    m = plants.merge(today[["pid", "hour", "status", "value", "env_sky"]], on="pid", how="left")
+    m["status"] = m.status.fillna("no scan")
+    return m.sort_values(["value", "pid"], ascending=[False, True], na_position="last")
+
+
+def bed_effect(rule, schedule):
+    """Caveat chip when this rule's score already separated the beds before irrigation off at a flyover it uses."""
+    sep = read_table("diurnal", "separability")
+    col = RULES[rule][0]
+    if sep is None or col not in set(sep.score):
+        return []
+    placebo = sep.day.between(*PLACEBO_DAYS)  # 24-29 Aug: every plant watered
+    pre = sep[(sep.score == col) & (sep.group == "W2 + W3") & placebo].groupby("hour").auc.mean()
+    off = pre[pre.index.isin(SCHEDULES[schedule]) & ((pre - 0.5).abs() >= 0.1)]
+    if off.empty:
+        return []
+    detail = ", ".join(f"{h:02d} h AUC {v:.2f}" for h, v in off.items())
+    hover = f"In the placebo window (24–29 Aug, all watered) the beds already differ ({detail}); part of the signal may be the bed"
+    return [chip("bed effect at " + " and ".join(f"{h:02d} h" for h in off.index), hover)]
+
+
 def layout(**_):
     df, sch = load_traits(), read_table("diurnal", "schedules")
-    head = header("Irrigation advisor", "Which plants need water today, why, and how far can the call be trusted?")
-    if df is None or sch is None or "diurnal_score_ref" not in df:
-        return html.Div([head, not_available("The daily-rhythm scores")])
-    days = sorted(int(d) for d in df.days_since_cutoff.unique())
-    controls = dbc.Row(
-        [
-            dbc.Col(
-                [
-                    dbc.Label("Alert rule"),
-                    dcc.Dropdown(
-                        [{"label": v[1], "value": k} for k, v in RULES.items()],
-                        DEFAULT_RULE,
-                        id="ir-rule",
-                        clearable=False,
-                    ),
-                ],
-                md=4,
-            ),
-            dbc.Col(
-                [
-                    dbc.Label("Flyovers used"),
-                    dcc.Dropdown(list(SCHEDULES), recommended(DEFAULT_RULE), id="ir-schedule", clearable=False),
-                ],
-                md=2,
-            ),
-            dbc.Col(
-                [
-                    dbc.Label("Day (days since irrigation was turned off)"),
-                    dcc.Slider(
-                        min(days),
-                        max(days),
-                        1,
-                        value=DEFAULT_DAY,
-                        id="ir-day",
-                        marks={d: str(d) for d in days if d % 5 == 0},
-                        tooltip={"placement": "bottom", "always_visible": False},
-                    ),
-                ],
-                md=6,
-            ),
-        ],
-        className="g-3 mb-2",
+    rec = sch[sch.recommended & (sch.set == "W2 tuning")] if sch is not None else None
+    rules = (
+        {r.rule: f"{RULE_SHORT[r.rule]} · {r.schedule.replace('all five', 'all 5')}" for r in rec.itertuples()}
+        if rec is not None
+        else {}
     )
-    plants = sorted(df.bed.str.cat(df.plant, sep="_").unique())
+    stepper = html.Div(
+        [
+            html.Button("‹", id="ir-prev", className="uw-icon-btn", **{"aria-label": "Previous day"}),
+            html.Span(id="ir-day-label", className="uw-day", **{"aria-live": "polite"}),
+            html.Button("›", id="ir-next", className="uw-icon-btn", **{"aria-label": "Next day"}),
+        ],
+        className="uw-stepper",
+    )
+    head = header(
+        "Irrigation advisor",
+        "Which plants need water today, why, and how far can the call be trusted?",
+        select("ir-rule", rules, DEFAULT_RULE, "Rule") if rules else None,
+        stepper,
+    )
+    if df is None or not rules or "diurnal_score_ref" not in df:
+        return html.Div([head, not_available("Daily rhythm")])
+    days = sorted(int(d) for d in df.loc[df.thermal_leaf_t.notna(), "days_since_cutoff"].unique())
+    start = min(days, key=lambda d: abs(d - DEFAULT_DAY))
     return html.Div(
         [
             head,
-            controls,
-            dbc.Row([dbc.Col(dcc.Graph(id="ir-map"), lg=8), dbc.Col(html.Div(id="ir-card"), lg=4)], className="g-3"),
-            html.H5("One plant over time", className="mt-3"),
-            dcc.Dropdown(
-                plants,
-                DEFAULT_PLANT if DEFAULT_PLANT in plants else plants[0],
-                id="ir-plant",
-                clearable=False,
-                style={"maxWidth": "240px"},
+            dcc.Store(id="ir-day", data=start),
+            dcc.Store(id="ir-days", data=days),
+            html.Div(
+                [
+                    html.Main(
+                        [
+                            html.Div(id="ir-tiles", className="uw-tiles"),
+                            html.Div(id="ir-plants", className="uw-plants"),
+                            html.Div(id="ir-legend", className="uw-legend"),
+                        ],
+                        className="uw-main",
+                    ),
+                    html.Aside(id="ir-side", className="uw-side", **{"aria-label": "Track record"}),
+                ],
+                className="uw-row",
             ),
-            dcc.Graph(id="ir-plant-fig"),
         ]
     )
 
 
-@callback(Output("ir-schedule", "value"), Input("ir-rule", "value"))
-def pick_schedule(rule):
-    return recommended(rule)
+@callback(
+    Output("ir-day", "data"),
+    Input("ir-prev", "n_clicks"),
+    Input("ir-next", "n_clicks"),
+    State("ir-day", "data"),
+    State("ir-days", "data"),
+    prevent_initial_call=True,
+)
+def step(_prev, _next, day, days):
+    """The previous or next day that has data, relative to the shown day; stays put at either end."""
+    if ctx.triggered_id == "ir-prev":
+        return max((d for d in days if d < day), default=day)
+    return min((d for d in days if d > day), default=day)
 
 
 @callback(
-    Output("ir-map", "figure"),
-    Output("ir-card", "children"),
+    Output("ir-day-label", "children"),
+    Output("ir-tiles", "children"),
+    Output("ir-plants", "children"),
+    Output("ir-legend", "children"),
+    Output("ir-side", "children"),
     Input("ir-rule", "value"),
-    Input("ir-schedule", "value"),
-    Input("ir-day", "value"),
+    Input("ir-day", "data"),
 )
-def update_map(rule, schedule, day):
+def update(rule, day):
+    schedule = recommended(rule)
     s, k = scans(rule, schedule)
-    today = s[(s.days_since_cutoff == day) & s.status.notna()].sort_values("hour").groupby("pid").tail(1)
-    m = s[["pid", "bed", "plant"]].drop_duplicates().merge(today, on=["pid", "bed", "plant"], how="left")
-    m["status"] = m.status.fillna("no reading")
-    date = s.loc[s.days_since_cutoff == day, "date"].iloc[0]
+    col = RULES[rule][0]
+    unit = unit_of(col)
+    m = day_plants(s, day)
+    d, when = day_label(day)
+    counts = m.status.value_counts()
 
-    fig = make_subplots(1, 3, subplot_titles=list(BEDS.values()), shared_yaxes=True, horizontal_spacing=0.03)
-    shown = set()
-    for i, bed in enumerate(BEDS, 1):
-        for name, (color, symbol) in STATUS.items():
-            g = m[(m.bed == bed) & (m.status == name)]
-            hover = [
-                f"<b>{r.pid}</b> · {name}<br>{label_of(RULES[rule][0])}: {r.value:.2f} (threshold {k:.2f})"
-                f"<br>scan at {r.hour:.0f} h, {r.env_sky} · demand since watering {r.env_vpd_since_water:.0f} kPa·h"
-                if name != "no reading"
-                else f"<b>{r.pid}</b> · no usable scan this day"
-                for r in g.itertuples()
-            ]
-            fig.add_trace(
-                go.Scatter(
-                    x=g.plant.str[1:].astype(int),
-                    y=g.plant.str[0].map(ROWS.index),
-                    mode="markers",
-                    name=name,
-                    legendgroup=name,
-                    showlegend=name not in shown and len(g) > 0,
-                    hovertext=hover,
-                    hoverinfo="text",
-                    marker=dict(color=color, symbol=symbol, size=15, line=dict(width=2, color=INK["surface"])),
+    tiles = [
+        html.Div(
+            [
+                mark(name),
+                html.Div(
+                    [
+                        html.Div(f"{counts.get(name, 0)}", className="uw-stat"),
+                        html.Div(name, className="uw-readout-label"),
+                    ]
                 ),
-                row=1,
-                col=i,
+            ],
+            className=f"uw-tile uw-{tint}",
+            style={"display": "flex", "alignItems": "center", "gap": "14px"},
+        )
+        for name, tint in TILES
+    ]
+
+    vals = m.value.dropna()
+    lo, hi = min(vals.min(), k, 0) if len(vals) else 0, max(vals.max(), k) if len(vals) else 1
+    pos = lambda x: (
+        f"{np.clip((x - lo) / (hi - lo) * 100, 0, 98):.1f}%" if hi > lo else "0%"
+    )  # 98: marker stays in view
+    fill = {"irrigate": C["amber-900"], "watch": C["amber-700"], "fine": C["teal-700"]}
+    plants = []
+    for r in m.itertuples():
+        scanned = r.status != "no scan"
+        hover = (
+            f"{r.bed} {r.plant} · {d} · {when}: {RULE_SHORT[rule]} {signed(r.value, unit, 2)} at {r.hour:02.0f} h "
+            f"({r.env_sky if isinstance(r.env_sky, str) else 'no sky record'}); threshold {k:.2f}; {r.status}"
+            if scanned
+            else f"{r.bed} {r.plant} · {d} · {when}: no usable scan (no flyover at {schedule}, or weak evidence)"
+        )
+        plants.append(
+            html.A(
+                [
+                    mark(r.status),
+                    html.Span(f"{r.bed} {r.plant}", className="uw-plant-id"),
+                    html.Span(
+                        [
+                            *(
+                                [html.Span(style={"width": pos(r.value), "background": fill[r.status]})]
+                                if scanned
+                                else []
+                            ),
+                            html.I(style={"left": pos(k)}),
+                        ],
+                        className="uw-bar",
+                    ),
+                    html.Span(signed(r.value, "", 1) if scanned else "–", className="uw-num"),
+                ],
+                href=f"/plant-profile?bed={r.bed}&plant={r.plant}",
+                title=hover,
+                className="uw-plant",
             )
-            shown |= {name} if len(g) else set()
-    fig.update_xaxes(range=[0.3, 8.7], tickvals=list(range(1, 9)), showgrid=False)
-    fig.update_yaxes(range=[17.6, -0.6], tickvals=list(range(18)), ticktext=list(ROWS), showgrid=False)
-    fig.update_layout(
-        height=560, title=f"{date:%a %d %b} (day {day}): status at the last usable scan", margin=dict(t=80)
-    )
+        )
+    legend = [
+        html.Span(f"{unit} at {schedule}" if unit else schedule),
+        html.Span([html.Span(style={"width": "2px", "height": "12px", "background": C["navy"]}), f"threshold {k:.2f}"]),
+    ]
 
     sch = read_table("diurnal", "schedules")
     row = {r.set: r for r in sch[(sch.rule == rule) & (sch.schedule == schedule)].itertuples()}
     w2, w3 = row["W2 tuning"], row["W3 check"]
-    when = lambda v: "never" if np.isnan(v) else f"day {v:g}"
-    need = sorted(m.loc[m.status == "irrigate", "pid"])
-    sky = s[(s.days_since_cutoff == day) & s.hour.isin(SCHEDULES[schedule])].groupby("hour").env_sky.first()
-    counts = m.status.value_counts()
-    card = dbc.Card(
-        dbc.CardBody(
+    day_of = lambda v: "–" if pd.isna(v) else f"{v:g}"
+    sky = (
+        s[(s.days_since_cutoff == day) & s.hour.isin(SCHEDULES[schedule])]
+        .groupby("hour")[["env_sky", "env_sunshine"]]
+        .first()
+    )
+    side = [
+        html.Div(
             [
-                html.H6("Water now", className="mb-1"),
-                html.P(", ".join(need) if need else "No plant is flagged.", className="mb-2"),
-                html.P(" · ".join(f"{n}: {counts.get(n, 0)}" for n in STATUS), className="text-secondary small"),
-                html.P(
-                    "Sky at the flyovers (DWD Belm): " + " · ".join(f"{h:02d} h {v}" for h, v in sky.dropna().items()),
-                    className="text-secondary small",
-                ),
-                html.Hr(),
-                html.H6("Track record of this rule", className="mb-1"),
-                html.P(
-                    f"Needs {RULES[rule][2]}. Alerts when the value is above {k:.2f} on two usable scans in a row.",
-                    className="small",
-                ),
-                html.Ul(
+                html.Div("W3 check · not tuned", className="uw-kicker", style={"color": C["forest-700"]}),
+                html.Div(
                     [
-                        html.Li(
-                            f"W2 (used to set the threshold): {w2.n_detected}/{w2.n_plants} plants flagged, "
-                            f"median {when(w2.median_alert_day)}."
+                        readout("flagged", f"{w3.n_detected} / {w3.n_plants}", size="readout"),
+                        readout("median day", day_of(w3.median_alert_day), size="readout"),
+                        readout("false · controls", f"{w3.false_alerts_controls} / {w3.n_controls}", size="readout"),
+                        readout(
+                            "false · before cutoff",
+                            f"{w3.false_alerts_placebo} / {w3.n_placebo_plants}",
+                            size="readout",
                         ),
-                        html.Li(
-                            f"W3 (held out): {w3.n_detected}/{w3.n_plants} flagged, median {when(w3.median_alert_day)}."
-                        ),
-                        html.Li(
-                            f"False alerts on held-out watered plants: {w3.false_alerts_controls}/{w3.n_controls}; "
-                            f"before the cutoff: {w3.false_alerts_placebo}/{w3.n_placebo_plants}."
+                        html.Div(
+                            readout("vs leaf clip", signed(w3.median_lead_vs_clip, "d", 0), size="readout"),
+                            title="median days the alert comes before the leaf clip's turgor shift (W3 clip plants)",
                         ),
                     ],
-                    className="small",
+                    className="uw-readouts",
                 ),
-                html.P(
-                    "Weak-evidence scans (missing data, or a dull day at 09–15 h) are skipped, not counted.",
-                    className="text-secondary small mb-0",
+            ],
+            className="uw-card uw-mint",
+            title="W3 and 9 of the 13 control plants were never used to set the threshold",
+        ),
+        html.Div(
+            [
+                html.Div("W2 tuning", className="uw-kicker", style={"color": C["slate-600"]}),
+                html.Div(
+                    [
+                        readout("flagged", f"{w2.n_detected} / {w2.n_plants}", size="readout"),
+                        readout(
+                            "median · latest",
+                            f"{day_of(w2.median_alert_day)} · {day_of(w2.latest_alert_day)}",
+                            size="readout",
+                        ),
+                    ],
+                    className="uw-readouts",
                 ),
-            ]
-        )
-    )
-    return fig, card
-
-
-@callback(
-    Output("ir-plant-fig", "figure"),
-    Input("ir-rule", "value"),
-    Input("ir-schedule", "value"),
-    Input("ir-plant", "value"),
-)
-def update_plant(rule, schedule, pid):
-    s, k = scans(rule, schedule)
-    p = s[(s.pid == pid) & s.hour.isin(SCHEDULES[schedule])].sort_values(["date", "hour"])
-    x = p.days_since_cutoff + p.hour / 24
-    fig = go.Figure(
-        go.Scatter(
-            x=x,
-            y=p.value,
-            mode="lines",
-            line=dict(width=2, color=SERIES[0]),
-            name=label_of(RULES[rule][0]),
-            hoverinfo="skip",
-        )
-    )
-    for name, (color, symbol) in STATUS.items():
-        g = p[p.status.fillna("no reading") == name]
-        fig.add_trace(
-            go.Scatter(
-                x=g.days_since_cutoff + g.hour / 24,
-                y=g.value,
-                mode="markers",
-                name=name if name != "no reading" else "skipped scan",
-                marker=dict(color=color, symbol=symbol, size=9, line=dict(width=1, color=INK["surface"])),
-                customdata=g[["hour"]].assign(d=g.date.dt.strftime("%d %b")),
-                hovertemplate="%{customdata[1]} %{customdata[0]:.0f} h: %{y:.2f}<extra>" + name + "</extra>",
-            )
-        )
-    fig.add_hline(
-        y=k,
-        line_width=1,
-        line_dash="dot",
-        line_color=INK["secondary"],
-        annotation_text=f"threshold {k:.2f}",
-        annotation_position="bottom right",
-    )
-    first = p[(p.status == "irrigate") & (p.days_since_cutoff >= 0)]
-    title = (
-        f"{pid}: first 'irrigate' on day {first.days_since_cutoff.iloc[0]}" if len(first) else f"{pid}: never flagged"
-    )
-    fig.update_layout(
-        height=380,
-        title=title,
-        xaxis_title="days since irrigation was turned off",
-        yaxis_title=label_of(RULES[rule][0]),
-    )
-    return mark_stress_period(fig)
+            ],
+            className="uw-card uw-gray",
+            title=f"threshold {k:.2f}: the lowest with no alert on W2's 4 tuning controls or before irrigation off",
+        ),
+        html.Div(
+            [
+                *[
+                    chip(
+                        f"{h:02d} h {v.env_sky}",
+                        f"Sky at the {h:02d} h flyover, DWD station Belm (11 km): sun {v.env_sunshine:.0%} of the hour before",
+                        "context",
+                    )
+                    for h, v in sky.dropna().iterrows()
+                ],
+                *bed_effect(rule, schedule),
+                size_chip(),
+                *(
+                    [
+                        chip(
+                            "knows watering stopped",
+                            "Demand since the last watering fires on day 1 because the schedule stopped; a reference, not a stress detector",
+                        )
+                    ]
+                    if rule == "microclimate"
+                    else []
+                ),
+                chip(
+                    "rule",
+                    f"Needs {RULES[rule][2]}. Irrigate: above {k:.2f} on two usable scans in a row; watch: once.",
+                    "rule",
+                ),
+            ],
+            style={"display": "flex", "flexWrap": "wrap", "gap": "8px"},
+        ),
+        html.A("Bed map", href="/bed-map", className="uw-btn uw-btn-primary"),
+    ]
+    return [html.B(d), html.Span(when)], tiles, plants, legend, side
