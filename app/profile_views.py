@@ -66,7 +66,7 @@ HEADLINES = (
     ("RGB", "rgb_ngrdi", "Green–red index"),  # RGB's one clean signal (greenness is flagged: a bed effect)
     ("CLIP", "truth_turgor_shift", "Leaf-clip shift"),
     ("MODEL", "detect_stress_prob", "Stress probability"),
-    ("MODEL", "detect_fusion_v2_prob", "Fusion probability"),  # out-of-fold thermal model, 171 development plants
+    ("MODEL", "detect_fusion_v2_prob", "Fusion probability"),  # out of fold on 171 plants, 5-fold mean on 45 held-out
 )
 SIZE_UNITS = {"mm", "cm²", "cm³", "count"}
 RAW_PREFIXES = ("detect_", "diurnal_", "env_")

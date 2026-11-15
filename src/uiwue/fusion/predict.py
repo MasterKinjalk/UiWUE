@@ -466,8 +466,12 @@ def main(argv=None) -> None:
     )  # fmt: skip
     if a.lockbox:  # same layout as the external test, own table names
         tables = {k.replace("fusion_external_", "fusion_lockbox_"): v for k, v in tables.items()}
-        tables.pop("fusion_lockbox_scores_runs", None)
+        scores = tables.pop("fusion_lockbox_scores_runs", None)
     out = write(tables, a.model, a.out)
+    if a.lockbox and a.model == "fusion_v2" and scores is not None and len(scores):
+        from uiwue.fusion import v2
+
+        v2.write_scores(scores, out, heldout=True)  # beside the development plants' out-of-fold scores
     info |= dict(
         finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), seconds=round(time.time() - t0, 1),
         caches=[_rel(c) for c in a.cache], size_traits=_rel(a.size_traits) if traits is not None else None,

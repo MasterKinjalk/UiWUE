@@ -25,6 +25,7 @@ DEFAULT_BED, DEFAULT_PLANT, DEFAULT_TRAIT = "W2", "R7", "thermal_leaf_ref_dt"
 GRID = {"display": "grid", "gridTemplateColumns": "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", "gap": "12px"}
 LEAF_AREA = "depth_leaf_area_est"  # the 3D trait that leads on the 3D canopy page
 FUSION_V2 = "detect_fusion_v2_prob"
+HELDOUT = "detect_fusion_v2_heldout"  # True on the lock-box plants' rows
 TROUGH_TEXT, REWATERED_TEXT = pv.span_text(*pv.TROUGH), pv.span_text(*pv.REWATERED)
 
 
@@ -76,8 +77,26 @@ def fusion_chip(column):
     ]
 
 
-def chips_of(column):
-    return [*pv.bed_effect_chip(column), *fusion_chip(column)]
+def heldout_chip(df, bed, plant, column):
+    """'held-out' chip on the fusion v2 score of a lock-box plant: no fold trained on it, so its score is the mean
+    of the 5 fold models, not an out-of-fold score (``detect_fusion_v2_heldout`` in fusion_v2_scores_runs)."""
+    if column != FUSION_V2 or HELDOUT not in df:
+        return []
+    if not pv.plant_rows(df, bed, plant)[HELDOUT].eq(True).any():
+        return []
+    return [
+        chip(
+            "held-out",
+            f"{bed} {plant} is one of the 45 plants kept out of every fusion v2 experiment. Its score is the mean of "
+            "the 5 fold models; the other 171 plants show the score of the fold that did not train on them.",
+            anchor="fusion-lockbox",
+        )
+    ]
+
+
+def chips_of(column, df=None, bed=None, plant=None):
+    held = heldout_chip(df, bed, plant, column) if df is not None else []
+    return [*pv.bed_effect_chip(column), *fusion_chip(column), *held]
 
 
 def sensor_card(df, bed, plant, tag, column, label, day=None):
@@ -85,7 +104,7 @@ def sensor_card(df, bed, plant, tag, column, label, day=None):
     state, why = pv.sensor_state(df, bed, plant, column)
     if state != "ok" and column == FUSION_V2 and column in df:
         state = "notable"
-        why = f"Fusion v2: no out-of-fold score for {bed} {plant} (a held-out lock-box plant, or no thermal runs)"
+        why = f"Fusion v2: no score for {bed} {plant} (no thermal runs)"
     if state != "ok":
         return missing(tag, label, state, why)
     fig = pv.small_multiple(df, bed, plant, column, day=day)
@@ -105,7 +124,7 @@ def sensor_card(df, bed, plant, tag, column, label, day=None):
                         className="pl-pick",
                         title=pv.method_hover(column),
                     ),
-                    *chips_of(column),
+                    *chips_of(column, df, bed, plant),
                     html.Span([shown, html.Small(unit)], className="uw-readout pl-value", title=when),
                 ],
                 className="pl-card-head",
@@ -416,7 +435,7 @@ def show_detail(bed, plant, trait, day=None):
     if df is None or plant is None or trait is None:
         return no_update, no_update
     state, why = pv.sensor_state(df, bed, plant, trait)
-    chips = [*chips_of(trait), chip("method", pv.method_hover(trait), "rule", "own-baseline")]
+    chips = [*chips_of(trait, df, bed, plant), chip("method", pv.method_hover(trait), "rule", "own-baseline")]
     if state != "ok":
         return pv.empty_panel(pv.source_of(trait)[0], pv.label_text(trait), state, why), chips
     events = [(d, label) for d, label, _ in signs(pv.plant_row(bed, plant))]

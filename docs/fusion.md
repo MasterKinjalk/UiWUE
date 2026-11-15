@@ -98,7 +98,7 @@ placebo-checked folds (plan section 5).
 | `fusion_external_scores_runs` | `detect_fusion_ext_prob`, `_stage`, `_turgor` per run of the external plants (own names, so both scores tables join) |
 | `fusion_v2_ablation` | Section 8: every v2 variant, the v1 design, the benchmark and size on the same development plants, per sensor setup, group and plant subset, with the pre-cutoff canary days and the 2-Sep-baseline rows; one row per round |
 | `fusion_lockbox_benchmark`, `_auc_by_day` | Section 8: the lock-box scored once by v2, the v1 design and the benchmark, all trained on the development plants |
-| `fusion_v2_scores_runs` | `detect_fusion_v2_prob`, `_stage`, `_turgor` per run, out of fold, development plants |
+| `fusion_v2_scores_runs` | `detect_fusion_v2_prob`, `_stage`, `_turgor` per run: out of fold on the 171 development plants (`train`), and the mean of the 5 fold models on the 45 lock-box plants (`predict --lockbox`), marked by `detect_fusion_v2_heldout` |
 
 ## 5. Design choices to know
 
@@ -512,4 +512,5 @@ the logs are in `runs/logs/v2/` (not in git).
 Outputs: `derived/detect/fusion_v2_ablation.parquet` (every variant and round),
 `fusion_benchmark`, `fusion_auc_by_day`, `fusion_severity` (model `fusion_v2`),
 `fusion_cv_subsets_*`, `fusion_lockbox_*` and `fusion_v2_scores_runs` (`detect_fusion_v2_*`,
-out of fold, development plants only). Checkpoints in `runs/fusion/fusion_v2/` (not in git).
+out of fold on the development plants; `predict --lockbox` adds the lock-box plants' rows with
+`detect_fusion_v2_heldout` true). Checkpoints in `runs/fusion/fusion_v2/` (not in git).
