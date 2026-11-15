@@ -33,6 +33,7 @@ Writes derived/detect/fusion_external_{benchmark,auc_by_day,hsi,scores_runs}.par
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
 import json
 import time
@@ -139,11 +140,16 @@ def clip_plants() -> set[str]:
 # --------------------------------------------------------------------------- #
 # ensemble of the fold models
 # --------------------------------------------------------------------------- #
-def _tuned_encoder(ck: dict, device: str, make_encoder=None):
+def _tuned_encoder(ck: dict, device: str, make_encoder=None, pretrained=None):
+    """The fold's tuned encoder: the pretrained encoder (a copy of `pretrained` if given, since
+    building ImageBind reads its 4.8 GB checkpoint) with the fold's saved adapters."""
     from uiwue.fusion.encoders import add_lora, build_encoder, load_lora_state_dict
 
     cfg = config_of(ck)
-    enc = (make_encoder or (lambda: build_encoder(ck["lora_sensor"])))().to(device)
+    if pretrained is not None:
+        enc = copy.deepcopy(pretrained).to(device)
+    else:
+        enc = (make_encoder or (lambda: build_encoder(ck["lora_sensor"])))().to(device)
     add_lora(enc, cfg.lora_blocks, cfg.lora_rank)  # after .to(device), as LoRAStage.fit
     load_lora_state_dict(enc, ck["lora"])
     return enc.eval()
@@ -169,11 +175,14 @@ def ensemble(
         live = train.LoRAStage(rs, lora_sensor, data_dir, dataclasses.replace(config_of(folds[0]), workers=workers))
         frozen = ({k: v.copy() for k, v in rs.emb.items()}, {k: v.copy() for k, v in rs.base.items()}, dict(rs.has))
         print(f"  {lora_sensor}: {int(live.ok.sum())} of {n} runs re-embedded by each fold's tuned encoder")
+        from uiwue.fusion.encoders import build_encoder
+
+        pretrained = (make_encoder or (lambda: build_encoder(lora_sensor)))()
     for k, ck in enumerate(folds):
         if lora_sensor is not None:
             rs.emb, rs.base, rs.has = ({key: v.copy() for key, v in d.items()} for d in frozen)
             live.rs = rs
-            live.encoder = _tuned_encoder(ck, device, make_encoder)
+            live.encoder = _tuned_encoder(ck, device, pretrained=pretrained)
             live._refresh_embeddings(device)
             del live.encoder
         model, pmodel = build(ck, device), build(ck["placebo"], device)
