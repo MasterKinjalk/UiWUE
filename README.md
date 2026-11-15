@@ -10,5 +10,7 @@ sugar beet, not only machine-learning models.
 ## Start here
 
 1. Set up your environment: [docs/SOFTWARE_STACK.md](docs/SOFTWARE_STACK.md)
-2. Add your work plan: [plan/](plan/README.md)
-3. Wait for the master plan before building.
+2. Download data: `scripts/download_data.sh` (see the Data section of the stack doc)
+3. Pretrained models to fine-tune: [docs/ML_MODELS.md](docs/ML_MODELS.md)
+4. Add your work plan: [plan/](plan/README.md)
+5. Wait for the master plan before building.

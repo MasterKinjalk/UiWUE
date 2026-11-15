@@ -25,3 +25,17 @@ Thumbs.db
 
 # Local tooling
 .claude/
+
+# Third-party clones, model weights, training outputs, logs
+external/
+models/
+runs/
+logs/
+*.pt
+*.pt2
+*.safetensors
+*.ckpt
+
+# Per-workdir caches made by scripts/setup_gpu.sh
+.cache/
+*.egg-info/
