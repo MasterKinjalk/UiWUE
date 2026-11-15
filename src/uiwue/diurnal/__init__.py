@@ -3,9 +3,10 @@
     python -m uiwue.diurnal
 
 Reads the merged table (thermal + environment) and writes to derived/diurnal/:
-- scores_runs: two stress scores and an evidence flag per plant and run
+- scores_runs: three stress scores and an evidence flag per plant and run
 - separability: how well each score separates deficit from control plants, by day and time of day
 - schedules: alert day and false alerts for each rule and flyover schedule
+- sky_effect: how much stronger the stress signal is on sunny than on cloudy flyovers (DWD sunshine)
 
 Rule: a plant is flagged "irrigate" when its score is above the threshold on
 two usable scans in a row. Thresholds and the recommended schedule are picked
@@ -33,12 +34,20 @@ from uiwue.core import (
 STRESS_DAYS = (0, 12)
 PLACEBO_DAYS = tuple((pd.Timestamp(d) - pd.Timestamp(CUTOFF)).days for d in PLACEBO)  # (-10, -5)
 DULL = 0.5  # a daytime scan is "weak evidence" when light is below half that slot's usual level
+# Published non-water-stressed baseline for sugar beet, leaf − air = A + B·VPD (kPa): Idso (1982), Agric. Meteorol.
+# 27:59-70, as quoted by Yetik & Candoğan (2023), Sugar Tech 25:57-68. Original table not yet checked.
+IDSO_A, IDSO_B = 2.50, -1.92
 
 RULES = {  # name -> (column, label, what the grower needs to run it)
     "control_ref": ("diurnal_score_ref", "Thermal score vs control bed", "a well-watered reference bed in view"),
     "local_line": (
         "diurnal_score_local",
         "Thermal score vs healthy-plant line",
+        "a thermal camera plus air temperature and humidity",
+    ),
+    "idso": (
+        "diurnal_score_idso",
+        "Leaf minus air above the published sugar beet line",
         "a thermal camera plus air temperature and humidity",
     ),
     "leaf_air": ("thermal_leaf_air_dt", "Leaf minus air (raw)", "a thermal camera plus air temperature"),
@@ -73,6 +82,13 @@ CATALOGUE = [
         "z",
         1,
         "leaf minus air temperature above a line in VPD fitted on healthy plants (24 Aug–2 Sep), as a z-score against the plant's own baseline",
+    ),
+    (
+        "diurnal_score_idso",
+        "Leaf − air above the published sugar beet line",
+        "°C",
+        1,
+        "leaf minus air temperature minus Idso's (1982) non-water-stressed sugar beet line, 2.50 − 1.92 × VPD (kPa)",
     ),
 ]
 
@@ -110,6 +126,7 @@ def scores(df):
     out = df[KEYS].copy()
     out["diurnal_score_ref"] = own_z(df, "thermal_leaf_ref_dt")
     out["diurnal_score_local"] = own_z(df.assign(resid=df.thermal_leaf_air_dt - expected), "resid")
+    out["diurnal_score_idso"] = df.thermal_leaf_air_dt - (IDSO_A + IDSO_B * df.env_vpd)
     out["diurnal_evidence"] = evidence(df)
     return out
 
@@ -211,7 +228,7 @@ def schedules(df):
 def separability(df):
     """AUC of each score, deficit against control plants, per day since cutoff and slot."""
     rows = []
-    for col in ("diurnal_score_ref", "diurnal_score_local"):
+    for col in ("diurnal_score_ref", "diurnal_score_local", "diurnal_score_idso"):
         for group, beds in (("W2 + W3", ("W2", "W3")), ("W2", ("W2",)), ("W3", ("W3",))):
             d = df[df.bed.isin(("W1",) + beds) & df[col].notna()]
             for (day, hour), g in d.groupby(["days_since_cutoff", "hour"]):
@@ -228,6 +245,34 @@ def separability(df):
                             n_control=int((~y).sum()),
                         )
                     )
+    return pd.DataFrame(rows)
+
+
+def sky_effect(df, days=(2, 12)):
+    """Per slot: deficit-minus-control leaf temperature gap on sunny and cloudy flyovers (DWD sky label).
+
+    One gap per run (stress days only); `sunny_extra` is the sunny-minus-cloudy difference with the day
+    since cutoff held fixed (least squares on day and sunny), since stress grows day by day.
+    """
+    d = df[df.days_since_cutoff.between(*days) & df.env_sky.isin(["sunny", "cloudy"])]
+    d = d.assign(deficit=d.bed != "W1")
+    runs = d.groupby(["date", "hour", "days_since_cutoff", "env_sky", "deficit"]).thermal_leaf_ref_dt.mean()
+    runs = (runs.xs(True, level="deficit") - runs.xs(False, level="deficit")).dropna().rename("gap").reset_index()
+    rows = []
+    for hour, g in runs.groupby("hour"):
+        sunny = (g.env_sky == "sunny").astype(float)
+        x = np.column_stack([np.ones(len(g)), g.days_since_cutoff, sunny])
+        extra = np.linalg.lstsq(x, g.gap, rcond=None)[0][2] if 0 < sunny.sum() < len(g) and len(g) >= 4 else np.nan
+        rows.append(
+            dict(
+                hour=hour,
+                n_sunny=int(sunny.sum()),
+                n_cloudy=int(len(g) - sunny.sum()),
+                gap_sunny=g.gap[sunny == 1].mean(),
+                gap_cloudy=g.gap[sunny == 0].mean(),
+                sunny_extra=extra,
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -256,9 +301,10 @@ def main():
     sc = scores(df)
     write_table(sc, "diurnal", "scores_runs", CATALOGUE)
     df = df.merge(sc, on=KEYS)
-    sep, sch = separability(df), schedules(df)
+    sep, sch, sky = separability(df), schedules(df), sky_effect(df)
     write_table(sep, "diurnal", "separability")
     write_table(sch, "diurnal", "schedules")
+    write_table(sky, "diurnal", "sky_effect")
 
     pd.set_option("display.width", 200)
     print(f"{len(sc)} scored runs; evidence weak: {(sc.diurnal_evidence == 'weak').mean():.0%}")
@@ -273,6 +319,21 @@ def main():
     print(
         f"paper check, W2 minus W1 leaf-air trend at 15 h: {np.polyfit(gap.index, gap.values, 1)[0]:+.2f} °C/day (paper +0.60)"
     )
+    ctrl = df[(df.bed == "W1") & df.hour.isin([12, 15])]
+    print(
+        "published sugar beet line: watered plants sit "
+        f"{ctrl.diurnal_score_idso.median():+.2f} °C from it at 12 and 15 h (0 = on the line)"
+    )
+    w1 = sorted(set(ctrl.bed + "_" + ctrl.plant))
+    for name, slots in (("12 + 15 h", (12, 15)), ("15 h", (15,))):
+        r = evaluate(df, "diurnal_score_idso", slots, 0.0, "W3", w1)
+        print(
+            f"  untuned 'above the line' rule, {name}: W3 {r['n_detected']}/{r['n_plants']} by day "
+            f"{r['median_alert_day']:g}; false alerts {r['false_alerts_controls']}/{r['n_controls']} controls, "
+            f"{r['false_alerts_placebo']}/{r['n_placebo_plants']} plants before the cutoff"
+        )
+    print("sunny against cloudy flyovers (DWD Belm), stress days 2-12, deficit minus control leaf gap (°C):")
+    print(sky.round(2).to_string(index=False))
     cols = [
         "rule",
         "schedule",

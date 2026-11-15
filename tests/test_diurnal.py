@@ -5,7 +5,7 @@ import pandas as pd
 
 from uiwue.core import add_design
 from uiwue.diurnal import alert_days, status, tune
-from uiwue.env import at_times, since_water, vpd_kpa
+from uiwue.env import at_times, dwd_frame, since_water, vpd_kpa
 from uiwue.thermal import block_mean, leaf_t
 
 
@@ -66,3 +66,7 @@ def test_environment_helpers():
     t = pd.to_datetime(["2025-09-01 14:00"]).tz_localize("Europe/Berlin").tz_convert("UTC")
     demand, hours = since_water(t, "W1", pd.Series(1.0, index=idx))
     assert abs(demand[0] - 3) < 1e-6 and abs(hours[0] - 3) < 1e-6
+    # DWD 10-min solar: 36 J/cm² over the 10 min ending 12:10 UTC = 600 W/m²; 0.1 h of sun = 60 % of the interval
+    f = dwd_frame(pd.DataFrame({"MESS_DATUM": ["202509031210"], "GS_10": [36.0], "SD_10": [0.1]}))
+    assert f.index[0] == pd.Timestamp("2025-09-03 12:05", tz="UTC")
+    assert abs(f.global_rad.iloc[0] - 600) < 1e-9 and abs(f.sunshine.iloc[0] - 0.6) < 1e-9

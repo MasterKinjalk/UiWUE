@@ -147,7 +147,7 @@ Yuming. `git pull --rebase` before every push.
 - **Keep:** thermal extraction, the control-bed reference, time-of-day separability, flyover schedules, the plant alert, the false-alert check.
 - **New:** the platform (`uiwue.core`, validator, app shell, integration, submission); thermal and environment tables for the whole team; daily-rhythm metrics for any trait in the catalogue (Kinjalk's E4 and Sam's S4 definitions); the Irrigation advisor page (Sam's three rules plus the control-bed and no-control-bed variants); thermal at reduced resolution (160 x 120 and 80 x 60) for Jack's cost ranking.
 - **Must-have:** G0 in full; day-by-hour separability; alert day per flyover schedule; false-alert counts; Daily rhythm and Irrigation advisor pages; the tagged release and the form.
-- **Cut first:** the weather-station radiation (DWD), then the published sugar beet baseline, then the demand-since-watering figure. The Open-Meteo and vineyard items in my plan are dropped. The separate Scan schedule page is folded into Daily rhythm.
+- **Cut first:** the demand-since-watering figure. The weather-station radiation (DWD) and the published sugar beet baseline are done (added back 2026-11-14 once the must-haves were on `main`). The Open-Meteo and vineyard items in my plan are dropped. The separate Scan schedule page is folded into Daily rhythm.
 
 ## 5. Overlaps and how each is resolved
 

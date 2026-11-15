@@ -8,3 +8,7 @@ env_vpd_w3,"Vapour pressure deficit, W3 end",kPa,0,from the W3-end sensor
 env_par_mv,Light (PAR sensor),mV,0,"raw sensor output, not converted to µmol m⁻² s⁻¹; nearest 15-min reading"
 env_vpd_since_water,Demand since last watering,kPa·h,0,VPD integrated over time since the bed was last watered (schedule 11:00 and 19:00; W2/W3 dry 3–15 Sep)
 env_hours_since_water,Hours since last watering,h,0,time since the bed was last watered
+env_global_rad,"Global radiation, outside",W/m²,0,"DWD station Belm (11 km), 30-min mean around the run"
+env_sunshine,"Sunshine, last hour",fraction,0,DWD station Belm: share of the hour before the run with direct sun
+env_sky,Sky at the run,,0,"sunny (sun ≥ half the last hour), cloudy, or dark (< 20 W/m²); from DWD Belm, independent of the greenhouse"
+env_light_wm2,Greenhouse light,W/m²,0,"greenhouse light sensor (mV) scaled to DWD global radiation on hourly daytime means; outside-equivalent, so it includes the losses through the greenhouse cover"

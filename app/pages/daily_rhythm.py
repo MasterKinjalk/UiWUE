@@ -25,7 +25,11 @@ METRICS = {
     "daily_range": "Daily range (highest − lowest run)",
     "overnight_change": "Overnight change (next 06 h − 18 h)",
 }
-SCORES = {"diurnal_score_ref": "Thermal score vs control bed", "diurnal_score_local": "Thermal score, no control bed"}
+SCORES = {
+    "diurnal_score_ref": "Thermal score vs control bed",
+    "diurnal_score_local": "Thermal score, no control bed",
+    "diurnal_score_idso": "Leaf − air above the published sugar beet line",
+}
 
 
 def schedule_table(sch, rule):
@@ -33,6 +37,7 @@ def schedule_table(sch, rule):
     w2, w3 = (t[t.set == s].set_index("schedule").reindex(list(SCHEDULES)) for s in ("W2 tuning", "W3 check"))
     frac = lambda a, b: a.astype("Int64").astype(str) + " / " + b.astype("Int64").astype(str)
     day = lambda s: s.map(lambda v: "never" if pd.isna(v) else f"day {v:g}")
+    lead = lambda s: s.map(lambda v: "–" if pd.isna(v) else f"{v:+g} d")
     out = pd.DataFrame(
         {
             "Flyovers": [f"{s} ★ recommended" if r else s for s, r in zip(w2.index, w2.recommended)],
@@ -41,11 +46,37 @@ def schedule_table(sch, rule):
             "Alert, W2 (tuning)": day(w2.median_alert_day).values,
             "Alert, W3 (check)": day(w3.median_alert_day).values,
             "W3 plants flagged": frac(w3.n_detected, w3.n_plants).values,
+            "Ahead of leaf clip, W3": lead(w3.median_lead_vs_clip).values,
             "False alerts: W3-check controls": frac(w3.false_alerts_controls, w3.n_controls).values,
             "False alerts: before cutoff": frac(w3.false_alerts_placebo, w3.n_placebo_plants).values,
         }
     )
     return dbc.Table.from_dataframe(out, size="sm", hover=True, striped=False)
+
+
+def sky_note(sky):
+    """Sunny against cloudy flyovers: the stress gap from the DWD sky label, as a small table."""
+    if sky is None:
+        return []
+    t = pd.DataFrame(
+        {
+            "Run": sky.hour.map("{:02d} h".format),
+            "Sunny runs": sky.n_sunny,
+            "Cloudy runs": sky.n_cloudy,
+            "Gap, sunny (°C)": sky.gap_sunny.round(1),
+            "Gap, cloudy (°C)": sky.gap_cloudy.round(1),
+            "Sunny adds, same day (°C)": sky.sunny_extra.round(1),
+        }
+    )
+    return [
+        html.P(
+            "Sunny or cloudy? Stressed minus watered leaf temperature on stress days 2–12, split by the sky at the "
+            "flyover from the German weather service station at Belm (11 km away), not the greenhouse sensor. "
+            "Few runs per cell: read it as a direction, not a precise size.",
+            className="text-secondary small mt-2",
+        ),
+        dbc.Table.from_dataframe(t, size="sm", striped=False, style={"maxWidth": "720px"}),
+    ]
 
 
 def layout(**_):
@@ -108,7 +139,8 @@ def layout(**_):
                 "Area under the ROC curve, deficit against control plants, per day and scheduled run. "
                 "0.5 means no difference; 1 means every stressed plant scores above every watered one. "
                 "Before the cutoff every plant was watered, so cells left of day 0 should sit near 0.5: "
-                "the 06 h and 09 h runs show a bed difference even then, so read early-morning cells with care.",
+                "the 06 h and 09 h runs show a bed difference even then, so part of the 09 h lead may be the bed, "
+                "not stress. 15 h is close to 0.5 before the cutoff and is the second choice.",
                 className="text-secondary small",
             ),
             dbc.Row(
@@ -126,6 +158,7 @@ def layout(**_):
                 ]
             ),
             dcc.Graph(id="dr-separability"),
+            *sky_note(read_table("diurnal", "sky_effect")),
             html.H5("4 · What does imaging less often cost?", className="mt-3"),
             html.P(
                 "Alert rule: score above the threshold on two usable scans in a row. Each threshold is the lowest "

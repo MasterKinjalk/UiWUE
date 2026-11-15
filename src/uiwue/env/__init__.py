@@ -5,11 +5,16 @@
 One row per plant and scheduled run for all 216 plants, so any module's runs
 can be joined to it. Values are taken at the run's nominal time: the slot hour
 plus the bed's place in the robot's flyover (W1 first, about 10 min per bed).
+
+Outside light comes from the DWD station Belm (id 00342, 11 km away; CC BY 4.0,
+"Source: Deutscher Wetterdienst"), downloaded once to <data dir>/external/.
 """
 
 import argparse
+import zipfile
 from functools import lru_cache
 from pathlib import Path
+from urllib.request import urlretrieve
 
 import numpy as np
 import pandas as pd
@@ -21,6 +26,12 @@ BED_OFFSET_MIN = {"W1": 5, "W2": 15, "W3": 25}
 WATER_STOP = pd.Timestamp("2025-09-03 11:00")  # last watering of W2/W3 before the stress
 WATER_MANUAL = pd.Timestamp("2025-09-15 18:35")  # manual re-watering of W2/W3
 WATER_AUTO_AGAIN = pd.Timestamp("2025-09-16")  # schedule (11:00, 19:00) resumes for W2/W3
+DWD_SOLAR = (
+    "https://opendata.dwd.de/climate_environment/CDC/observations_germany/climate/10_minutes/solar/historical/"
+    "10minutenwerte_SOLAR_00342_20200101_20251231_hist.zip"
+)
+SUNNY = 0.5  # a flyover is "sunny" when the sun shone for at least half of the hour before it
+DARK_WM2 = 20  # below this global radiation the leaves get no real sun load
 
 CATALOGUE = [
     (
@@ -56,6 +67,34 @@ CATALOGUE = [
         "VPD integrated over time since the bed was last watered (schedule 11:00 and 19:00; W2/W3 dry 3–15 Sep)",
     ),
     ("env_hours_since_water", "Hours since last watering", "h", 0, "time since the bed was last watered"),
+    (
+        "env_global_rad",
+        "Global radiation, outside",
+        "W/m²",
+        0,
+        "DWD station Belm (11 km), 30-min mean around the run",
+    ),
+    (
+        "env_sunshine",
+        "Sunshine, last hour",
+        "fraction",
+        0,
+        "DWD station Belm: share of the hour before the run with direct sun",
+    ),
+    (
+        "env_sky",
+        "Sky at the run",
+        "",
+        0,
+        "sunny (sun ≥ half the last hour), cloudy, or dark (< 20 W/m²); from DWD Belm, independent of the greenhouse",
+    ),
+    (
+        "env_light_wm2",
+        "Greenhouse light",
+        "W/m²",
+        0,
+        "light sensor (mV) scaled to DWD global radiation on hourly daytime means; outside-equivalent",
+    ),
 ]
 
 
@@ -104,6 +143,35 @@ def par(data_dir=DATA):
     return pd.Series(p.iloc[:, 1].astype(float).values, index=t)
 
 
+def dwd_frame(raw):
+    """DWD 10-min solar product -> global radiation (W/m²) and sunshine fraction, UTC, at each interval's centre.
+
+    GS_10 is J/cm² per 10 min; SD_10 is hours of sunshine per 10 min; MESS_DATUM (UTC) marks the interval end.
+    """
+    t = pd.to_datetime(raw.MESS_DATUM.astype(str), format="%Y%m%d%H%M").dt.tz_localize("UTC") - pd.Timedelta("5min")
+    return pd.DataFrame({"global_rad": raw.GS_10.values * 1e4 / 600, "sunshine": raw.SD_10.values * 6}, index=t)
+
+
+@lru_cache
+def dwd_solar(data_dir=DATA):
+    """DWD Belm 10-min radiation and sunshine; downloads the station file (1.5 MB) on first use."""
+    path = Path(data_dir) / "external" / DWD_SOLAR.rsplit("/", 1)[1]
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        urlretrieve(DWD_SOLAR, path)
+    with zipfile.ZipFile(path) as z:
+        name = next(n for n in z.namelist() if n.startswith("produkt"))
+        raw = pd.read_csv(z.open(name), sep=";", skipinitialspace=True, na_values=[-999], dtype={"MESS_DATUM": str})
+    return dwd_frame(raw)
+
+
+def light_scale(par_mv, solar):
+    """(W/m² per mV, hourly r): greenhouse light sensor against outside global radiation, daytime hours only."""
+    h = pd.DataFrame({"mv": par_mv.resample("1h").mean(), "gs": solar.global_rad.resample("1h").mean()}).dropna()
+    h = h[h.gs > DARK_WM2]
+    return (h.gs**2).sum() / (h.mv * h.gs).sum(), h.mv.corr(h.gs)
+
+
 def watering_times(bed):
     """UTC times the bed was watered (protocol sheet: 8 min per bed at 11:00 and 19:00 daily)."""
     days = pd.date_range("2025-08-01", "2025-09-23", freq="D")
@@ -137,7 +205,13 @@ def build(data_dir=DATA):
     a = air(data_dir)
     for col in ("air_t", "air_t_w3", "rh", "rh_w3", "vpd", "vpd_w3"):
         g["env_" + col] = at_times(a[col], g.env_timestamp_utc)
-    g["env_par_mv"] = at_times(par(data_dir), g.env_timestamp_utc, tol="20min")
+    p, sol = par(data_dir), dwd_solar(data_dir)
+    g["env_par_mv"] = at_times(p, g.env_timestamp_utc, tol="20min")
+    g["env_light_wm2"] = g.env_par_mv * light_scale(p, sol)[0]
+    g["env_global_rad"] = at_times(sol.global_rad.rolling("30min", center=True).mean(), g.env_timestamp_utc)
+    g["env_sunshine"] = at_times(sol.sunshine.rolling("60min").mean(), g.env_timestamp_utc)
+    sky = np.where(g.env_global_rad < DARK_WM2, "dark", np.where(g.env_sunshine >= SUNNY, "sunny", "cloudy"))
+    g["env_sky"] = pd.Series(sky, index=g.index).where(g.env_global_rad.notna() & g.env_sunshine.notna())
     for bed, rows in g.groupby("bed"):
         demand, hours = since_water(rows.env_timestamp_utc, bed, a.vpd)
         g.loc[rows.index, "env_vpd_since_water"], g.loc[rows.index, "env_hours_since_water"] = demand, hours
@@ -151,3 +225,10 @@ def main():
     df = build(args.data_dir)
     path = write_table(df, "env", "env_runs", CATALOGUE)
     print(f"{len(df)} rows -> {path}")
+    scale, r = light_scale(par(args.data_dir), dwd_solar(args.data_dir))
+    print(
+        f"greenhouse light vs DWD Belm global radiation: hourly r = {r:.2f} (usable if > 0.8); 1 mV = {scale:.0f} W/m²"
+    )
+    print("sky at each run (DWD Belm):")
+    runs = df.drop_duplicates(["bed", "date", "hour"])
+    print(pd.crosstab(runs.hour, runs.env_sky).to_string())

@@ -176,6 +176,12 @@ The full camera set is about 618 GB. The paper subset (`--paper`) is about
 `scripts/download_phenobench.sh`. Pretrained weights come from
 `scripts/download_models.py`; see [ML_MODELS.md](ML_MODELS.md).
 
+External data: `python -m uiwue.env` downloads one file on first run, the
+10-minute solar record of the German weather service (DWD) station Belm, id
+00342, 11 km from the greenhouse (1.5 MB, CC BY 4.0, cite "Deutscher
+Wetterdienst"), to `$UIWUE_DATA/external/`. The published sugar beet baseline
+(Idso 1982) is a two-number constant in `uiwue.diurnal`; nothing to download.
+
 Derived tables do go in git: `derived/<module>/*.parquet` (under 20 MB each)
 plus `derived/<module>/catalogue.csv`. That is how teammates and the demo
 machine get your results. Larger derived files (frame-level tables, point

@@ -18,7 +18,7 @@ dash.register_page(
     path="/irrigation",
     name="Irrigation advisor",
     order=60,
-    description="which plants need water on a given day, under four alert rules, with their track record",
+    description="which plants need water on a given day, under five alert rules, with their track record",
 )
 
 BEDS = {"W1": "W1 · watered control", "W2": "W2 · water deficit", "W3": "W3 · water deficit"}
@@ -131,7 +131,7 @@ def update_map(rule, schedule, day):
             g = m[(m.bed == bed) & (m.status == name)]
             hover = [
                 f"<b>{r.pid}</b> · {name}<br>{label_of(RULES[rule][0])}: {r.value:.2f} (threshold {k:.2f})"
-                f"<br>scan at {r.hour:.0f} h · demand since watering {r.env_vpd_since_water:.0f} kPa·h"
+                f"<br>scan at {r.hour:.0f} h, {r.env_sky} · demand since watering {r.env_vpd_since_water:.0f} kPa·h"
                 if name != "no reading"
                 else f"<b>{r.pid}</b> · no usable scan this day"
                 for r in g.itertuples()
@@ -163,6 +163,7 @@ def update_map(rule, schedule, day):
     w2, w3 = row["W2 tuning"], row["W3 check"]
     when = lambda v: "never" if np.isnan(v) else f"day {v:g}"
     need = sorted(m.loc[m.status == "irrigate", "pid"])
+    sky = s[(s.days_since_cutoff == day) & s.hour.isin(SCHEDULES[schedule])].groupby("hour").env_sky.first()
     counts = m.status.value_counts()
     card = dbc.Card(
         dbc.CardBody(
@@ -170,6 +171,10 @@ def update_map(rule, schedule, day):
                 html.H6("Water now", className="mb-1"),
                 html.P(", ".join(need) if need else "No plant is flagged.", className="mb-2"),
                 html.P(" · ".join(f"{n}: {counts.get(n, 0)}" for n in STATUS), className="text-secondary small"),
+                html.P(
+                    "Sky at the flyovers (DWD Belm): " + " · ".join(f"{h:02d} h {v}" for h, v in sky.dropna().items()),
+                    className="text-secondary small",
+                ),
                 html.Hr(),
                 html.H6("Track record of this rule", className="mb-1"),
                 html.P(
