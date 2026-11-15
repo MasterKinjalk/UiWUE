@@ -534,8 +534,30 @@ the app, every benchmark score and the fusion scoring call them.
 - **Why:** the lower bound (not the point estimate) requires reliability; two days requires
   persistence; 0.70 means that, with 95 % confidence, a random stressed plant looks more
   stressed than a random watered one at least 70 % of the time.
-- **Watch out:** no correction for testing many traits. The placebo (§5.7) is the guard against
-  false positives.
+- **Watch out:** no correction for testing many traits. The placebo (§5.7) and the pre-cutoff
+  null (§5.6a) are the guards against false positives.
+
+### 5.6a Pre-cutoff null and robust onset, `robust_onset_day(auc)`
+
+- **Plain words:** the beds can differ on a single day for reasons that have nothing to do with
+  water (sun on one end of the greenhouse, the doors). So run the same daily AUC on every day
+  when all plants were still watered, and demand that a stress onset beats the biggest
+  separation seen there.
+- **Exactly:** `null_envelope(auc)` = 0.5 + max |AUC − 0.5| over days −10 to 0 (24 Aug to the
+  cutoff day, last watering 11:00). `robust_onset_day` = `onset_day` with the bar raised from
+  0.70 to max(0.70, envelope). `fires_before_cutoff(auc)` runs the plain rule on days −10 to 0
+  and returns the day it fires (NaN if never); such a signal is flagged `day effect`.
+- **Why:** leaf temperature separates the beds on 2 Sep (AUC 0.88, CI low 0.76) and 3 Sep (0.89)
+  while every plant is watered, so the plain rule's "day 2" for leaf temperature is not evidence
+  of stress.
+- **Also per time of day:** `onsets_by_slot.parquet` repeats both onsets with one slot as the
+  daily value. The 09 h leaf temperature rule already fires on day −10.
+
+### 5.6b What the intervals do not cover
+
+Intervals resample plants. All control plants sit in one bed (W1), so they share each day's
+light and air; an interval of [1.00, 1.00] says the beds differ that day, not that the treatment
+is proven. This cannot be fixed in analysis; the placebo and the pre-cutoff null are the checks.
 
 ### 5.7 Placebo, `placebo(df, column)`
 
@@ -574,9 +596,16 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
 
 | Column | Exactly |
 |---|---|
-| `symptom_day` | median first-symptom day (days since cutoff) of the group's deficit plants that have one (`truth/plants`) |
+| `symptom_day` | median first-symptom note day of the group's **imaged** deficit plants that have one (`truth/plants`); an upper bound |
+| `symptom_day_low`, `symptom_first_day` | median previous note day (lower bound of the censoring interval); earliest note day |
+| `n_symptom`, `n_imaged` | imaged deficit plants with a note; imaged deficit plants in the group |
+| `clip_day`, `n_clip` | median clip-turgor onset (`truth_clip_onset_date`) of the imaged deficit clip plants, and their number |
+| `robust_onset_day`, `null_auc_max` | §5.6a |
+| `fires_before_cutoff`, `precutoff_fire_day` | the plain rule on watered days (§5.6a) |
+| `lead_vs_clip` | `clip_day − robust_onset_day` (positive = warning before the clip) |
+| `lead_vs_symptom_robust` | `symptom_day − robust_onset_day` |
 | `visible_signal` | the first of `rgb_exg`, `rgb_ngrdi`, `rgb_green_cover` that **passes the placebo** in group `all`; here `rgb_ngrdi`, because `rgb_exg` is flagged |
-| `lead_vs_symptom` | `symptom_day − onset_day` (positive = warning before the symptom) |
+| `lead_vs_symptom` | `symptom_day − onset_day` (positive = warning before the symptom); kept for other pages, not quoted |
 | `lead_vs_visible` | `visible_onset_day − onset_day` (positive = earlier than the colour camera) |
 | `is_size_baseline` | true for `depth_projected_area` |
 
@@ -592,9 +621,14 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
 - **Models** (`make_model`):
   - **Logistic regression:** median imputation → standardisation → `LogisticRegression(C = 1,
     class_weight = "balanced", max_iter = 2000)`. All three steps are fitted inside each fold.
-  - **Boosted trees:** `HistGradientBoostingClassifier(max_depth = 2, max_iter = 100,
-    learning_rate = 0.1, min_samples_leaf = 10, class_weight = "balanced")`; handles missing
-    values natively.
+  - **Boosted trees:** median imputation → `HistGradientBoostingClassifier(max_depth = 2,
+    max_iter = 100, learning_rate = 0.1, min_samples_leaf = 10, class_weight = "balanced")`.
+    Imputed first so that which features are missing cannot tell the model the bed.
+- **Plant sets** (`plant_set`): a setup is only scored on plant-days that have every one of its
+  sensors (a whole missing sensor is never imputed).
+  - `own`: each setup on its own plants, so "RGB" has 18 plants and "Thermal" 39.
+  - `common`: every setup on the same plant-days, those with thermal, depth and RGB (W1 + W2,
+    9 deficit and 9 control plants). This is the comparable track.
 - **Leave-one-plant-out** (`lopo_predict`): for each plant p, fit on all rows of all other
   plants, predict P(deficit) for every row of p. A plant's predictions never come from a model
   that saw it.
@@ -606,6 +640,9 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
 - **Placebo for models:** the same LOPO procedure is run on placebo-window rows only (24–29 Aug,
   label = future deficit bed). If held-out plants' beds can be predicted before any stress,
   `bed_effect = True` (same rule as §5.7).
+- **Pre-cutoff null for models:** the stress-trained model also scores each held-out plant's
+  watered days (−10 to 0); `robust_onset_day`, `null_auc_max` and `fires_before_cutoff` as in
+  §5.6a.
 - **Setups** (`sensor_sets`): every non-empty combination of the sensors present; each
   combination with thermal is repeated with `thermal_leaf_t_r160` or `_r80` in place of the full
   thermal features; plus "Plant size only" (`depth_projected_area`).
@@ -619,8 +656,9 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
 
 - **Cost rank** (ordinal, not prices): webcam 1, ToF depth 2, 80 × 60 thermal 3, 160 × 120
   thermal 4, FLIR A70 5, Pika L 12; a combination costs the sum.
-- **Recommendation** (`cheapest_close`): among setups that are not the size baseline and have no
-  bed effect, the cheapest whose early AUC is within 0.05 of the best.
+- **Recommendation** (`cheapest_close`): among setups scored on the same plants (`common` when
+  present) that are not the size baseline and have no bed effect, the cheapest whose early AUC is
+  within 0.05 of the best.
 - **Watch out:**
   - Each plant's probabilities come from a different fold model, so per-day AUCs compare
     probabilities across slightly different models (standard for LOPO, but noisy).
@@ -644,7 +682,9 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
   (Pearson correlation of ranks):
   - `rho_pooled`: all plant-days together;
   - `rho_within_day`: for each day with ≥ 5 plants, the correlation across plants; then the mean
-    over days.
+    over days. Includes the 3 clip controls.
+  - `rho_within_day_deficit`: the same on deficit clip plants only, the figure to quote;
+    `reliable` is False (and the value NaN) when no day has ≥ 5 deficit plants with the trait.
 - **Why two:** trait and turgor both drift steadily through the stress, so the pooled number is
   inflated by the shared time trend ("days since cutoff" alone would score high). The within-day
   number holds time fixed; "days since cutoff" scores 0 there.
@@ -1094,79 +1134,87 @@ camera's views from the other robot positions.
 
 ### 10.1 Onset per signal (`derived/detect/onsets.parquet`)
 
-All deficit plants (W2 + W3) unless the column says otherwise.
+All deficit plants (W2 + W3) unless the column says otherwise. Rule = plain 0.70 rule (§5.6);
+robust = §5.6a. "Watered max" is the null envelope.
 
-| Signal | Onset (all / W2 / W3) | Early AUC [CI low] | Placebo AUC | Bed effect | Lead vs symptom | Lead vs visible |
-|---|---|---|---|---|---|---|
-| Leaf − control-bed leaf | **2** / 2 / 3 | 1.00 [1.00] | 0.49 | no | 7 d | 4 d |
-| Leaf temperature, coolest 10 % | 2 | 0.98 [0.93] | 0.41 | no | 7 d | 4 d |
-| Leaf temperature (authors' rule) | 2 / 2 / 2 | 0.97 [0.91] | 0.43 | no | 7 d | 4 d |
-| Leaf temperature at 160 × 120 | 2 | 0.97 [0.91] | 0.43 | no | 7 d | 4 d |
-| Leaf temperature at 80 × 60 | 2 / 2 / 2 | 0.97 [0.91] | 0.43 | no | 7 d | 4 d |
-| Leaf − air | 3 / 3 / 3 | 1.00 [0.98] | 0.45 | no | 6 d | 3 d |
-| RGB ExG | 4 | 0.85 [0.65] | 0.91 | **yes** | 5 d | 2 d |
-| Depth point count | 5 | 0.59 [0.35] | 0.11 | **yes** | 4 d | 1 d |
-| Depth leaf area | 5 | 0.50 [0.25] | 0.33 | no | 4 d | 1 d |
-| RGB NGRDI (visible anchor) | 6 | 0.80 [0.56] | 0.62 | no | 3 d | 0 d |
-| Depth projected area (size baseline) | 6 | 0.51 [0.28] | 0.38 | no | 3 d | 0 d |
-| Depth height p95 | 7 | 0.54 [0.30] | 0.24 | **yes** | 2 d | −1 d |
-| RGB green cover | 7 | 0.54 [0.26] | 0.35 | no | 2 d | −1 d |
-| Depth height p75 | 8 | 0.51 [0.27] | 0.20 | **yes** | 1 d | −2 d |
-| RGB hue | 10 | 0.56 [0.23] | 0.52 | no | −1 d | −4 d |
-| Depth inclination, canopy radius, droop | none | 0.38–0.48 | 0.42–0.62 | no | – | – |
+| Signal | Rule onset | Robust onset (all / W2 / W3) | Watered max AUC | Fires before day 0 | Early AUC | Placebo AUC | Bed effect |
+|---|---|---|---|---|---|---|---|
+| Leaf − air | 3 | **4** / 4 / 3 | 0.87 | no | 1.00 | 0.45 | no |
+| Leaf temperature (authors' rule) | 2 | 4 / 5 / 4 | 0.89 | **yes (day −1)** | 0.97 | 0.43 | no |
+| Leaf − control-bed leaf | 2 | 4 / 4 / 4 | 0.92 | **yes (day −1)** | 1.00 | 0.49 | no |
+| Leaf temperature, coolest 10 % | 2 | 4 / 5 / – | 0.92 | **yes (day −1)** | 0.98 | 0.41 | no |
+| Depth leaf area | 5 | 5 / 5 / – | 0.80 | no | 0.50 | 0.33 | no |
+| RGB NGRDI | 6 | 6 / 6 / – | 0.78 | no | 0.80 | 0.62 | no |
+| Depth projected area (size baseline) | 6 | 6 / 6 / – | 0.79 | no | 0.51 | 0.38 | no |
+| RGB green cover | 7 | 7 | 0.77 | no | 0.54 | 0.35 | no |
+| RGB ExG | 4 | 7 | 0.94 | no | 0.85 | 0.91 | **yes** |
+| Depth heights, point count | 5–8 | 8–9 or none | 0.83–0.98 | no | 0.43–0.60 | 0.09–0.24 | **yes** |
 
-Group sizes: thermal 26 deficit / 13 control; depth 14 / 10; RGB 9 / 9 (depth and RGB have no W3
-plants). The symptom anchor is day 9 (12 Sep), the median of mostly W3 written symptoms.
+Group sizes: thermal 26 deficit / 13 control; depth 14 / 10; RGB 9 / 9 (no W3 plants for depth or
+RGB, so their results are W2 only and not replicated).
+
+**Anchors** (imaged plants only):
+
+- **Leaf clip:** median clip-turgor onset day 5 over 18 imaged deficit clip plants (W2 day 8,
+  n 9; W3 day 5, n 9). Leaf − air leads it by **1 day** (W2 4 days, W3 2 days).
+- **Written symptoms:** 8 of 26 imaged deficit plants have a note (W2 2 of 17, W3 6 of 9); the
+  first on day 3 (between 2 and 6 Sep), the median on day 9 (between 10 and 12 Sep). Too sparse,
+  and too coarse, for a lead time. The earlier figure "7 days before visible symptoms" used the
+  median over all 216 plants against the plain-rule day 2 and is withdrawn.
 
 **Reading:**
 
-- Thermal is first (day 2 = 5 Sep) and passes the placebo in both beds.
-- Leaf − control-bed leaf is a day ahead of leaf − air.
+- Thermal is first (robust day 4 = 7 Sep) and the only sensor replicated in both stressed beds.
+- The plain rule's day 2 for leaf temperature is not usable: the same rule fires on 2 Sep, before
+  the cutoff. Leaf − air does not fire on watered days and gives day 3 by the plain rule.
 - **Resolution does not matter for this trait:** the 80 × 60 and 160 × 120 versions of
-  `thermal_leaf_t` match full resolution exactly (same onset, same early AUC), because the
-  coolest-half median is insensitive to blur.
-- Structure follows on days 5–8 in the order canopy seen → area → height. This is the expected
-  physiological order: stomata close (leaf warms), then leaves lose turgor and fold (less visible
-  area), then the canopy sinks.
-- Depth point count and heights fail the placebo with AUC **below** 0.5: the future deficit
-  plants changed *more slowly* than the controls before the cutoff, which agrees with E2 (W2
-  heights grew 1.1–1.6 mm/day slower).
+  `thermal_leaf_t` match full resolution (same onsets, same early AUC).
+- Structure follows on days 5–6 (leaf area, projected area), then heights. Plant size alone is
+  at chance early (early AUC 0.51).
+- Per time of day (`onsets_by_slot`): the 15 h run alone gives leaf − air day 4 (W2 4, W3 4); the
+  09 h leaf temperature rule fires on day −10, so 09 h single-slot onsets need the robust bar.
 
 ### 10.2 Sensor benchmark (`derived/detect/benchmark.parquet`, logistic unless noted)
 
-| Setup | Features | Cost | Early AUC [CI low] (all) | Onset (all / W2 / W3) | Placebo AUC (all) | Bed effect (all) |
-|---|---|---|---|---|---|---|
-| Plant size only | 1 | 0 | 0.49 [0.27] | 6 / 6 / – | 0.60 | no |
-| RGB | 4 | 1 | 0.79 [0.53] | 4 | 0.83 | yes |
-| Depth | 16 | 2 | 0.63 [0.39] | 5 | 0.93 | yes |
-| Thermal 80 × 60 | 1 | 3 | 0.92 [0.80] | 2 / 3 / 2 | 0.51 | no |
-| Thermal 160 × 120 | 1 | 4 | 0.92 [0.80] | 2 | 0.51 | no |
-| **Thermal** | **4** | **5** | **0.99 [0.96]** | **2 / 2 / 3** | **0.51** | **no** |
-| Thermal (boosted trees) | 4 | 5 | 0.99 [0.96] | 2 | 0.82 | yes |
-| RGB + Thermal | 8 | 6 | 0.95 [0.85] | 2 | 0.65 | no |
-| Depth + Thermal | 20 | 7 | 0.98 [0.92] | 2 | 0.85 | yes |
-| RGB + Depth + Thermal | 24 | 8 | 0.97 [0.92] | 2 | 0.85 | yes |
+Same plants (`plant_set = common`): 9 deficit (W2) and 9 control plants with thermal, depth and RGB.
 
-- **Recommended** (`cheapest_close`, group `all`): full thermal with logistic regression.
-- **Adding sensors does not help.** Every setup with depth inherits the depth bed effect.
-- **Flexible models can learn the bed.** The same thermal features fail the placebo with boosted
-  trees (0.82) and pass with logistic regression (0.51).
-- **Per bed:** in the W3-only group, full thermal is flagged (placebo AUC 0.21, the beds
-  separated in the other direction), while thermal 80 × 60 (0.41) is not. Per-bed placebos rest on
-  9 deficit plants.
+| Setup | Early AUC [CI low] | Robust onset | Placebo AUC | Bed effect |
+|---|---|---|---|---|
+| Plant size only | 0.37 [0.12] | 9 | 0.59 | no |
+| RGB | 0.70 [0.41] | 7 | 0.81 | yes |
+| Depth | 0.60 [0.32] | 6 | 0.85 | yes |
+| **Thermal** | **1.00 [1.00]** | **4** | **0.58** | **no** |
+| Thermal (boosted trees) | 0.89 [0.68] | 4 | 0.63 | no |
+| RGB + Thermal | 0.90 [0.67] | 4 | 0.69 | no |
+| Depth + Thermal | 0.95 [0.83] | 4 | 0.83 | yes |
+| RGB + Depth + Thermal | 0.96 [0.85] | 4 | 0.80 | yes |
+
+Each setup on its own plants (`plant_set = own`, group `all`): thermal 0.99 [0.96] on 26 + 13
+plants (placebo 0.51, but its model curve already separates the beds on a watered day); RGB 0.79
+on 9 + 9 (bed effect); depth 0.63 on 15 + 11 (bed effect); size only 0.49.
+
+- **Recommended** (`cheapest_close`, same plants): full thermal with logistic regression.
+- **Adding sensors does not help.** No combination beats thermal alone on the same plants, and
+  every combination with depth inherits the depth bed effect.
+- **Do not read 1.00 [1.00] as certainty**: one control bed (§5.6b).
+- **Before the fix**, setups with RGB or depth were scored on plants without those sensors
+  (median-imputed) and boosted trees could use missingness, so "RGB + Thermal" was scored on 39
+  plants against 18 for "RGB". Those numbers are replaced.
 
 ### 10.3 Trait against turgor (`derived/detect/truth_link.parquet`)
 
-| Signal | ρ pooled | ρ within day | Plants |
-|---|---|---|---|
-| Leaf − air | +0.74 | **+0.43** | 21 |
-| Leaf temperature, coolest 10 % | +0.51 | +0.44 | 21 |
-| Leaf temperature | +0.52 | +0.42 | 21 |
-| Leaf − control-bed leaf | +0.70 | +0.36 | 21 |
-| Depth hull volume | −0.48 | −0.36 | 11 |
-| Depth height p95 | −0.31 | −0.34 | 11 |
-| Depth leaf area | −0.48 | −0.32 | 11 |
-| RGB traits | about 0 | – | 2 (too few) |
+| Signal | ρ pooled | ρ within day (with 3 controls) | ρ within day, deficit only | Plants (deficit) |
+|---|---|---|---|---|
+| Leaf − air | +0.74 | +0.43 | **+0.20** | 21 (18) |
+| Leaf temperature, coolest 10 % | +0.51 | +0.44 | +0.21 | 21 (18) |
+| Leaf temperature | +0.52 | +0.42 | +0.19 | 21 (18) |
+| Leaf − control-bed leaf | +0.70 | +0.36 | +0.11 | 21 (18) |
+| Depth hull volume | −0.48 | −0.36 | +0.05 | 11 (8) |
+| Depth leaf area | −0.48 | −0.32 | +0.03 | 11 (8) |
+| RGB traits | about 0 | – | – | 2 (1: too few) |
+
+Among stressed plants alone, the trait–turgor link is weak: most of the within-day correlation
+came from the three watered clip plants.
 
 The pooled leaf − air value is close to the paper's bed-level ρ = 0.853 [ADA §III-C]; holding the
 day fixed halves it. Part of the paper's correlation is the shared time trend.
@@ -1238,13 +1286,13 @@ table is missing.
 | **Plant profile** `/plant-profile` | cards: treatment, clip onset, first symptom (with its note), RWC (W3 sampled plants), latest `detect_stress_prob`. Charts: the chosen trait's daily value (median of 12/15 h) for the plant against the control bed; clip turgor trace; RWC; mean spectrum by date (when `spectra_runs` exists) |
 | **Bed map** `/bed-map` | the 216 pots in their grid positions, three beds side by side, coloured by any trait at a chosen day and slot; one colour range per trait (2nd–98th percentile over all runs) so days compare; pots without a reading as open rings; clip plants outlined; play button steps through days |
 | **3D Browser** `/threed-browser` | the cached point cloud (colour by RGB, height, plant/background), the reference plane, a second date side by side, QC badges, every trait ± MAD (unreliable traits marked), RGB frame 7, `height_p75` over time; deep links `?bed=W2&plant=J5&date=…&hour=15` |
-| **Early warning** `/early-warning` | headline: the earliest signal that is neither a bed effect nor the size baseline, with its lead time; AUC-by-day curves with intervals for chosen signals; onset table; group switch (all, W2, W3 replication) |
+| **Early warning** `/early-warning` | stat tiles: first sensor (robust onset with its range), next sensor, size only, lead vs leaf clip (n), written notes (n); onset dot plot (rule and robust onset per signal, by sensor); daily AUC of one signal with the watered-day envelope and per-slot onsets; recovery bars; CSV table; group switch (W2 + W3, W2, W3) |
 | **3D Compare** `/threed-compare` | a trait over time by treatment, bed or chosen plants (optional % change from 1–2 Sep; mean ± SD band; one line per plant); day × hour heatmaps; midday depression and overnight recovery; trait vs turgor for clip plants; a result card with E1, E2, E3 |
 | **3D Export** `/threed-export` | filters, a 250-row preview, CSV download of the depth table, and a Markdown method summary (calendar, noise floor, QC flags, parameters, parity) |
-| **Sensor comparison** `/sensor-comparison` | headline from `cheapest_close`; every setup's early AUC, onset and placebo, sorted by cost; fusion rows appear when `fusion_benchmark` exists |
+| **Sensor comparison** `/sensor-comparison` | tiles: thermal only, best combination, size only, cheapest close; plant set switch (same plants by default, or each setup's own); AUC per setup with n in the tick label; CSV table; fusion rows appear on the own-plants view when `fusion_benchmark` exists |
 | **Daily rhythm** `/daily-rhythm` | mean ± SEM per slot in five phase bins; a rhythm metric (§7.9) over days by group; the separability heatmap (day × slot AUC); the schedule table per rule; a sky note from `sky_effect` |
 | **Irrigation advisor** `/irrigation` | pick a rule (its recommended schedule pre-selected) and a day; every plant's status on that day as fine / watch / irrigate marks (from `status` with the tuned threshold); the rule's track record on W2 and the held-out W3; a plant's score over time with the threshold line |
-| **Methods & limits** `/methods` | the six validity rules; the placebo table per group; run info (when, how many plants, bootstrap count) |
+| **Methods & limits** `/methods` | placebo per trait (circle fine, triangle day effect, diamond bed effect); tune W2 / check W3 and the validity rules as chips; scope per sensor; known limits (one control bed, watered-day separation, W3 thermal only, no hyperspectral table, censored symptom dates); definitions on hover; run info |
 
 **Design rules** (`design/DESIGN.md`, binding, summarised in `CLAUDE.md`): minimal text (methods in
 hover text or chips); one meaning per colour (control sky/teal, deficit sand/amber, baseline mint,
@@ -1302,12 +1350,12 @@ configs.
 | Height plateaus "several days after" the cutoff | height onset day 7–8; area and point count day 4–6 | dated |
 | Calibration by bundle adjustment, 1.1–1.6 px reprojection [ADA §II-D1] | robot-to-depth rotation has robot x with the wrong sign | corrected |
 | 15 depth/RGB images per run [ADA Table I] | a 3 × 5 grid of positions, not repeats | clarified |
-| Leaf temperature = coolest 50 %; leaf − air +0.596 °C/day [ADA §III-B] | same rule; thermal is the earliest signal (day 2–3), placebo clean | extended |
-| 15 h only | 09 h best single alert flyover; 06 h never separates; sunny flyovers +2 °C larger gap | extended |
+| Leaf temperature = coolest 50 %; leaf − air +0.596 °C/day [ADA §III-B] | same rule; thermal is the earliest signal (robust onset day 4, W2 and W3), placebo clean | extended |
+| 15 h only | 12 h + 15 h is the alert schedule that passes the watered-day check; 09 h shows a bed effect before the cutoff; 06 h never separates | extended |
 | Flat-field `C = (R − D)/(W·m − D)`, m = 2.0 [ADA §II-D2] | same formula | same |
 | NDVI 800/670, CI red edge 790/720, SIPI 800/445/680, Savitzky–Golay, model masks | CI red edge 780/720, no smoothing, NDVI mask; PRI, WBI, REP added | to resolve |
 | Index interactions −0.0189, −0.0098, +0.0143 per day | not computed (no hyperspectral table) | open |
-| Bed-mean Spearman with turgor; leaf − air ρ = 0.853 [ADA §III-C] | plant-level pooled ρ = 0.74, within-day 0.43 | decomposed |
+| Bed-mean Spearman with turgor; leaf − air ρ = 0.853 [ADA §III-C] | plant-level pooled ρ = 0.74, within-day 0.43, within-day deficit only 0.20 | decomposed |
 | W1 and W2 analysed, W3 in the dataset | W3 is the held-out check for every tuned threshold | extended |
 | 21 clips, 9 / 9 / 3 [ADA §II-F2] | per-plant clip onset: W2 days 1–11 (median 11 Sep), W3 days 3–7 (median 8 Sep) | extended |
 | RWC from W3, days 1–12 [ADA §II-F1] | 63 leaves in `truth/rwc_leaves`; mean 92.9 % (4 Sep) → 77.9 % (11 Sep) | same data |
@@ -1327,7 +1375,7 @@ These are intentional, but you must know them to read the numbers correctly.
 | Baseline statistic | median, same slot | mean, same slot, pooled SD | mean (pct or diff) | mean embedding, same hour |
 | Daily value | median of 12 + 15 h runs | per scan | mean of the plant's runs that day | mean probability of 12 + 15 h |
 | Group test | AUC + plant bootstrap | AUC per day (no interval) | Mann–Whitney + Holm | AUC + plant bootstrap |
-| Onset rule | CI low > 0.70 on 2 consecutive scored days | (alerts: score > k on 2 consecutive scans) | Holm p < 0.05 on 2 consecutive tested days | as shared |
+| Onset rule | CI low > 0.70 on 2 consecutive scored days; robust: bar raised to the watered-day envelope | (alerts: score > k on 2 consecutive scans) | Holm p < 0.05 on 2 consecutive tested days | as shared |
 | Lead time sign | anchor − onset: **positive = earlier** | clip onset − alert: positive = earlier | onset − symptom: **positive = later** | n/a |
 | Multiplicity | none (placebo guards) | none (zero-false-alert tuning) | Holm over days (E3) or traits (E2) | none |
 | Beds | W1 vs W2 + W3, W2, W3 | W2 tuning, W3 check | W1 vs W2 | all, W2, W3 |
@@ -1351,7 +1399,9 @@ Other definitions to keep apart:
 
 1. **One control bed.** Treatment and bed are confounded. The placebo flags traits that separate
    the beds before the stress, but cannot rule out a bed effect that only appears later. Before
-   the cutoff the beds already differ at 06 h (AUC 0.26) and 09 h (0.62).
+   the cutoff the beds already differ at 06 h (AUC 0.26) and 09 h (0.62), and daily leaf
+   temperature separates them on 2–3 Sep (AUC 0.88–0.89); hence the robust onset (§5.6a).
+   Plant-bootstrap intervals ignore the shared bed-day effect and are too narrow (§5.6b).
 2. **Few plants per test.** Thermal 13 controls, depth 10, RGB 9; alert thresholds tuned with 4
    controls; per-bed placebos on 9 deficit plants. Bootstrap intervals are narrow at the
    boundaries (§5.4).
@@ -1359,8 +1409,8 @@ Other definitions to keep apart:
    hyperspectral and fusion have no results on `main`.
 4. **No correction for many traits** in the shared onset rule; the placebo and the W3 check are
    the safeguards.
-5. **Symptom dates are upper bounds** (scored on six dates), so lead times against them are
-   generous by up to two days.
+5. **Symptom dates are upper bounds** (scored on six dates) and cover 8 of 26 imaged deficit
+   plants, so no lead time is quoted against them; lead times use the leaf clip (18 plants).
 6. **One greenhouse, one variety, one season, six weeks** [ADA §V]; the 2 Sep door closure shifts
    the climate for all beds.
 7. **Fixed watering, no usable soil sensors:** results say when a rule would have fired, not how

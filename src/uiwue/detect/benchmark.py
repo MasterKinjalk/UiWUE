@@ -7,6 +7,16 @@ a placebo run beside every result.
 Rows are plant-days (daily value = median of the 12 and 15 h runs). Training
 rows are days 0-12; label = plant is in a deficit bed. The held-out plant's
 out-of-fold probability is then scored per day with the shared AUC.
+
+Plant sets (`plant_set` column):
+- "own":    each setup on the plant-days that have every one of its sensors. W3 has
+            no RGB or depth, so a setup with either is scored on W1 + W2 only.
+- "common": every setup on the same plant-days, those with all sensors present
+            (thermal + depth + RGB). This is the comparable track; `cheapest_close`
+            ranks within it.
+A plant-day missing a whole sensor is never imputed, so missingness cannot
+encode the bed; single missing features inside a sensor are median-imputed
+inside the fold, for both models.
 """
 
 from __future__ import annotations
@@ -22,7 +32,17 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from uiwue.detect.data import SENSORS, SETUP_LABEL, cost_rank, setup_of, size_baseline_column, trait_columns
-from uiwue.stats import GROUPS, auc_ci, baseline_delta, daily_values, onset_day
+from uiwue.stats import (
+    GROUPS,
+    NULL_DAYS,
+    auc_ci,
+    baseline_delta,
+    daily_values,
+    fires_before_cutoff,
+    null_envelope,
+    onset_day,
+    robust_onset_day,
+)
 from uiwue.stats._design import CONTROL_BEDS, DEFICIT_BEDS, PLACEBO, prefix_of
 from uiwue.stats.core import EARLY_DAYS, SEED
 
@@ -39,13 +59,18 @@ def make_model(kind: str):
             LogisticRegression(C=1.0, max_iter=2000, class_weight="balanced"),
         )
     if kind == "boosted":
-        return HistGradientBoostingClassifier(
-            max_depth=2,
-            max_iter=100,
-            learning_rate=0.1,
-            min_samples_leaf=10,
-            class_weight="balanced",
-            random_state=SEED,
+        # Imputed first: HistGradientBoosting would otherwise route NaN on its own,
+        # and which features are missing can say which bed a plant is in.
+        return make_pipeline(
+            SimpleImputer(strategy="median", keep_empty_features=True),
+            HistGradientBoostingClassifier(
+                max_depth=2,
+                max_iter=100,
+                learning_rate=0.1,
+                min_samples_leaf=10,
+                class_weight="balanced",
+                random_state=SEED,
+            ),
         )
     raise ValueError(kind)
 
@@ -96,6 +121,23 @@ def full_resolution(columns: list[str]) -> list[str]:
     return [c for c in columns if setup_of(c) not in LOW_RES_THERMAL]
 
 
+def complete_rows(daily: pd.DataFrame, feats: list[str]) -> pd.Series:
+    """True for plant-days that have at least one value from every sensor in `feats`."""
+    by: dict[str, list[str]] = {}
+    for c in feats:
+        by.setdefault(setup_of(c), []).append(c)
+    ok = pd.Series(True, index=daily.index)
+    for cols in by.values():
+        ok &= daily[cols].notna().any(axis=1)
+    return ok
+
+
+def common_plants(daily: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Plant-days that have every full-resolution sensor present in `columns`."""
+    full = full_resolution(columns)
+    return daily[complete_rows(daily, full)] if full else daily.iloc[0:0]
+
+
 # --------------------------------------------------------------------------- #
 # leave-one-plant-out
 # --------------------------------------------------------------------------- #
@@ -144,20 +186,29 @@ def _curve(rows: pd.DataFrame, group: str, n_boot: int) -> pd.DataFrame:
 
 
 def evaluate(daily: pd.DataFrame, feats: list[str], kind: str, groups, n_boot: int):
-    """Detection results for one feature set and model, plus its placebo."""
+    """Detection results for one feature set and model, plus its placebo and pre-cutoff null.
+
+    Only plant-days with every sensor of the set are used. The stress-trained model
+    also scores the watered days (placebo start to day 0) of each held-out plant;
+    `robust_onset_day` must clear the largest separation seen there.
+    """
+    daily = daily[complete_rows(daily, feats)]
     stress = daily[daily["days_since_cutoff"].between(*TRAIN_DAYS)].copy()
-    stress["prob"] = lopo_predict(stress, feats, kind)
+    scored = daily[daily["days_since_cutoff"].between(NULL_DAYS[0], TRAIN_DAYS[1])].copy()
+    scored["prob"] = lopo_predict(stress, feats, kind, predict=scored)
+    stress = scored[scored["days_since_cutoff"].between(*TRAIN_DAYS)]
     pre = daily[daily["date"].between(*PLACEBO)].copy()
     pre["prob"] = lopo_predict(pre, feats, kind)
 
     summary, curves = [], []
     for g in groups:
-        if not daily["bed"].isin(GROUPS[g]).any():
+        if not stress["bed"].isin(GROUPS[g]).any():
             continue
-        curve = _curve(stress, g, n_boot)
+        curve = _curve(scored, g, n_boot)
         (e, elo, ehi), npos, nneg = _per_plant_auc(stress, g, n_boot, EARLY_DAYS)
         (f, _, _), _, _ = _per_plant_auc(stress, g, 0, FULL_DAYS)
         (p, plo, phi), _, _ = _per_plant_auc(pre, g, n_boot)
+        fire = fires_before_cutoff(curve) if len(curve) else np.nan
         summary.append(
             dict(
                 group=g,
@@ -172,6 +223,9 @@ def evaluate(daily: pd.DataFrame, feats: list[str], kind: str, groups, n_boot: i
                 bed_effect=bool(np.isfinite(plo) and (plo > 0.5 or phi < 0.5) and max(p, 1 - p) >= 0.7),
                 n_deficit=npos,
                 n_control=nneg,
+                robust_onset_day=robust_onset_day(curve) if len(curve) else np.nan,
+                null_auc_max=null_envelope(curve) if len(curve) else np.nan,
+                fires_before_cutoff=bool(np.isfinite(fire)),
             )
         )
         curves.append(curve.assign(group=g))
@@ -179,12 +233,13 @@ def evaluate(daily: pd.DataFrame, feats: list[str], kind: str, groups, n_boot: i
 
 
 def run_benchmark(
-    df: pd.DataFrame, models=MODELS, groups=("all", "W2", "W3"), n_boot: int = 2000
+    df: pd.DataFrame, models=MODELS, groups=("all", "W2", "W3"), n_boot: int = 2000, plant_sets=("own", "common")
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Every sensor combination x model, plus the size-only baseline.
+    """Every sensor combination x model, plus the size-only baseline, on each plant set.
 
     Returns (benchmark, curves). `curves` uses the auc_by_day layout with
-    kind="model" and signal="model:<sensors>:<model>".
+    kind="model" and signal="model:<sensors>:<model>" (own plant set) or
+    "model:<sensors>:<model>:common".
     """
     cols = trait_columns(df)
     size_col = size_baseline_column(df)
@@ -192,40 +247,69 @@ def run_benchmark(
     daily = daily_features(df, feat_cols)
     sets = {("size",): [size_col]} if size_col else {}
     sets.update(sensor_sets(cols))
+    tracks = {"own": daily, "common": common_plants(daily, cols)}
 
     rows, curves = [], []
-    for combo, feats in sets.items():
-        name = "+".join(combo)
-        for kind in models:
-            summary, cs = evaluate(daily, feats, kind, groups, n_boot)
-            for s in summary:
-                rows.append(
-                    dict(
-                        sensors=name,
-                        setup=("Plant size only" if combo == ("size",) else " + ".join(SETUP_LABEL[s] for s in combo)),
-                        model=kind,
-                        n_sensors=0 if combo == ("size",) else len(combo),
-                        n_features=len(feats),
-                        cost_rank=0 if combo == ("size",) else cost_rank(combo),
-                        is_size_baseline=combo == ("size",),
-                        size_column=size_col,
-                        **s,
+    for track in plant_sets:
+        data = tracks[track]
+        if data.empty:
+            continue
+        for combo, feats in sets.items():
+            name = "+".join(combo)
+            for kind in models:
+                summary, cs = evaluate(data, feats, kind, groups, n_boot)
+                for s in summary:
+                    rows.append(
+                        dict(
+                            sensors=name,
+                            setup=(
+                                "Plant size only" if combo == ("size",) else " + ".join(SETUP_LABEL[s] for s in combo)
+                            ),
+                            model=kind,
+                            n_sensors=0 if combo == ("size",) else len(combo),
+                            n_features=len(feats),
+                            cost_rank=0 if combo == ("size",) else cost_rank(combo),
+                            is_size_baseline=combo == ("size",),
+                            size_column=size_col,
+                            plant_set=track,
+                            **s,
+                        )
                     )
-                )
-            for c in cs:
-                curves.append(c.assign(signal=f"model:{name}:{kind}", kind="model", column=f"model:{name}:{kind}"))
+                sig = f"model:{name}:{kind}" + ("" if track == "own" else f":{track}")
+                for c in cs:
+                    curves.append(c.assign(signal=sig, kind="model", column=sig))
     bench = pd.DataFrame(rows)
     if not bench.empty:
-        bench = bench.sort_values(["group", "cost_rank", "model"]).reset_index(drop=True)
+        bench = bench.sort_values(["plant_set", "group", "cost_rank", "model"], ascending=[False, True, True, True])
+        bench = bench.reset_index(drop=True)
     return bench, (pd.concat(curves, ignore_index=True) if curves else pd.DataFrame())
 
 
-def cheapest_close(bench: pd.DataFrame, group: str = "all", margin: float = 0.05) -> pd.Series | None:
-    """Cheapest setup whose early AUC is within `margin` of the best one.
+def comparable(bench: pd.DataFrame, group: str = "all", plant_set: str | None = None) -> pd.DataFrame:
+    """Rows of one group scored on one plant set: `plant_set`, else "common" when present.
+
+    Tables without a plant_set column (older runs) are returned whole; rows without a
+    plant set (the fusion track) are kept only when no plant set is asked for and no
+    common track exists.
+    """
+    b = bench[bench["group"] == group]
+    if "plant_set" not in b.columns:
+        return b
+    if plant_set is None:
+        plant_set = "common" if (b["plant_set"] == "common").any() else "own"
+    return b[b["plant_set"] == plant_set]
+
+
+def cheapest_close(
+    bench: pd.DataFrame, group: str = "all", margin: float = 0.05, plant_set: str | None = None
+) -> pd.Series | None:
+    """Cheapest setup whose early AUC is within `margin` of the best one, among setups
+    scored on the same plants (`comparable`).
 
     Setups whose placebo separated the beds are not eligible (rule 6.7.4).
     """
-    b = bench[(bench["group"] == group) & ~bench["is_size_baseline"] & ~bench["bed_effect"]]
+    b = comparable(bench, group, plant_set)
+    b = b[~b["is_size_baseline"].astype(bool) & ~b["bed_effect"].astype(bool)]
     b = b.dropna(subset=["early_auc"])
     if b.empty:
         return None

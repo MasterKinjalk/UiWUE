@@ -7,7 +7,7 @@ import pandas as pd
 from components import C, header, not_available
 from dash import html
 
-from uiwue.core import BASELINE, CUTOFF, DERIVED, REWATER, SLOTS, load_traits
+from uiwue.core import BASELINE, CUTOFF, DERIVED, REWATER, catalogue, load_traits
 
 dash.register_page(
     __name__,
@@ -35,6 +35,7 @@ GROUPS = {  # page path -> (tile tint, disc colour)
     "/irrigation": ("mint", "forest-700"),
     "/bed-map": ("mint", "forest-700"),
     "/plant-profile": ("lilac", "plum-700"),
+    "/export": ("gray", "slate-600"),
     "/threed-browser": ("lilac", "plum-700"),
     "/threed-compare": ("lilac", "plum-700"),
 }
@@ -49,51 +50,78 @@ def width(a, b):
     return f"{((pd.Timestamp(b) - pd.Timestamp(a)).days + 1) / ((SPAN[1] - SPAN[0]).days + 1) * 100:.2f}%"
 
 
-def tiles(df):
-    cams = [c for c in df.columns if c.startswith(CAMERAS) and pd.api.types.is_float_dtype(df[c])]
-    imaged = df[df[cams].notna().any(axis=1)].groupby("bed").plant.nunique()
+SENSORS = (  # source tag, name, columns that count as "imaged by this sensor"
+    ("IR", "Thermal", "thermal_"),
+    ("3D", "Depth", "depth_"),
+    ("RGB", "RGB", "rgb_"),
+    ("HSI", "Hyperspectral", "hsi_"),
+    ("CLIP", "Leaf clip", "truth_turgor_"),
+)
+WORKFLOWS = (  # path, title, tile tint, disc colour, tag
+    ("/irrigation", "Water today", "mint", "forest-700", "IA"),
+    ("/early-warning", "Earliest warning", "sky", "teal-700", "EW"),
+    ("/plant-profile", "One plant", "lilac", "plum-700", "PP"),
+)
 
-    def tile(tint, label, value, unit, hover):
-        return html.Div(
-            [
-                html.Div(label, className="uw-readout-label"),
-                html.Div(value, className="uw-stat"),
-                html.Div(unit, className="uw-readout-label"),
-            ],
-            className=f"uw-tile uw-{tint}",
-            title=hover,
-        )
 
-    beds = [("W1", "control", "sky"), ("W2", "deficit", "sand"), ("W3", "deficit", "sand")]
-    return html.Div(
-        [
-            *[
-                tile(
-                    t,
-                    f"{b} · {r}",
-                    f"{imaged.get(b, 0)}",
-                    "plants imaged",
-                    "plants with any camera reading in the tables",
+def coverage_counts(df, prefix):
+    """{bed: plants with a value} for the catalogue columns of one sensor, counted from the run table."""
+    cat = set(catalogue().column)
+    cols = [c for c in df.columns if c.startswith(prefix) and c in cat and pd.api.types.is_numeric_dtype(df[c])]
+    if not cols:
+        return None
+    have = df[df[cols].notna().any(axis=1)]
+    return have.groupby("bed").plant.nunique().to_dict()
+
+
+def sensor_tiles(df):
+    out = []
+    for tag, name, prefix in SENSORS:
+        n = coverage_counts(df, prefix)
+        if n is None:
+            out.append(
+                html.Div(
+                    [
+                        html.Div(f"{tag} · {name}", className="uw-readout-label"),
+                        html.Div("–", className="uw-stat"),
+                        html.Div("no table", className="uw-readout-label"),
+                    ],
+                    className="uw-tile uw-missing",
+                    title=f"{name}: no table in derived/ yet",
                 )
-                for b, r, t in beds
-            ],
-            tile(
-                "mint",
-                "runs per day",
-                f"{len(SLOTS)}",
-                " · ".join(f"{h:02d}" for h in SLOTS) + " h",
-                "scheduled flyovers",
-            ),
-            tile(
-                "gray",
-                "irrigation off",
-                f"{CUTOFF.day} {CUTOFF:%b}",
-                f"re-watered {REWATER.day} {REWATER:%b}",
-                "W2 and W3: last watering 3 Sep 11:00, re-watered 15 Sep 18:35",
-            ),
-        ],
-        className="uw-tiles",
-    )
+            )
+            continue
+        beds = " · ".join(f"{b} {n.get(b, 0) or '–'}" for b in ("W1", "W2", "W3"))
+        out.append(
+            html.Div(
+                [
+                    html.Div(f"{tag} · {name}", className="uw-readout-label"),
+                    html.Div([f"{sum(n.values())}", html.Small("plants")], className="uw-stat"),
+                    html.Div(beds, className="uw-readout-label"),
+                ],
+                className="uw-tile uw-gray",
+                title=f"{name}: plants with at least one value in the run table, by bed",
+            )
+        )
+    return html.Div(out, className="uw-tiles", **{"aria-label": "Sensor coverage"})
+
+
+def workflows():
+    """The three jobs the app is for, as large links."""
+    pages = {p["path"]: p for p in dash.page_registry.values()}
+    out = []
+    for path, title, tint, disc, tag in WORKFLOWS:
+        page = pages.get(path, {})
+        out.append(
+            html.A(
+                [html.Span(tag, className="uw-disc", style={"background": C[disc]}, **{"aria-hidden": "true"}), title],
+                href=path,
+                title=page.get("description") or page.get("name") or title,
+                className=f"uw-pagetile uw-{tint}",
+                style={"minHeight": "88px", "fontSize": "21px", "fontFamily": "var(--uw-font-display)"},
+            )
+        )
+    return html.Nav(out, className="uw-pages", style={"paddingTop": 0}, **{"aria-label": "Workflows"})
 
 
 def main_table(folder):
@@ -191,5 +219,8 @@ def layout(**_):
         "What did the pipeline extract from each sensor, for which plants and dates?",
     )
     if df is None:
-        return html.Div([head, not_available("Every module"), page_tiles()])
-    return html.Div([head, tiles(df), html.Div(coverage(), style={"paddingTop": "20px"}), page_tiles()])
+        return html.Div([head, workflows(), not_available("Every module"), page_tiles()])
+    gap = {"paddingTop": "20px"}
+    return html.Div(
+        [head, workflows(), html.Div(sensor_tiles(df), style=gap), html.Div(coverage(), style=gap), page_tiles()]
+    )

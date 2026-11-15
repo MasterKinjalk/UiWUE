@@ -4,9 +4,10 @@
 
 Writes derived/detect/:
   auc_by_day.parquet   per-day AUC curves (traits and models)
-  onsets.parquet       onset day, early AUC, placebo, lead times per signal and group
-  placebo.parquet      the placebo rows alone (Methods & limits)
-  benchmark.parquet    every sensor combination x model, with size-only baseline
+  onsets.parquet       onset day, robust onset, early AUC, placebo, lead times per signal and group
+  onsets_by_slot.parquet  both onsets per signal, group and time-of-day slot
+  placebo.parquet      the placebo rows alone (Methods & limits), with the pre-cutoff check
+  benchmark.parquet    every sensor combination x model, with size-only baseline, per plant set
   scores_runs.parquet  detect_stress_prob per run (+ catalogue.csv); load_traits() attaches it
   truth_link.parquet   trait vs clip turgor
   recovery.parquet     recovery ratio per deficit plant (plant_id) and trait
@@ -24,11 +25,11 @@ import pandas as pd
 
 from uiwue.detect.benchmark import run_benchmark, stress_scores
 from uiwue.detect.data import load_merged, trait_columns
-from uiwue.detect.onsets import run_onsets
+from uiwue.detect.onsets import run_onsets, run_slot_onsets
 from uiwue.detect.truth import recovery, truth_link
 from uiwue.stats._design import clear_caches, derived_dir
 
-STEPS = ("onsets", "benchmark", "scores", "truth", "recovery")
+STEPS = ("onsets", "slots", "benchmark", "scores", "truth", "recovery")
 
 SCORES_CATALOGUE = pd.DataFrame(
     [
@@ -162,9 +163,14 @@ def main(argv=None) -> None:
                     "bed_effect",
                     "n_deficit",
                     "n_control",
+                    "fires_before_cutoff",
+                    "precutoff_fire_day",
+                    "null_auc_max",
                 ]
             ]
             _save(pb, out, "placebo")
+    if "slots" not in a.skip:
+        _save(run_slot_onsets(df, cols, n_boot=a.n_boot), out, "onsets_by_slot")
     if "benchmark" not in a.skip:
         bench, bcurves = run_benchmark(df, n_boot=a.n_boot)
         curves.append(bcurves)

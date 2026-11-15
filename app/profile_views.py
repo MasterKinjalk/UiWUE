@@ -1,35 +1,171 @@
-"""Data and figures for the Plant profile and Bed map pages (kept apart from the pages so they can be tested alone)."""
+"""Data and figures for Plant profile, Bed map and Export (kept apart from the pages so they can be tested alone).
 
-import re
+Values are shown as change from the plant's own baseline (DESIGN 7.2): the median over the baseline
+window (30 Aug – 2 Sep), as a percentage for size traits and as a difference for the rest. Scores and
+probabilities (detect_, diurnal_), the leaf-clip shift and the environment are shown as they are.
+"""
+
+import time
+from datetime import timedelta
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from components import BED, INK, SERIES, label_of, mark_stress_period
-from plotly.subplots import make_subplots
+from components import BAND, GRAPH_CONFIG, C, mark_stress_period
+from dash import dcc, html
 
 from uiwue.core import (
+    BASELINE,
     CUTOFF,
     DERIVED,
-    TRUTH_CLIP_ONSET,
-    TRUTH_FIRST_SYMPTOM,
+    REWATER,
     all_plants,
     catalogue,
+    load_traits,
+    normalize_keys,
     read_table,
 )
 
-WATER_BAND, RED_EDGE = (950, 990), (690, 750)  # nm; the 970 nm water dip and the red edge
-PROB_COLUMN = re.compile(r"^detect_.*prob")
 BEDS = ("W1", "W2", "W3")
-SCALES = {1: "YlOrRd", -1: "YlOrRd_r", 0: "Viridis"}  # stress traits: warm = more stress; other traits: neutral
+ROWS = "ABCDEFGHIJKLMNOPQR"
+BASE_DAYS = ((BASELINE[0] - CUTOFF).days, (BASELINE[1] - CUTOFF).days)  # −4 .. −1
+END_DAY = (REWATER - CUTOFF).days  # day 12: the last day without water
+X_RANGE = (-10.5, 19.5)
+SOURCE = {  # column prefix -> (source tag, module folder, sensor name)
+    "thermal_": ("IR", "thermal", "thermal camera"),
+    "depth_": ("3D", "threed", "depth camera"),
+    "rgb_": ("RGB", "rgb", "RGB camera"),
+    "hsi_": ("HSI", "spectral", "hyperspectral camera"),
+    "truth_": ("CLIP", "truth", "leaf clip"),
+    "detect_": ("MODEL", "detect", "detection model"),
+    "diurnal_": ("IR", "diurnal", "thermal score"),
+    "env_": ("ENV", "env", "environment"),
+}
+# One headline trait per sensor for the small multiples (tag, column, short label)
+HEADLINES = (
+    ("IR", "thermal_leaf_ref_dt", "Leaf − control leaf"),
+    ("IR", "diurnal_score_ref", "Thermal score"),
+    ("3D", "depth_projected_area", "Projected area"),
+    ("3D", "depth_height_p75", "Height p75"),
+    ("RGB", "rgb_exg", "Greenness"),
+    ("CLIP", "truth_turgor_shift", "Leaf-clip shift"),
+    ("MODEL", "detect_stress_prob", "Stress probability"),
+)
+SIZE_UNITS = {"mm", "cm²", "cm³", "count"}
+RAW_PREFIXES = ("detect_", "diurnal_", "env_")
+RAW_COLUMNS = {"truth_turgor_shift", "truth_turgor_raw"}
+STRESS = "detect_stress_prob"
 
 
-# ------------------------------------------------------------------ plant profile
+# ------------------------------------------------------------------ catalogue helpers
+def retry(fn, *args, tries=4, wait=0.4):
+    """Call fn, retrying a few times: another process may be rewriting a derived table right now."""
+    for i in range(tries):
+        try:
+            return fn(*args)
+        except (OSError, ValueError, KeyError):  # pyarrow raises ArrowInvalid (a ValueError) mid-write
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
+    return None
+
+
+def traits():
+    return retry(load_traits)
+
+
+@lru_cache(maxsize=1)
+def _cat_rows(_id):
+    return {r.column: r for r in catalogue().drop_duplicates("column").itertuples(index=False)}
+
+
+def cat_row(column):
+    """The catalogue row of a column (label, unit, direction, description, module), or None."""
+    return _cat_rows(id(catalogue())).get(column)
+
+
+def unit_text(column):
+    """The catalogue unit, or '' for a dimensionless index (blank unit) or an unknown column."""
+    r = cat_row(column)
+    return r.unit if r is not None and isinstance(r.unit, str) and r.unit.strip() else ""
+
+
+def label_text(column):
+    r = cat_row(column)
+    return r.label if r is not None and isinstance(r.label, str) else column
+
+
+def label_unit(column):
+    """'Leaf temperature (°C)', or 'NGRDI' when the unit is blank (never '(nan)')."""
+    u = unit_text(column)
+    return f"{label_text(column)} ({u})" if u else label_text(column)
+
+
+def direction_of(column):
+    r = cat_row(column)
+    return int(r.direction) if r is not None and pd.notna(r.direction) else 0
+
+
+def source_of(column):
+    return next((v for k, v in SOURCE.items() if column.startswith(k)), ("", "", ""))
+
+
+def mode_of(column):
+    """'raw' (shown as is), 'pct' (size: % of baseline) or 'diff' (difference from baseline)."""
+    if column.startswith(RAW_PREFIXES) or column in RAW_COLUMNS:
+        return "raw"
+    return "pct" if column.startswith("depth_") and unit_text(column) in SIZE_UNITS else "diff"
+
+
+def change_unit(column):
+    return "%" if mode_of(column) == "pct" else unit_text(column)
+
+
+def trait_choices(df, stress_only=False, rows=None):
+    """Dropdown options for catalogue traits with numeric values in df (or in `rows`, one plant's runs)."""
+    cat = catalogue().drop_duplicates("column")
+    have = rows if rows is not None else df
+    out = []
+    for r in cat.itertuples():
+        if r.column not in have or r.unit == "date" or not pd.api.types.is_numeric_dtype(have[r.column]):
+            continue
+        if stress_only and r.direction == 0:
+            continue
+        if have[r.column].notna().any():
+            out.append({"label": f"{source_of(r.column)[0]} · {label_unit(r.column)}", "value": r.column})
+    return out
+
+
+def fmt(x, unit="", digits=1, sign=True):
+    """'+4.7 °C' with a real minus sign, '–' when missing; no unit bracket for a blank unit."""
+    if x is None or pd.isna(x):
+        return "–"
+    s = (f"{x:+.{digits}f}" if sign else f"{x:.{digits}f}").replace("-", "−")
+    return f"{s} {unit}".strip() if unit != "%" else f"{s} %"
+
+
+def digits_for(values):
+    v = pd.Series(values).abs().dropna()
+    m = v.median() if len(v) else 1
+    return 0 if m >= 20 else 1 if m >= 1 else 2
+
+
+def day_text(day):
+    d = CUTOFF + timedelta(days=int(day))
+    return f"Day {int(day)} · {d.day} {d:%b}".replace("-", "−")
+
+
+def fmt_date(d):
+    return "–" if d is None or pd.isna(d) else f"{pd.Timestamp(d).day} {pd.Timestamp(d):%b}"
+
+
 def day_of(dates):
     """Days since irrigation was switched off (day 0)."""
     return (pd.to_datetime(dates) - pd.Timestamp(CUTOFF)).dt.days
 
 
+# ------------------------------------------------------------------ plant data
 def daily(df, column):
     """One value per plant and day: the median of the 12 h and 15 h runs (Master-Plan 6.5)."""
     d = df[df.hour.isin((12, 15))].dropna(subset=[column])
@@ -37,16 +173,72 @@ def daily(df, column):
     return d.assign(day=day_of(d.date))
 
 
-def load_spectra():
-    """(spectra, wavelengths) from derived/spectral, or None until the spectral module has pushed them.
+def with_change(d, column, by=("bed", "plant")):
+    """Adds `chg`: change from each plant's own baseline (median over the baseline days), or the raw value."""
+    mode = mode_of(column)
+    if mode == "raw":
+        return d.assign(chg=d[column])
+    in_base = d.day.between(*BASE_DAYS)
+    base = d[in_base].groupby(list(by))[column].median().rename("_base")
+    d = d.merge(base, left_on=list(by), right_index=True, how="left")
+    chg = (d[column] / d._base - 1) * 100 if mode == "pct" else d[column] - d._base
+    return d.drop(columns="_base").assign(chg=chg.where(np.isfinite(chg)))
 
-    spectra_runs holds one row per run with `hsi_spectrum`, the plant's mean reflectance as a list of floats
-    in the order of the `wavelength_nm` column of derived/spectral/wavelengths.csv.
-    """
-    spec, wl = read_table("spectral", "spectra_runs"), DERIVED / "spectral" / "wavelengths.csv"
-    if spec is None or "hsi_spectrum" not in spec or not wl.exists():
-        return None
-    return spec, pd.read_csv(wl).wavelength_nm.to_numpy()
+
+_SERIES = {}
+
+
+def series(df, column):
+    """Daily change-from-baseline series for every plant (cached per table and column)."""
+    key = (id(df), column)
+    if key not in _SERIES:
+        _SERIES[key] = with_change(daily(df, column), column) if column in df else None
+    return _SERIES[key]
+
+
+def plant_rows(df, bed, plant):
+    return df[(df.bed == bed) & (df.plant == plant)]
+
+
+def sensor_state(df, bed, plant, column):
+    """('ok' | 'noscan' | 'notable', hover). noscan: the plant is in the module's table but no run has a
+    usable value; notable: the module has no rows for this plant (or no table at all)."""
+    _, module, sensor = source_of(column)
+    if column not in df:
+        return "notable", f"{sensor}: no table in derived/{module}/ yet"
+    rows = plant_rows(df, bed, plant)
+    if rows[column].notna().any():
+        return "ok", ""
+    if column.startswith("truth_turgor"):
+        return "notable", "no leaf clip on this plant"
+    prefix = column.split("_")[0] + "_"
+    cols = [c for c in df.columns if c.startswith(prefix)]
+    if len(rows) and rows[cols].notna().any().any():
+        return "noscan", f"{sensor}: {bed} {plant} is in derived/{module}/ but no run passed QC"
+    return "notable", f"{sensor}: no rows for {bed} {plant} in derived/{module}/ (not imaged by this sensor)"
+
+
+def plant_options(df, bed):
+    """Plants of a bed that have runs, in grid order; a star marks the ones with a leaf clip."""
+    plants = read_table("truth", "plants")
+    clips = set(plants[plants.truth_has_clip & (plants.bed == bed)].plant) if plants is not None else set()
+    have = set(df[df.bed == bed].plant)
+    return [{"label": f"{p} ★" if p in clips else p, "value": p} for p in all_plants() if p in have]
+
+
+def imaged_plants(df):
+    """(bed, plant) of every imaged plant, bed by bed in grid order."""
+    have = set(zip(df.bed, df.plant))
+    return [(b, p) for b in BEDS for p in all_plants() if (b, p) in have]
+
+
+def neighbours(df, bed, plant):
+    """(previous, next) imaged plant, wrapping round."""
+    order = imaged_plants(df)
+    if (bed, plant) not in order:
+        return None, None
+    i = order.index((bed, plant))
+    return order[i - 1], order[(i + 1) % len(order)]
 
 
 def plant_row(bed, plant):
@@ -57,215 +249,536 @@ def plant_row(bed, plant):
     return r.iloc[0] if len(r) else None
 
 
-def plant_options(df, bed):
-    """Plants of a bed that have runs; a star marks the ones with a leaf clip."""
-    plants = read_table("truth", "plants")
-    clips = set(plants[plants.truth_has_clip & (plants.bed == bed)].plant) if plants is not None else set()
-    names = sorted(df[df.bed == bed].plant.unique())
-    return [{"label": f"{p} ★" if p in clips else p, "value": p} for p in names]
+def profile_href(bed, plant):
+    return f"/plant-profile?bed={bed}&plant={plant}"
 
 
-def fmt_date(d):
-    return "none" if d is None or pd.isna(d) else f"{pd.Timestamp(d):%d %b}"
+def threed_href(bed, plant):
+    return f"/threed-browser?bed={bed}&plant={plant}"
+
+
+def has_depth(df, bed, plant):
+    return "depth_projected_area" in df and plant_rows(df, bed, plant).depth_projected_area.notna().any()
+
+
+def headline(df, bed, plant, column):
+    """(value, day) of the plant's change on the last day without water that has a value."""
+    s = series(df, column)
+    if s is None:
+        return None, None
+    m = s[(s.bed == bed) & (s.plant == plant) & (s.day <= END_DAY)].dropna(subset=["chg"])
+    if m.empty:
+        return None, None
+    last = m.sort_values("day").iloc[-1]
+    return float(last.chg), int(last.day)
+
+
+def stress_summary(df, bed, plant):
+    """Stress probability on the daily midday median: the peak while unwatered (value, day) and the latest (value, day)."""
+    if STRESS not in df:
+        return None
+    s = series(df, STRESS)
+    m = s[(s.bed == bed) & (s.plant == plant)].dropna(subset=["chg"]).sort_values("day")
+    if m.empty:
+        return None
+    dry = m[m.day.between(0, END_DAY)]
+    peak = dry.loc[dry.chg.idxmax()] if len(dry) else None
+    last = m.iloc[-1]
+    return {
+        "peak": (float(peak.chg), int(peak.day)) if peak is not None else (None, None),
+        "now": (float(last.chg), int(last.day)),
+    }
+
+
+def rwc_state(bed, plant):
+    """(value text, hover) for relative water content: these leaves were sampled on W3 plants that were not imaged."""
+    rwc = read_table("truth", "rwc_leaves")
+    if rwc is None:
+        return "–", "RWC: no table in derived/truth/ yet"
+    mine = rwc[(rwc.bed == bed) & (rwc.plant == plant)].dropna(subset=["truth_rwc"])
+    if mine.empty:
+        n = rwc.plant.nunique()
+        return (
+            "–",
+            f"RWC leaves were sampled on other plants ({len(rwc)} leaves from {n} W3 plants that were not imaged)",
+        )
+    r = mine.sort_values("date").iloc[-1]
+    return (
+        f"{r.truth_rwc:.0f} %",
+        f"Relative water content of the sampled leaf, {day_text(day_of(pd.Series([r.date])).iloc[0])}",
+    )
+
+
+def plant_csv_frame(df, bed, plant):
+    """This plant's run rows, with every column that has a value for it."""
+    rows = plant_rows(df, bed, plant)
+    return rows.loc[:, rows.notna().any()]
 
 
 # ------------------------------------------------------------------ figures
-def trace_figure(df, bed, plant, trait):
-    """The plant's daily value against the control bed's median (and its own bed's, for a deficit plant)."""
-    d = daily(df, trait)
-    mine = d[(d.bed == bed) & (d.plant == plant)].sort_values("day")
-    if mine.empty:
-        return None
-    fig = go.Figure()
-    beds = ["W1"] if bed == "W1" else ["W1", bed]
-    for b in beds:
-        m = d[d.bed == b].groupby("day")[trait].median()
-        fig.add_scatter(
-            x=m.index, y=m.values, mode="lines", line=dict(color=BED[b], width=2, dash="dot"), name=f"{b} median"
-        )
+def _base_layout(fig, column, height, aria=None):
+    unit = change_unit(column)
+    fig.update_layout(
+        height=height,
+        margin=dict(l=48, r=12, t=8, b=32),
+        showlegend=False,
+        xaxis=dict(range=list(X_RANGE), title=None, dtick=5),
+        yaxis=dict(
+            title=unit or None,
+            zeroline=mode_of(column) != "raw",
+            zerolinecolor=C["gray-500"],
+            zerolinewidth=1,
+        ),
+        hovermode="closest",
+    )
+    return mark_stress_period(fig)
+
+
+def _band(fig, s, bed_set, color_line, color_band, name):
+    g = s[s.bed.isin(bed_set)].groupby("day").chg
+    m, sd = g.mean(), g.std().fillna(0)
+    if m.empty:
+        return
+    fig.add_scatter(
+        x=list(m.index) + list(m.index[::-1]),
+        y=list(m + sd) + list((m - sd)[::-1]),
+        fill="toself",
+        fillcolor=color_band,
+        line=dict(width=0),
+        hoverinfo="skip",
+        name=f"{name} ±1 SD",
+    )
+    fig.add_scatter(
+        x=m.index,
+        y=m.values,
+        mode="lines",
+        line=dict(color=color_line, width=1.5, dash="dot"),
+        name=name,
+        hovertemplate=f"{name} mean · day %{{x}} · %{{y:.2f}}<extra></extra>",
+    )
+
+
+def _plant_line(fig, mine, bed, plant, column):
+    unit = change_unit(column)
+    tag = source_of(column)[0]
+    custom = np.c_[[day_text(d) for d in mine.day], [fmt(v, unit, 2, mode_of(column) != "raw") for v in mine.chg]]
     fig.add_scatter(
         x=mine.day,
-        y=mine[trait],
+        y=mine.chg,
         mode="lines+markers",
-        line=dict(color=INK["primary"], width=2.5),
-        marker=dict(size=7),
+        line=dict(color=C["navy"], width=2.5),
+        marker=dict(size=6, color=C["navy"]),
+        customdata=custom,
         name=f"{bed} {plant}",
+        hovertemplate=f"{bed} {plant} · %{{customdata[0]}} · %{{customdata[1]}} · {tag}<extra></extra>",
     )
-    fig.update_layout(
-        title=f"{label_of(trait)}: {bed} {plant} against the beds' median",
-        xaxis_title="days since irrigation stopped",
-        yaxis_title=label_of(trait),
-        height=360,
-    )
-    return mark_stress_period(fig)
 
 
-def turgor_figure(turgor, bed, plant, row):
-    """Leaf-clip turgor shift through the stress, with the clip onset and the first written symptom."""
-    t = turgor[(turgor.bed == bed) & (turgor.plant == plant)].sort_values(["date", "hour"])
-    if t.empty:
+def small_multiple(df, bed, plant, column, height=190):
+    """The plant's change from baseline (navy) over the control bed's mean ± 1 SD (teal), or None."""
+    s = series(df, column)
+    if s is None:
         return None
-    x = day_of(t.date) + t.hour / 24
-    fig = go.Figure(
-        go.Scatter(x=x, y=t.truth_turgor_shift, mode="lines", line=dict(color=BED[bed], width=1.5), name="clip shift")
-    )
-    if row is not None:
-        for col, text in ((TRUTH_CLIP_ONSET, "clip shift begins"), (TRUTH_FIRST_SYMPTOM, "first symptom noted")):
-            if pd.notna(row[col]):
-                fig.add_vline(
-                    x=(pd.Timestamp(row[col]) - pd.Timestamp(CUTOFF)).days,
-                    line_dash="dash",
-                    line_color=INK["secondary"],
-                    annotation_text=text,
-                    annotation_position="bottom right",
-                    annotation_font=dict(size=11, color=INK["secondary"]),
-                )
-    fig.update_layout(
-        title="Leaf-clip turgor (higher = less turgor)",
-        xaxis_title="days since irrigation stopped",
-        yaxis_title="clip shift (raw units)",
-        showlegend=False,
-        height=330,
-    )
-    return mark_stress_period(fig)
-
-
-def rwc_figure(rwc, bed, plant):
-    """Every sampled W3 leaf's relative water content, with this plant's leaves marked."""
-    if bed != "W3" or rwc is None:
-        return None
-    mine = rwc[rwc.plant == plant]
+    mine = s[(s.bed == bed) & (s.plant == plant)].dropna(subset=["chg"]).sort_values("day")
     if mine.empty:
         return None
-    fig = go.Figure(
-        go.Scatter(
-            x=day_of(rwc.date),
-            y=rwc.truth_rwc,
-            mode="markers",
-            marker=dict(color=INK["muted"], size=6, opacity=0.6),
-            name="other W3 leaves",
-        )
-    )
-    for col, name, symbol in (
-        ("truth_rwc", "this plant, first leaf", "diamond"),
-        ("truth_rwc_leaf2", "second leaf", "square"),
-    ):
-        m = mine.dropna(subset=[col])
-        fig.add_scatter(
-            x=day_of(m.date),
-            y=m[col],
-            mode="markers",
-            marker=dict(color=SERIES[1], size=13, symbol=symbol, line=dict(width=1.5, color=INK["primary"])),
-            name=name,
-        )
-    fig.update_layout(
-        title=f"Relative water content of the sampled leaves; {plant} marked",
-        xaxis_title="days since irrigation stopped",
-        yaxis_title="relative water content (%)",
-        height=330,
-    )
-    return mark_stress_period(fig)
-
-
-def spectrum_figure(spec, wl, bed, plant, dates):
-    """The plant's mean reflectance spectrum on the chosen dates (15 h run, else the latest slot that day)."""
-    s = spec[(spec.bed == bed) & (spec.plant == plant)]
     fig = go.Figure()
-    for i, d in enumerate(sorted(dates)):
-        day = s[s.date == pd.Timestamp(d)].sort_values("hour")
-        if day.empty:
-            continue
-        run = day[day.hour == 15].iloc[0] if (day.hour == 15).any() else day.iloc[-1]
-        fig.add_scatter(
-            x=wl,
-            y=np.asarray(run.hsi_spectrum, dtype=float),
-            mode="lines",
-            line=dict(color=SERIES[i % len(SERIES)], width=2),
-            name=f"{pd.Timestamp(d):%d %b} (day {(pd.Timestamp(d) - pd.Timestamp(CUTOFF)).days})",
-        )
-    if not fig.data:
+    _band(fig, s[~((s.bed == bed) & (s.plant == plant))], ["W1"], C["teal-700"], BAND["control"], "control")
+    _plant_line(fig, mine, bed, plant, column)
+    return _base_layout(fig, column, height)
+
+
+def detail_figure(df, bed, plant, column, height=340):
+    """One trait in full: control bed band, the plant's own deficit bed band (deficit plants), and the plant."""
+    s = series(df, column)
+    if s is None:
         return None
-    for (lo, hi), text in ((RED_EDGE, "red edge"), (WATER_BAND, "water band")):
-        fig.add_vrect(x0=lo, x1=hi, fillcolor=INK["grid"], opacity=0.5, line_width=0, annotation_text=text)
-    fig.update_layout(
-        title=f"Reflectance spectrum, {bed} {plant}",
-        xaxis_title="wavelength (nm)",
-        yaxis_title="reflectance",
-        height=360,
-    )
+    mine = s[(s.bed == bed) & (s.plant == plant)].dropna(subset=["chg"]).sort_values("day")
+    if mine.empty:
+        return None
+    others = s[~((s.bed == bed) & (s.plant == plant))]
+    fig = go.Figure()
+    _band(fig, others, ["W1"], C["teal-700"], BAND["control"], "control")
+    if bed != "W1":
+        _band(fig, others, [bed], C["amber-700"], BAND["deficit"], f"{bed} deficit")
+    _plant_line(fig, mine, bed, plant, column)
+    fig = _base_layout(fig, column, height)
+    fig.update_layout(showlegend=True, margin=dict(l=48, r=12, t=32, b=32))
+    for t in fig.data:
+        t.showlegend = not t.name.endswith("SD")
     return fig
+
+
+def method_hover(column):
+    module = source_of(column)[1]
+    how = {
+        "pct": "% change from the plant's own baseline (median 30 Aug – 2 Sep)",
+        "diff": "change from the plant's own baseline (median 30 Aug – 2 Sep)",
+        "raw": "value as computed by the module (no baseline subtraction)",
+    }[mode_of(column)]
+    return (
+        f"{label_unit(column)}: {how}; daily median of the 12 h and 15 h runs; "
+        f"band = control bed W1 mean ± 1 SD; source derived/{module}/"
+    )
+
+
+# ------------------------------------------------------------------ marks (HTML)
+EMPTY_TEXT = {"noscan": "no scan", "notable": "no table", "notimaged": "not imaged"}
+
+
+def empty_mark(kind):
+    """The three kinds of nothing (DESIGN 3): dashed circle, dashed square, dot."""
+    base = {"display": "inline-block", "boxSizing": "border-box", "flex": "none"}
+    style = {
+        "noscan": {"width": "18px", "height": "18px", "borderRadius": "50%", "border": f"2px dashed {C['gray-500']}"},
+        "notable": {"width": "18px", "height": "18px", "borderRadius": "2px", "border": f"2px dashed {C['gray-500']}"},
+        "notimaged": {
+            "width": "4px",
+            "height": "4px",
+            "borderRadius": "50%",
+            "background": C["rule"],
+            "margin": "0 7px",
+        },
+    }[kind]
+    return html.Span(style=base | style, **{"aria-hidden": "true"})
+
+
+def empty_panel(tag, label, kind, hover):
+    """A sensor without data for this plant: dashed box, its mark and the kind of nothing."""
+    return html.Section(
+        [
+            html.Span(tag, className="uw-kicker", style={"color": C["slate-600"]}),
+            html.B(label),
+            empty_mark(kind),
+            html.Span(EMPTY_TEXT[kind]),
+        ],
+        className="uw-empty",
+        title=hover,
+        style={"alignItems": "center", "minHeight": "64px"},
+        **{"aria-label": f"{label}: {EMPTY_TEXT[kind]}"},
+    )
+
+
+def legend_ramp(lo_text, hi_text, flip=False):
+    """Value-ramp legend (the one allowed gradient): teal = healthier, amber = more stressed."""
+    ramp = ", ".join(_ramp_colors()[::-1] if flip else _ramp_colors())
+    return html.Span(
+        [
+            html.Span(lo_text),
+            html.Span(
+                style={
+                    "width": "120px",
+                    "height": "12px",
+                    "borderRadius": "4px",
+                    "background": f"linear-gradient(90deg, {ramp})",
+                },
+                **{"aria-hidden": "true"},
+            ),
+            html.Span(hi_text),
+        ],
+        style={"display": "inline-flex", "alignItems": "center", "gap": "6px"},
+    )
+
+
+def _ramp_colors():
+    return [C[k] for k in ("teal-600", "teal-300", "gray", "amber-200", "amber-700", "amber-900")]
+
+
+def graph_box(fig, label, height):
+    return html.Div(
+        dcc.Graph(figure=fig, config=GRAPH_CONFIG, style={"height": f"{height}px"}),
+        role="img",
+        **{"aria-label": label},
+    )
 
 
 # ------------------------------------------------------------------ bed map
 def position(plant):
-    """Grid position of a pot: row letter down the bed (A at the top), column digit across (1-8)."""
-    return int(plant[1:]), "ABCDEFGHIJKLMNOPQR".index(plant[0])
+    """Grid position of a pot: column digit across (1-8), row letter down the bed (A at the top)."""
+    return int(plant[1:]), ROWS.index(plant[0])
 
 
-def dates_of(df):
-    return sorted(df.date.unique())
+_RUN_CHANGE = {}
 
 
-def color_range(df, trait):
-    """One colour range per trait over every run, so the beds and days stay comparable."""
-    v = df[trait].dropna()
-    return (float(v.quantile(0.02)), float(v.quantile(0.98))) if len(v) else (0.0, 1.0)
+def run_change(df, column, hour):
+    """Run-level change from each plant's own baseline at the same slot (median of the baseline days)."""
+    key = (id(df), column, hour)
+    if key not in _RUN_CHANGE:
+        d = df[df.hour == hour].dropna(subset=[column])[["bed", "plant", "date", column]]
+        d = d.assign(day=day_of(d.date))
+        _RUN_CHANGE[key] = with_change(d, column)
+    return _RUN_CHANGE[key]
 
 
-def bed_map_figure(df, trait, date, hour, clips=frozenset()):
-    """The three beds side by side, one dot per pot; pots without a reading are grey rings."""
-    direction = catalogue().set_index("column").direction.get(trait, 0)
-    lo, hi = color_range(df, trait)
-    run = df[(df.date == pd.Timestamp(date)) & (df.hour == hour)].dropna(subset=[trait])
-    fig = make_subplots(rows=1, cols=3, subplot_titles=BEDS, horizontal_spacing=0.04)
-    for c, bed in enumerate(BEDS, start=1):
-        pots = pd.DataFrame({"plant": all_plants()})
-        pots[["x", "y"]] = [position(p) for p in pots.plant]
-        pots = pots.merge(run[run.bed == bed][["plant", trait]], on="plant", how="left")
-        have = pots[trait].notna()
+def ramp_scale(column):
+    """Plotly colourscale on the value ramp, amber = more stressed (follows the catalogue direction)."""
+    cols = _ramp_colors()
+    if direction_of(column) < 0 and mode_of(column) != "raw":
+        cols = cols[::-1]
+    n = len(cols) - 1
+    return [[i / n, c] for i, c in enumerate(cols)]
+
+
+def ramp_limits(df, column, hour):
+    v = run_change(df, column, hour).chg.dropna()
+    if mode_of(column) == "raw":
+        return (float(v.quantile(0.02)), float(v.quantile(0.98))) if len(v) else (0.0, 1.0)
+    m = float(v.abs().quantile(0.96)) if len(v) else 1.0
+    return -(m or 1.0), m or 1.0
+
+
+def pot_states(df, column, day, hour, bed):
+    """One row per pot of a bed: state (value / noscan / notable / notimaged), change and raw value."""
+    pots = pd.DataFrame({"plant": all_plants()})
+    pots[["x", "y"]] = [position(p) for p in pots.plant]
+    imaged = set(df[df.bed == bed].plant)
+    if column in df:
+        r = run_change(df, column, hour)
+        r = r[(r.bed == bed) & (r.day == day)][["plant", column, "chg"]]
+        pots = pots.merge(r, on="plant", how="left")
+        seen = set(df[(df.bed == bed) & df[column].notna()].plant)
+    else:
+        pots[column], pots["chg"], seen = np.nan, np.nan, set()
+    pots["state"] = np.select(
+        [pots[column].notna(), pots.plant.isin(seen), pots.plant.isin(imaged)],
+        ["value", "noscan", "notable"],
+        "notimaged",
+    )
+    return pots
+
+
+def bed_figure(df, column, day, hour, bed, selected=None, imaged_only=False, height=560):
+    """One bed as a grid of pots: value squares on the ramp, dashed marks for the kinds of nothing."""
+    pots = pot_states(df, column, day, hour, bed)
+    lo, hi = ramp_limits(df, column, hour)
+    unit, raw_unit = change_unit(column), unit_text(column)
+    tag = source_of(column)[0]
+    fig = go.Figure()
+    styles = {
+        "notimaged": dict(symbol="circle", size=4, color=C["rule"]),
+        "notable": dict(symbol="square-open", size=13, color=C["gray-500"], line=dict(width=2, color=C["gray-500"])),
+        "noscan": dict(symbol="circle-open-dot", size=13, color=C["gray-500"], line=dict(width=2, color=C["gray-500"])),
+    }
+    why = {"notimaged": "not imaged", "notable": "no table for this sensor", "noscan": "no usable scan this run"}
+    for state, style in styles.items():
+        p = pots[pots.state == state]
+        if imaged_only and state == "notimaged":
+            continue
         fig.add_scatter(
-            x=pots.x[~have],
-            y=pots.y[~have],
+            x=p.x,
+            y=p.y,
             mode="markers",
-            marker=dict(size=15, symbol="circle-open", color=INK["muted"], line=dict(width=1.5)),
-            customdata=pots.plant[~have],
-            hovertemplate=f"{bed} %{{customdata}}: no reading<extra></extra>",
-            showlegend=False,
-            row=1,
-            col=c,
+            marker=style,
+            customdata=np.c_[p.plant, [bed] * len(p)],
+            hovertemplate=f"{bed} %{{customdata[0]}} · {why[state]}<extra></extra>",
+            name=EMPTY_TEXT[state],
         )
-        outline = [INK["primary"] if (bed, p) in clips else "rgba(0,0,0,0)" for p in pots.plant[have]]
+    v = pots[pots.state == "value"]
+    sel = [selected == (bed, p) for p in v.plant]
+    signed = mode_of(column) != "raw"
+    fig.add_scatter(
+        x=v.x,
+        y=v.y,
+        mode="markers",
+        marker=dict(
+            symbol="square",
+            size=22 if imaged_only else 20,
+            color=v.chg,
+            colorscale=ramp_scale(column),
+            cmin=lo,
+            cmax=hi,
+            line=dict(width=[3 if s else 1 for s in sel], color=[C["navy"] if s else C["gray-500"] for s in sel]),
+        ),
+        customdata=np.c_[
+            v.plant,
+            [bed] * len(v),
+            [fmt(c, unit, 2, signed) for c in v.chg],
+            [fmt(x, raw_unit, 2, False) for x in v[column]],
+        ],
+        hovertemplate=(
+            f"{bed} %{{customdata[0]}} · {day_text(day)} · {hour:02d} h<br>"
+            f"%{{customdata[2]}} vs baseline · %{{customdata[3]}} · {tag}<extra></extra>"
+        ),
+        name="value",
+    )
+    others = pots[pots.state != "value"]
+    hit = others[[selected == (bed, p) for p in others.plant]]
+    if len(hit):
         fig.add_scatter(
-            x=pots.x[have],
-            y=pots.y[have],
+            x=hit.x,
+            y=hit.y,
             mode="markers",
-            marker=dict(
-                size=16,
-                color=pots[trait][have],
-                coloraxis="coloraxis",
-                line=dict(width=2, color=outline),
-            ),
-            customdata=np.c_[pots.plant[have], pots[trait][have].round(2)],
-            hovertemplate=f"{bed} %{{customdata[0]}}: %{{customdata[1]}}<extra></extra>",
-            showlegend=False,
-            row=1,
-            col=c,
+            marker=dict(symbol="square-open", size=26, color=C["navy"], line=dict(width=3, color=C["navy"])),
+            hoverinfo="skip",
+            name="selected",
         )
-        fig.update_xaxes(range=[0.2, 8.8], dtick=1, showgrid=False, row=1, col=c)
-        fig.update_yaxes(
+    fig.update_layout(
+        height=height,
+        showlegend=False,
+        margin=dict(l=24, r=4, t=20, b=4),
+        dragmode=False,
+        xaxis=dict(
+            range=[0.4, 8.6],
+            tickmode="array",
+            tickvals=list(range(1, 9)),
+            side="top",
+            showgrid=False,
+            showline=False,
+            fixedrange=True,
+            tickfont=dict(size=12, color=C["ink-muted"]),
+        ),
+        yaxis=dict(
             range=[17.6, -0.6],
             tickmode="array",
             tickvals=list(range(18)),
-            ticktext=list("ABCDEFGHIJKLMNOPQR") if c == 1 else [""] * 18,
+            ticktext=list(ROWS),
             showgrid=False,
-            row=1,
-            col=c,
-        )
-    day = (pd.Timestamp(date) - pd.Timestamp(CUTOFF)).days
-    fig.update_layout(
-        title=f"{label_of(trait)}, {pd.Timestamp(date):%d %b} {hour} h (day {day} since irrigation stopped)",
-        coloraxis=dict(colorscale=SCALES[direction], cmin=lo, cmax=hi, colorbar=dict(title=label_of(trait), len=0.8)),
-        height=620,
-        margin=dict(l=40, r=20, t=90, b=30),
+            showline=False,
+            fixedrange=True,
+            tickfont=dict(size=12, color=C["ink-muted"]),
+        ),
     )
     return fig
+
+
+def bed_counts(df, column, day, hour, bed):
+    s = pot_states(df, column, day, hour, bed).state.value_counts()
+    return {k: int(s.get(k, 0)) for k in ("value", "noscan", "notable", "notimaged")}
+
+
+# ------------------------------------------------------------------ export
+def export_tables():
+    """{key: (label, path or None)}: the merged run table first, then every result table in detect/ and diurnal/."""
+    out = {"traits": ("Run traits (merged)", None)}
+    for module in ("detect", "diurnal"):
+        for p in sorted((DERIVED / module).glob("*.parquet")):
+            out[f"{module}/{p.stem}"] = (f"{module} · {p.stem.replace('_', ' ')}", p)
+    return out
+
+
+def read_export(key):
+    """The chosen table as a frame (keys normalised, treatment and day added where the keys allow), or None."""
+    tables = export_tables()
+    if key not in tables:
+        return None
+    if key == "traits":
+        df = traits()
+        return None if df is None else df.copy()
+    path = tables[key][1]
+    t = retry(lambda: normalize_keys(pd.read_parquet(path)))
+    if "bed" in t and "treatment" not in t:
+        t["treatment"] = np.where(t.bed == "W1", "control", "deficit")
+    if "date" in t and "days_since_cutoff" not in t and "day" not in t:
+        t["days_since_cutoff"] = day_of(t.date)
+    return t
+
+
+def day_column(t):
+    return next((c for c in ("days_since_cutoff", "day") if c in t), None)
+
+
+def filter_export(t, beds=None, treatment="all", prefixes=None, days=None):
+    """Rows of the chosen beds / treatment / day range, and only the sensor columns of the chosen prefixes."""
+    if t is None:
+        return None
+    if beds is not None and "bed" in t:
+        t = t[t.bed.isin(beds)]
+    if treatment in ("control", "deficit") and "treatment" in t:
+        t = t[t.treatment == treatment]
+    dc = day_column(t)
+    if days and dc:
+        t = t[pd.to_numeric(t[dc], errors="coerce").between(*days)]
+    if prefixes is not None:
+        known = tuple(SOURCE)
+        keep = [c for c in t.columns if not c.startswith(known) or c.startswith(tuple(prefixes))]
+        t = t[keep]
+    return t
+
+
+def export_counts(t):
+    rows = len(t)
+    plants = t[["bed", "plant"]].drop_duplicates().shape[0] if {"bed", "plant"} <= set(t) else None
+    dc = day_column(t)
+    days = t[dc].nunique() if dc else None
+    return rows, plants, days
+
+
+def data_dictionary(columns, table_key="traits"):
+    """column, label, unit, direction, source, description for every exported column."""
+    cat = catalogue().drop_duplicates("column").set_index("column")
+    design = {
+        "bed": ("Bed (W1 control, W2/W3 deficit)", "", "key"),
+        "plant": ("Pot position (row letter, column digit)", "", "key"),
+        "date": ("Run date", "date", "key"),
+        "hour": ("Scheduled slot", "h", "key"),
+        "treatment": ("control or deficit, from the bed", "", "design"),
+        "days_since_cutoff": ("Days since irrigation off (day 0 = 3 Sep 2025)", "d", "design"),
+        "phase": ("before cutoff / stress / re-watered", "", "design"),
+    }
+    rows = []
+    for c in columns:
+        if c in cat.index:
+            r = cat.loc[c]
+            rows.append(
+                dict(
+                    column=c,
+                    label=r.label,
+                    unit=unit_text(c),
+                    direction=int(r.direction) if pd.notna(r.direction) else "",
+                    source=f"derived/{r.module}/",
+                    description=r.description if isinstance(r.description, str) else "",
+                )
+            )
+        elif c in design:
+            label, unit, kind = design[c]
+            rows.append(dict(column=c, label=label, unit=unit, direction="", source=kind, description=""))
+        else:
+            module = source_of(c)[1] or (table_key.split("/")[0] if "/" in table_key else "")
+            rows.append(
+                dict(
+                    column=c,
+                    label="",
+                    unit="",
+                    direction="",
+                    source=f"derived/{module}/" if module else "",
+                    description="not in the catalogue (QC flag, count or helper column)",
+                )
+            )
+    return pd.DataFrame(rows, columns=["column", "label", "unit", "direction", "source", "description"])
+
+
+def preview_table(t, n=12):
+    """First rows as an HTML table: navy header, numbers right-aligned and tabular, '–' for missing."""
+    head = t.head(n)
+    num = [pd.api.types.is_numeric_dtype(head[c]) for c in head.columns]
+
+    def cell(v, is_num):
+        if v is None or (not isinstance(v, (list, np.ndarray)) and pd.isna(v)):
+            return "–"
+        if isinstance(v, pd.Timestamp):
+            return f"{v:%Y-%m-%d}"
+        if is_num and isinstance(v, float):
+            return f"{v:.3g}".replace("-", "−")
+        return str(v)
+
+    return html.Div(
+        html.Table(
+            [
+                html.Thead(
+                    html.Tr(
+                        [html.Th(c, scope="col", className="num" if k else None) for c, k in zip(head.columns, num)]
+                    )
+                ),
+                html.Tbody(
+                    [
+                        html.Tr([html.Td(cell(v, k), className="num" if k else None) for v, k in zip(row, num)])
+                        for row in head.itertuples(index=False)
+                    ]
+                ),
+            ],
+            className="uw-table",
+        ),
+        className="uw-scroll",
+        style={"border": f"1px solid {C['rule']}", "borderRadius": "12px"},
+    )

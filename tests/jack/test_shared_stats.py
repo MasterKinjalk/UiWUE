@@ -2,7 +2,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from uiwue.stats import auc_by_day, auc_ci, baseline_delta, onset_day, placebo
+from uiwue.stats import (
+    auc_by_day,
+    auc_ci,
+    baseline_delta,
+    fires_before_cutoff,
+    null_envelope,
+    onset_day,
+    placebo,
+    robust_onset_day,
+)
 
 
 def test_auc_ci_extremes():
@@ -58,3 +67,29 @@ def test_placebo_flags_bed_effect(runs):
 def test_bad_group(runs):
     with pytest.raises(ValueError):
         auc_by_day(runs, "hsi_ndvi", group="W9", n_boot=10)
+
+
+def test_pre_cutoff_null_raises_the_bar():
+    # watered days -1..0 already separate (a day-level bed effect); clear signal from day 4
+    days = list(range(-3, 9))
+    auc = [0.5, 0.6, 0.88, 0.89, 0.8, 0.85, 0.86, 0.95, 0.99, 1.0, 1.0, 1.0]
+    low = [0.3, 0.4, 0.76, 0.75, 0.72, 0.74, 0.8, 0.9, 0.95, 1.0, 1.0, 1.0]
+    a = pd.DataFrame({"day": days, "auc": auc, "ci_low": low})
+    assert null_envelope(a) == pytest.approx(0.89)
+    assert fires_before_cutoff(a) == -1
+    assert onset_day(a) == 0
+    assert robust_onset_day(a) == 4  # first two days with CI low above 0.89
+
+
+def test_null_envelope_is_symmetric_and_needs_watered_days():
+    a = pd.DataFrame({"day": [-2, -1, 1, 2], "auc": [0.1, 0.6, 0.9, 0.9], "ci_low": [0.0, 0.3, 0.8, 0.8]})
+    assert null_envelope(a) == pytest.approx(0.9)  # 0.1 is as far from chance as 0.9
+    assert np.isnan(fires_before_cutoff(a))
+    b = a[a["day"] > 0]
+    assert np.isnan(null_envelope(b)) and robust_onset_day(b) == onset_day(b) == 1
+
+
+def test_robust_onset_on_synthetic(runs):
+    a = auc_by_day(runs, "thermal_leaf_air_dt", direction=1, n_boot=300)
+    assert not np.isfinite(fires_before_cutoff(a))
+    assert robust_onset_day(a) >= onset_day(a)

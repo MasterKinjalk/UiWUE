@@ -1,8 +1,8 @@
 flag,ada_label,precision,recall,f1,tp,fp,fn,n_labelled,n_flagged,n_runs,n_plants,rule,source
-qc_dark,Dark,0.9539877300613497,0.8962536023054755,0.924219910846954,311,15,36,347,326,1044,8,dark: >= 8 of 15 RGB frames Dark,real
-qc_dark,Dark,0.9601226993865031,0.876750700280112,0.9165446559297218,313,13,44,357,326,1044,8,dark: any RGB frame Dark,real
-qc_dark,Dark|Medium Dark,1.0,0.6317829457364341,0.7743467933491687,326,0,190,516,326,1044,8,dark: >= 8 RGB frames Dark or Medium Dark,real
-qc_not_centred,Not Centered,0.4806201550387597,0.11091234347048301,0.1802325581395349,62,67,497,559,129,1044,8,not centred: any depth/intensity/RGB/3D frame,real
-qc_not_centred,Not Centered,0.0,0.0,,0,129,8,8,129,1044,8,not centred: any depth frame,real
-qc_not_centred,Not Centered,0.08527131782945736,0.07692307692307693,0.08088235294117647,11,118,132,143,129,1044,8,not centred: >= 3 frames,real
-qc_no_plant,no plant,0.0,0.0,,0,32,1,1,32,1044,8,no plant: any frame,real
+qc_dark,Dark,0.9598765432098766,0.8962536023054755,0.9269746646795827,311,13,36,347,324,1044,8,dark: >= 8 of 15 RGB frames Dark,real
+qc_dark,Dark,0.9629629629629629,0.8739495798319328,0.9162995594713657,312,12,45,357,324,1044,8,dark: any RGB frame Dark,real
+qc_dark,Dark|Medium Dark,1.0,0.627906976744186,0.7714285714285715,324,0,192,516,324,1044,8,dark: >= 8 RGB frames Dark or Medium Dark,real
+qc_not_centred,Not Centered,0.4621212121212121,0.10912343470483005,0.17655571635311143,61,71,498,559,132,1044,8,not centred: any depth/intensity/RGB/3D frame,real
+qc_not_centred,Not Centered,0.007575757575757576,0.125,0.014285714285714287,1,131,7,8,132,1044,8,not centred: any depth frame,real
+qc_not_centred,Not Centered,0.09090909090909091,0.08391608391608392,0.08727272727272727,12,120,131,143,132,1044,8,not centred: >= 3 frames,real
+qc_no_plant,no plant,0.0,0.0,,0,29,1,1,29,1044,8,no plant: any frame,real

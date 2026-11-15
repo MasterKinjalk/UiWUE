@@ -5,6 +5,10 @@
 - onset_day:      first day whose CI lower bound is above 0.70 on that day and the next
 - placebo:        the same AUC over the pre-baseline placebo window; flags bed effects
 
+Pre-cutoff null (added after review): `null_envelope`, `fires_before_cutoff` and
+`robust_onset_day` run the same daily AUC on the days before any plant was
+stressed, so a day-level bed effect (sun, doors) cannot pass as early detection.
+
 All functions take a run-level table with the four keys (bed, plant, date, hour)
 and the trait column. Design columns are added here if missing.
 """
@@ -17,6 +21,7 @@ import pandas as pd
 from uiwue.stats._design import (
     BASELINE,
     CONTROL_BEDS,
+    CUTOFF,
     DEFICIT_BEDS,
     PLACEBO,
     STRESS_DAYS,
@@ -29,6 +34,8 @@ ONSET_THRESHOLD = 0.70
 N_BOOT = 2000
 SEED = 20250903
 EARLY_DAYS = (1, 4)
+# Watered days for the pre-cutoff null: placebo start (24 Aug) to day 0 (last watering 11:00).
+NULL_DAYS = ((PLACEBO[0] - CUTOFF).days, 0)
 
 GROUPS = {
     "all": DEFICIT_BEDS,
@@ -190,6 +197,48 @@ def onset_day(
         if ok[i] and ok[i + 1]:
             return float(d[i])
     return np.nan
+
+
+def null_envelope(auc: pd.DataFrame, *, days: tuple[int, int] = NULL_DAYS) -> float:
+    """Largest bed separation seen while every plant was still watered.
+
+    0.5 + max |AUC - 0.5| over the pre-cutoff days (default: the placebo start to
+    day 0, the day of the last watering). Orientation is ignored on purpose: a
+    day on which the beds differ the "wrong" way shows how large a day-level bed
+    effect (sun, doors, pots) can get just as well. NaN when no such day is scored.
+    """
+    a = auc[auc["day"].between(*days)]["auc"].dropna()
+    return float(0.5 + (a - 0.5).abs().max()) if len(a) else np.nan
+
+
+def fires_before_cutoff(
+    auc: pd.DataFrame, *, threshold: float = ONSET_THRESHOLD, days: tuple[int, int] = NULL_DAYS
+) -> float:
+    """The onset rule run on the watered days: the day it fires there, or NaN.
+
+    A signal whose rule fires before any plant was stressed cannot be trusted at
+    face value on the first stress days.
+    """
+    return onset_day(auc, threshold=threshold, days=days)
+
+
+def robust_onset_day(
+    auc: pd.DataFrame,
+    *,
+    threshold: float = ONSET_THRESHOLD,
+    days: tuple[int, int] = STRESS_DAYS,
+    null_days: tuple[int, int] = NULL_DAYS,
+) -> float:
+    """Onset with the bar raised to the pre-cutoff envelope.
+
+    First stress day whose CI lower bound is above max(`threshold`,
+    `null_envelope`) on that day and the next scored day: the deficit and
+    control plants must separate more clearly than the beds ever did while all
+    were watered. Equals `onset_day` when no watered day is scored.
+    """
+    env = null_envelope(auc, days=null_days)
+    bar = threshold if not np.isfinite(env) else max(threshold, env)
+    return onset_day(auc, threshold=bar, days=days)
 
 
 def early_auc(

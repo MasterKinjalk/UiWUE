@@ -1,3 +1,5 @@
 quantity,ours,paper,rel_diff,pass,ci_low,ci_high,p_value,n_rows,n_plants,height,source
-"control_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",5.341067111178941,4.3,0.24210863050673062,,3.739566424164069,6.9425677981938145,6.295150767983966e-11,87,10,"ours: height_p75 above soil, qc_pass",real
-"interaction_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",-10.972111116280088,-13.08,0.1611535843822563,,-13.201578889647616,-8.74264334291256,5.122322176641775e-22,87,10,"ours: height_p75 above soil, qc_pass",real
+control_slope_mm_per_day,4.30099367574379,4.3,0.0002310873822767574,True,3.183337176891476,5.418650174596104,4.614622177216005e-14,120,10,"parity: 0.60 m - z_p25, frame 7",real
+interaction_slope_mm_per_day,-13.08320365794056,-13.08,-0.00024492797710702434,True,-14.663808636691932,-11.502598679189187,3.4521570574656005e-59,120,10,"parity: 0.60 m - z_p25, frame 7",real
+"control_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",5.940261484043546,4.3,0.3814561590798945,,4.260874105248762,7.61964886283833,4.1286636426169336e-12,87,10,"ours: height_p75 above soil, qc_pass",real
+"interaction_slope_mm_per_day [ours: height_p75 above soil, qc_pass]",-12.34631749068913,-13.08,0.0560919349626048,,-14.754321730255116,-9.938313251123143,9.268593583963101e-24,87,10,"ours: height_p75 above soil, qc_pass",real
