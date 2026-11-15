@@ -7,9 +7,9 @@ Writes derived/detect/:
   onsets.parquet       onset day, early AUC, placebo, lead times per signal and group
   placebo.parquet      the placebo rows alone (Methods & limits)
   benchmark.parquet    every sensor combination x model, with size-only baseline
-  scores.parquet       detect_stress_prob per run (+ catalogue.csv)
+  scores_runs.parquet  detect_stress_prob per run (+ catalogue.csv); load_traits() attaches it
   truth_link.parquet   trait vs clip turgor
-  recovery.parquet     recovery ratio per deficit plant and trait
+  recovery.parquet     recovery ratio per deficit plant (plant_id) and trait
   run_info.json        when, on what, with which settings
 """
 
@@ -26,14 +26,20 @@ from uiwue.detect.benchmark import run_benchmark, stress_scores
 from uiwue.detect.data import load_merged, trait_columns
 from uiwue.detect.onsets import run_onsets
 from uiwue.detect.truth import recovery, truth_link
-from uiwue.stats._design import derived_dir
+from uiwue.stats._design import clear_caches, derived_dir
 
 STEPS = ("onsets", "benchmark", "scores", "truth", "recovery")
 
 SCORES_CATALOGUE = pd.DataFrame(
-    [("detect_stress_prob", "Stress probability", "0-1", 1,
-      "Out-of-fold P(deficit) from a leave-one-plant-out logistic model on all sensors' "
-      "baseline-delta traits.")],
+    [
+        (
+            "detect_stress_prob",
+            "Stress probability",
+            "0-1",
+            1,
+            ("Out-of-fold P(deficit) from a leave-one-plant-out logistic model on all sensors' baseline-delta traits."),
+        )
+    ],
     columns=["column", "label", "unit", "direction", "description"],
 )
 
@@ -56,12 +62,12 @@ def main(argv=None) -> None:
     out = a.out or derived_dir() / "detect"
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
+    clear_caches()
     df = load_merged()
     cols = trait_columns(df)
     if not cols:
         raise SystemExit(f"no trait tables found under {derived_dir()}")
-    print(f"{len(df)} runs, {df[['bed', 'plant']].drop_duplicates().shape[0]} plants, "
-          f"{len(cols)} traits")
+    print(f"{len(df)} runs, {df[['bed', 'plant']].drop_duplicates().shape[0]} plants, {len(cols)} traits")
 
     curves = []
     if "onsets" not in a.skip:
@@ -69,8 +75,20 @@ def main(argv=None) -> None:
         curves.append(auc)
         _save(onsets, out, "onsets")
         if not onsets.empty:
-            pb = onsets[["signal", "label", "sensor", "group", "placebo_auc", "placebo_ci_low",
-                         "placebo_ci_high", "bed_effect", "n_deficit", "n_control"]]
+            pb = onsets[
+                [
+                    "signal",
+                    "label",
+                    "sensor",
+                    "group",
+                    "placebo_auc",
+                    "placebo_ci_low",
+                    "placebo_ci_high",
+                    "bed_effect",
+                    "n_deficit",
+                    "n_control",
+                ]
+            ]
             _save(pb, out, "placebo")
     if "benchmark" not in a.skip:
         bench, bcurves = run_benchmark(df, n_boot=a.n_boot)
@@ -80,8 +98,9 @@ def main(argv=None) -> None:
     if curves:
         _save(pd.concat(curves, ignore_index=True), out, "auc_by_day")
     if "scores" not in a.skip:
-        _save(stress_scores(df), out, "scores")
+        _save(stress_scores(df), out, "scores_runs")
         SCORES_CATALOGUE.to_csv(out / "catalogue.csv", index=False)
+        (out / "scores.parquet").unlink(missing_ok=True)  # old name
     if "truth" not in a.skip:
         _save(truth_link(df, cols), out, "truth_link")
     if "recovery" not in a.skip:
@@ -89,11 +108,14 @@ def main(argv=None) -> None:
 
     info = dict(
         finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),
-        seconds=round(time.time() - t0, 1), n_boot=a.n_boot, traits=cols,
+        seconds=round(time.time() - t0, 1),
+        n_boot=a.n_boot,
+        traits=cols,
         plants=int(df[["bed", "plant"]].drop_duplicates().shape[0]),
         skipped=a.skip,
     )
     (out / "run_info.json").write_text(json.dumps(info, indent=2))
+    clear_caches()
     print(f"done in {info['seconds']} s -> {out}")
 
 

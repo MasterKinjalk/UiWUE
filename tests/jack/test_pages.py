@@ -18,26 +18,17 @@ def _load(name):
 @pytest.fixture(scope="module")
 def results(tmp_path_factory):
     """Synthetic derived/ with detect results, built once (fast settings)."""
-    import os
-
     import synthetic
+    from conftest import point_core_at
 
-    from uiwue.stats._design import _catalogue_cached
+    from uiwue.detect.run import main
 
     root = tmp_path_factory.mktemp("derived")
     synthetic.write_derived(root)
-    old = os.environ.get("UIWUE_DERIVED")
-    os.environ["UIWUE_DERIVED"] = str(root)
-    _catalogue_cached.cache_clear()
-    from uiwue.detect.run import main
-
-    main(["--n-boot", "100"])
-    yield root
-    _catalogue_cached.cache_clear()
-    if old is None:
-        os.environ.pop("UIWUE_DERIVED")
-    else:
-        os.environ["UIWUE_DERIVED"] = old
+    with pytest.MonkeyPatch.context() as mp:
+        point_core_at(root, mp)
+        main(["--n-boot", "100"])
+        yield root
 
 
 def _text(component) -> str:
@@ -47,14 +38,14 @@ def _text(component) -> str:
 def test_pages_render(results):
     ew = _load("early_warning")
     assert "ew-curves" in _text(ew.layout())
-    curves, ranking, tbl, head = ew._update("all", ["thermal_leaf_air_dt", "depth_projected_area"])
+    curves, _ranking, _tbl, head = ew._update("all", ["thermal_leaf_air_dt", "depth_projected_area"])
     assert isinstance(curves, go.Figure) and len(curves.data) >= 4
     assert "Leaf - air temperature" in head
 
     sc = _load("sensor_comparison")
     assert "sc-figure" in _text(sc.layout())
-    fig, tbl, head = sc._update("all", "early_auc")
-    assert isinstance(fig, go.Figure) and "thermal" in head
+    fig, _tbl, head = sc._update("all", "early_auc")
+    assert isinstance(fig, go.Figure) and "Thermal" in head
 
     ml = _load("methods")
     assert "Placebo first" in _text(ml.layout())
@@ -62,7 +53,9 @@ def test_pages_render(results):
 
 
 def test_pages_without_results(tmp_path, monkeypatch):
-    monkeypatch.setenv("UIWUE_DERIVED", str(tmp_path))
+    from conftest import point_core_at
+
+    point_core_at(tmp_path, monkeypatch)
     for name in ("early_warning", "sensor_comparison", "methods"):
         text = _text(_load(name).layout())
         assert "Not available" in text or "not available" in text

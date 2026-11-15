@@ -30,9 +30,7 @@ def make_runs(seed: int = 0, hours=(6, 9, 12, 15, 18)) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2025-08-24", "2025-09-22", freq="D")
     p = plants()
-    grid = p.merge(pd.DataFrame({"date": dates}), how="cross").merge(
-        pd.DataFrame({"hour": list(hours)}), how="cross"
-    )
+    grid = p.merge(pd.DataFrame({"date": dates}), how="cross").merge(pd.DataFrame({"hour": list(hours)}), how="cross")
     n = len(grid)
     d = (grid["date"] - CUTOFF).dt.days.to_numpy()
     deficit = grid["bed"].isin(["W2", "W3"]).to_numpy()
@@ -45,9 +43,7 @@ def make_runs(seed: int = 0, hours=(6, 9, 12, 15, 18)) -> pd.DataFrame:
 
     g = pd.DataFrame(grid)
     g["thermal_leaf_air_dt"] = -2 + 0.3 * plant_lvl + 0.6 * stress + rng.normal(0, 0.4, n)
-    g["rgb_green_cover"] = (
-        0.4 + 0.03 * plant_lvl - 0.02 * np.clip(d - 7, 0, 12) * deficit + rng.normal(0, 0.01, n)
-    )
+    g["rgb_green_cover"] = 0.4 + 0.03 * plant_lvl - 0.02 * np.clip(d - 7, 0, 12) * deficit + rng.normal(0, 0.01, n)
     day_idx = (grid["date"] - grid["date"].min()).dt.days.to_numpy()
     growth = np.where(deficit, np.minimum(day_idx, (CUTOFF - grid["date"].min()).days + 4), day_idx)
     g["depth_projected_area"] = 100 + 5 * plant_lvl + 3.0 * growth + rng.normal(0, 1.5, n)
@@ -99,8 +95,6 @@ def write_derived(root, seed: int = 0) -> None:
     (root / "truth").mkdir(parents=True, exist_ok=True)
     turgor.to_parquet(root / "truth" / "turgor_runs.parquet", index=False)
     p = plants()
-    p["truth_first_symptom_date"] = np.where(
-        p["bed"] == "W1", pd.NaT, pd.Timestamp("2025-09-12")
-    )
+    p["truth_first_symptom_date"] = np.where(p["bed"] == "W1", pd.NaT, pd.Timestamp("2025-09-12"))
     p["truth_first_symptom_date"] = pd.to_datetime(p["truth_first_symptom_date"])
     p.to_parquet(root / "truth" / "plants.parquet", index=False)

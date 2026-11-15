@@ -40,8 +40,14 @@ def test_dark_frame_flagged():
 
 def test_assign_slots_prefers_scheduled_then_most_frames():
     runs = pd.DataFrame(
-        dict(bed="W1", plant="A2", date=pd.Timestamp("2025-09-01").date(),
-             folder_hour=[15, 16, 9, 10, 11, 13], n_images=[0, 15, 15, 3, 15, 15], path="x")
+        dict(
+            bed="W1",
+            plant="A2",
+            date=pd.Timestamp("2025-09-01").date(),
+            folder_hour=[15, 16, 9, 10, 11, 13],
+            n_images=[0, 15, 15, 3, 15, 15],
+            path="x",
+        )
     )
     r = assign_slots(runs).set_index("hour")["folder_hour"]
     assert r[15] == 16  # scheduled folder empty -> re-run

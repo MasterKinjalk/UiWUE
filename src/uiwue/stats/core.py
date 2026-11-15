@@ -48,12 +48,7 @@ def baseline_delta(df: pd.DataFrame, column: str, *, window=BASELINE) -> pd.Seri
     """
     d = add_design(df) if "treatment" not in df.columns else df
     in_win = d["date"].between(*window) & qc_pass(d, column)
-    base = (
-        d.loc[in_win]
-        .groupby(["bed", "plant", "hour"])[column]
-        .median()
-        .rename("_base")
-    )
+    base = d.loc[in_win].groupby(["bed", "plant", "hour"])[column].median().rename("_base")
     joined = d[["bed", "plant", "hour"]].join(base, on=["bed", "plant", "hour"])
     return (d[column] - joined["_base"]).rename(f"{column}_delta")
 
@@ -74,12 +69,7 @@ def daily_values(
     keep = d["hour"].isin(hours) & qc_pass(d, column) & vals.notna()
     out = d.loc[keep, ["bed", "plant", "date", "days_since_cutoff", "treatment"]].copy()
     out["value"] = vals[keep].to_numpy()
-    return (
-        out.groupby(["bed", "plant", "date", "days_since_cutoff", "treatment"], as_index=False)[
-            "value"
-        ]
-        .median()
-    )
+    return out.groupby(["bed", "plant", "date", "days_since_cutoff", "treatment"], as_index=False)["value"].median()
 
 
 # --------------------------------------------------------------------------- #
@@ -160,12 +150,19 @@ def auc_by_day(
         auc, lo, hi = auc_ci(pos.to_numpy(), neg.to_numpy(), n_boot=n_boot, rng=rng)
         rows.append(
             dict(
-                column=column, group=group, direction=sign, date=date, day=int(day),
-                auc=auc, ci_low=lo, ci_high=hi, n_deficit=len(pos), n_control=len(neg),
+                column=column,
+                group=group,
+                direction=sign,
+                date=date,
+                day=int(day),
+                auc=auc,
+                ci_low=lo,
+                ci_high=hi,
+                n_deficit=len(pos),
+                n_control=len(neg),
             )
         )
-    cols = ["column", "group", "direction", "date", "day", "auc", "ci_low", "ci_high",
-            "n_deficit", "n_control"]
+    cols = ["column", "group", "direction", "date", "day", "auc", "ci_low", "ci_high", "n_deficit", "n_control"]
     return pd.DataFrame(rows, columns=cols)
 
 
@@ -213,8 +210,7 @@ def early_auc(
     per_plant = daily.groupby(["bed", "plant"], as_index=False)["value"].mean()
     per_plant["value"] *= sign
     pos, neg = _split(per_plant, group)
-    return auc_ci(pos.to_numpy(), neg.to_numpy(), n_boot=n_boot,
-                  rng=np.random.default_rng(seed))
+    return auc_ci(pos.to_numpy(), neg.to_numpy(), n_boot=n_boot, rng=np.random.default_rng(seed))
 
 
 # --------------------------------------------------------------------------- #
@@ -247,14 +243,15 @@ def placebo(
     per_plant = daily.groupby(["bed", "plant"], as_index=False)["value"].mean()
     per_plant["value"] *= sign
     pos, neg = _split(per_plant, group)
-    auc, lo, hi = auc_ci(pos.to_numpy(), neg.to_numpy(), n_boot=n_boot,
-                         rng=np.random.default_rng(seed))
-    separated = bool(
-        np.isfinite(lo)
-        and (lo > 0.5 or hi < 0.5)
-        and max(auc, 1 - auc) >= ONSET_THRESHOLD
-    )
+    auc, lo, hi = auc_ci(pos.to_numpy(), neg.to_numpy(), n_boot=n_boot, rng=np.random.default_rng(seed))
+    separated = bool(np.isfinite(lo) and (lo > 0.5 or hi < 0.5) and max(auc, 1 - auc) >= ONSET_THRESHOLD)
     return dict(
-        column=column, group=group, auc=auc, ci_low=lo, ci_high=hi,
-        n_deficit=len(pos), n_control=len(neg), bed_effect=separated,
+        column=column,
+        group=group,
+        auc=auc,
+        ci_low=lo,
+        ci_high=hi,
+        n_deficit=len(pos),
+        n_control=len(neg),
+        bed_effect=separated,
     )

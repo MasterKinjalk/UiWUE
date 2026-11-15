@@ -1,46 +1,41 @@
-"""Experiment design constants and helpers shared by the statistics.
+"""Design constants and helpers for the statistics, on top of `uiwue.core` (the contract).
 
-These mirror Master Plan 6.1-6.5. When `uiwue.core` exists, its versions of
-`add_design` and `load_catalogue` are used instead, so the two cannot drift.
+Dates are re-exported as Timestamps because the statistics compare them with
+the normalised `date` column.
 """
 
 from __future__ import annotations
 
-import os
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-KEYS = ["bed", "plant", "date", "hour"]
-SLOTS = (6, 9, 12, 15, 18)
+from uiwue import core
 
-CUTOFF = pd.Timestamp("2025-09-03")  # day 0, last watering 11:00
-REWATER = pd.Timestamp("2025-09-15")  # 18:35
-BASELINE = (pd.Timestamp("2025-08-30"), pd.Timestamp("2025-09-02"))
-PLACEBO = (pd.Timestamp("2025-08-24"), pd.Timestamp("2025-08-29"))
+KEYS = core.KEYS
+SLOTS = core.SLOTS
+
+CUTOFF = pd.Timestamp(core.CUTOFF)  # day 0, last watering 11:00
+REWATER = pd.Timestamp(core.REWATER)  # 18:35, after the 18 h run; day 12 is still stress
+BASELINE = tuple(pd.Timestamp(d) for d in core.BASELINE)
+PLACEBO = tuple(pd.Timestamp(d) for d in core.PLACEBO)
 STRESS_DAYS = (0, 12)
 
 CONTROL_BEDS = ("W1",)
 DEFICIT_BEDS = ("W2", "W3")
 
 # Rule 6.7.5: tuning on W2 with these controls, confirmation on W3 with these.
-TUNE_CONTROLS = ("A2", "J5", "R7", "B3")
-CONFIRM_CONTROLS = ("A8", "R1", "Q6")
+TUNE_CONTROLS = core.DEV_CONTROLS
+CONFIRM_CONTROLS = core.CONFIRM_CONTROLS
 
 # Bookkeeping suffixes that are never traits (6.2).
 _NOT_TRAIT = ("_mad", "capture_hour", "timestamp_utc", "n_frames_ok")
 
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
 def derived_dir() -> Path:
-    """`derived/` in the repo, or `$UIWUE_DERIVED` if set (used by tests)."""
-    env = os.environ.get("UIWUE_DERIVED")
-    return Path(env) if env else repo_root() / "derived"
+    """`derived/`, read from core at call time so tests can point it elsewhere."""
+    return Path(core.DERIVED)
 
 
 def prefix_of(column: str) -> str:
@@ -49,42 +44,18 @@ def prefix_of(column: str) -> str:
 
 
 def is_trait_column(column: str) -> bool:
-    if column in KEYS or "_" not in column:
-        return False
-    if "qc_" in column:
+    if column in KEYS or "_" not in column or "qc_" in column:
         return False
     return not any(column.endswith(s) for s in _NOT_TRAIT)
 
 
 def normalise_keys(df: pd.DataFrame) -> pd.DataFrame:
-    """`date` as midnight Timestamps, `hour` as int, `bed`/`plant` as str."""
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
-    df["hour"] = df["hour"].astype(int)
-    df["bed"] = df["bed"].astype(str)
-    df["plant"] = df["plant"].astype(str)
-    return df
+    return core.normalize_keys(df)
 
 
 def add_design(df: pd.DataFrame) -> pd.DataFrame:
-    """Add `treatment`, `days_since_cutoff`, `phase` from the keys (6.2)."""
-    try:  # the platform owns this; prefer it when it exists
-        from uiwue.core import add_design as core_add_design  # type: ignore
-    except ImportError:
-        core_add_design = None
-    if core_add_design is not None:
-        return normalise_keys(core_add_design(df))
-
-    df = normalise_keys(df)
-    df["treatment"] = np.where(df["bed"].isin(CONTROL_BEDS), "control", "deficit")
-    df["days_since_cutoff"] = (df["date"] - CUTOFF).dt.days
-    phase = np.select(
-        [df["date"] < BASELINE[0], df["date"] < CUTOFF, df["date"] <= REWATER],
-        ["early", "baseline", "stress"],
-        default="recovery",
-    )
-    df["phase"] = phase
-    return df
+    """Normalised keys plus `treatment`, `days_since_cutoff`, `phase` (from core)."""
+    return core.add_design(core.normalize_keys(df))
 
 
 def qc_pass(df: pd.DataFrame, column: str) -> pd.Series:
@@ -95,27 +66,17 @@ def qc_pass(df: pd.DataFrame, column: str) -> pd.Series:
     return df[flag].fillna(True).astype(bool)
 
 
-@lru_cache(maxsize=4)
-def _catalogue_cached(path: str) -> pd.DataFrame:
-    frames = []
-    for f in sorted(Path(path).glob("*/catalogue.csv")):
-        frames.append(pd.read_csv(f))
-    if not frames:
-        return pd.DataFrame(columns=["column", "label", "unit", "direction", "description"])
-    cat = pd.concat(frames, ignore_index=True).drop_duplicates("column", keep="last")
+def load_catalogue() -> pd.DataFrame:
+    """All modules' catalogue rows: column, label, unit, direction, description, module."""
+    cat = core.catalogue().drop_duplicates("column", keep="last").copy()
     cat["direction"] = pd.to_numeric(cat["direction"], errors="coerce").fillna(0).astype(int)
     return cat.reset_index(drop=True)
 
 
-def load_catalogue() -> pd.DataFrame:
-    """All modules' catalogue rows: column, label, unit, direction, description."""
-    try:
-        from uiwue.core import load_catalogue as core_load_catalogue  # type: ignore
-    except ImportError:
-        core_load_catalogue = None
-    if core_load_catalogue is not None:
-        return core_load_catalogue()
-    return _catalogue_cached(str(derived_dir()))
+def clear_caches() -> None:
+    """Forget cached tables and catalogues (after writing new ones, and in tests)."""
+    core.catalogue.cache_clear()
+    core.load_traits.cache_clear()
 
 
 def direction_of(column: str, catalogue: pd.DataFrame | None = None) -> int:

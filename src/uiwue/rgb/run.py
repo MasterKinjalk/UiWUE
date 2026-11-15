@@ -52,9 +52,11 @@ def _images(run_path: str) -> list[PurePosixPath | Path]:
     z = _split(run_path)
     if z:
         prefix = z[1] + "/"
-        names = [n for n in _zip(z[0]).namelist()
-                 if n.startswith(prefix) and "/" not in n[len(prefix):]
-                 and n.lower().endswith(_IMG_EXT)]
+        names = [
+            n
+            for n in _zip(z[0]).namelist()
+            if n.startswith(prefix) and "/" not in n[len(prefix) :] and n.lower().endswith(_IMG_EXT)
+        ]
         return [PurePosixPath(n) for n in sorted(names)]
     return sorted(p for p in Path(run_path).iterdir() if p.suffix.lower() in _IMG_EXT)
 
@@ -131,8 +133,16 @@ def _zip_runs(zpath: Path, bed: str, plant: str) -> list[dict]:
     for (dname, hname), n in sorted(counts.items()):
         d = _parse_date(dname)
         if d and hname.isdigit():
-            rows.append(dict(bed=bed, plant=plant, date=d, folder_hour=int(hname),
-                             path=f"{zpath}{_SEP}{bed}_{plant}/{dname}/{hname}", n_images=n))
+            rows.append(
+                dict(
+                    bed=bed,
+                    plant=plant,
+                    date=d,
+                    folder_hour=int(hname),
+                    path=f"{zpath}{_SEP}{bed}_{plant}/{dname}/{hname}",
+                    n_images=n,
+                )
+            )
     return rows
 
 
@@ -144,8 +154,16 @@ def _dir_runs(pdir: Path, bed: str, plant: str) -> list[dict]:
             continue
         for hdir in sorted(ddir.iterdir()):
             if hdir.is_dir() and hdir.name.isdigit():
-                rows.append(dict(bed=bed, plant=plant, date=d, folder_hour=int(hdir.name),
-                                 path=str(hdir), n_images=len(_images(str(hdir)))))
+                rows.append(
+                    dict(
+                        bed=bed,
+                        plant=plant,
+                        date=d,
+                        folder_hour=int(hdir.name),
+                        path=str(hdir),
+                        n_images=len(_images(str(hdir))),
+                    )
+                )
     return rows
 
 
@@ -225,9 +243,7 @@ def process_run(run: dict, frames=(7,), crop: float = 0.5) -> dict:
         v = np.array([f[c] for f in use], float) if use else np.array([np.nan])
         row[c] = float(np.nanmedian(v)) if np.isfinite(v).any() else np.nan
         if c != "rgb_brightness":
-            row[f"{c}_mad"] = (
-                float(np.nanmedian(np.abs(v - row[c]))) if np.isfinite(v).sum() > 1 else np.nan
-            )
+            row[f"{c}_mad"] = float(np.nanmedian(np.abs(v - row[c]))) if np.isfinite(v).sum() > 1 else np.nan
     row["rgb_qc_dark"] = bool(per) and all(f["dark"] for f in per)
     row["rgb_qc_mask_failed"] = bool(per) and all(f["mask_failed"] for f in per)
     row["rgb_qc_missing"] = not per
@@ -241,8 +257,7 @@ def extract(data_dir, plants=None, frames=(7,), crop=0.5, jobs=1) -> pd.DataFram
     if jobs != 1:
         from joblib import Parallel, delayed
 
-        rows = Parallel(n_jobs=jobs, batch_size=16)(
-            delayed(process_run)(r, frames, crop) for r in recs)
+        rows = Parallel(n_jobs=jobs, batch_size=16)(delayed(process_run)(r, frames, crop) for r in recs)
     else:
         try:
             from tqdm import tqdm
@@ -283,7 +298,9 @@ def main(argv=None) -> None:
     ap.add_argument("--out", type=Path, default=None)
     a = ap.parse_args(argv)
     # Call through the importable module, not __main__, so joblib workers can unpickle the task.
-    from uiwue.rgb import run as rgb_run  # noqa: PLW0406
+    import importlib
+
+    rgb_run = importlib.import_module("uiwue.rgb.run")
 
     df = rgb_run.extract(a.data_dir, a.plants, tuple(a.frames), a.crop, a.jobs)
     if df.empty:

@@ -6,7 +6,7 @@ from uiwue.stats import auc_by_day, auc_ci, baseline_delta, onset_day, placebo
 
 
 def test_auc_ci_extremes():
-    auc, lo, hi = auc_ci(np.arange(10) + 100, np.arange(7), n_boot=200)
+    auc, lo, _hi = auc_ci(np.arange(10) + 100, np.arange(7), n_boot=200)
     assert auc == 1.0 and lo == 1.0
     auc, _, _ = auc_ci(np.ones(5), np.ones(5), n_boot=0)
     assert auc == 0.5

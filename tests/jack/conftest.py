@@ -3,10 +3,9 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-for p in (ROOT / "src", Path(__file__).resolve().parent):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 
 
 @pytest.fixture
@@ -16,15 +15,23 @@ def runs():
     return synthetic.make_runs()
 
 
+def point_core_at(root, monkeypatch):
+    """Make uiwue.core (and everything built on it) read `root` as derived/."""
+    from uiwue import core
+    from uiwue.stats._design import clear_caches
+
+    monkeypatch.setattr(core, "DERIVED", Path(root))
+    clear_caches()
+
+
 @pytest.fixture
 def fake_derived(tmp_path, monkeypatch):
-    """A synthetic `derived/` folder, pointed to by UIWUE_DERIVED."""
+    """A synthetic derived/ folder that uiwue.core reads instead of the repo's."""
     import synthetic
 
-    from uiwue.stats._design import _catalogue_cached
+    from uiwue.stats._design import clear_caches
 
     synthetic.write_derived(tmp_path)
-    monkeypatch.setenv("UIWUE_DERIVED", str(tmp_path))
-    _catalogue_cached.cache_clear()
+    point_core_at(tmp_path, monkeypatch)
     yield tmp_path
-    _catalogue_cached.cache_clear()
+    clear_caches()

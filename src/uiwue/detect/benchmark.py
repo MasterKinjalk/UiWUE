@@ -21,7 +21,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from uiwue.detect.data import SENSORS, cost_rank, size_baseline_column, trait_columns
+from uiwue.detect.data import SENSORS, SETUP_LABEL, cost_rank, setup_of, size_baseline_column, trait_columns
 from uiwue.stats import GROUPS, auc_ci, baseline_delta, daily_values, onset_day
 from uiwue.stats._design import CONTROL_BEDS, DEFICIT_BEDS, PLACEBO, prefix_of
 from uiwue.stats.core import EARLY_DAYS, SEED
@@ -40,8 +40,12 @@ def make_model(kind: str):
         )
     if kind == "boosted":
         return HistGradientBoostingClassifier(
-            max_depth=2, max_iter=100, learning_rate=0.1, min_samples_leaf=10,
-            class_weight="balanced", random_state=SEED,
+            max_depth=2,
+            max_iter=100,
+            learning_rate=0.1,
+            min_samples_leaf=10,
+            class_weight="balanced",
+            random_state=SEED,
         )
     raise ValueError(kind)
 
@@ -55,8 +59,7 @@ def daily_features(df: pd.DataFrame, columns: list[str], hours=(12, 15)) -> pd.D
     for c in columns:
         d = daily_values(df, c, hours=hours).rename(columns={"value": c})
         d = d.drop(columns="treatment")
-        out = d if out is None else out.merge(
-            d, on=["bed", "plant", "date", "days_since_cutoff"], how="outer")
+        out = d if out is None else out.merge(d, on=["bed", "plant", "date", "days_since_cutoff"], how="outer")
     if out is None:
         return pd.DataFrame(columns=["bed", "plant", "date", "days_since_cutoff"])
     out["y"] = out["bed"].isin(DEFICIT_BEDS).astype(int)
@@ -64,22 +67,39 @@ def daily_features(df: pd.DataFrame, columns: list[str], hours=(12, 15)) -> pd.D
     return out.sort_values(["pid", "date"]).reset_index(drop=True)
 
 
+LOW_RES_THERMAL = ("thermal_r160", "thermal_r80")
+
+
 def sensor_sets(columns: list[str]) -> dict[tuple[str, ...], list[str]]:
-    """Every non-empty combination of the sensors present -> its feature columns."""
-    by = {s: [c for c in columns if prefix_of(c) == s] for s in SENSORS}
-    present = [s for s in SENSORS if by[s]]
+    """Every non-empty combination of the sensors present -> its feature columns.
+
+    Each combination with thermal is repeated with a reduced-resolution thermal
+    camera in its place (the cheaper-setup question), when those columns exist.
+    """
+    by: dict[str, list[str]] = {}
+    for c in columns:
+        by.setdefault(setup_of(c), []).append(c)
+    present = [s for s in SENSORS if by.get(s)]
     out = {}
     for k in range(1, len(present) + 1):
         for combo in combinations(present, k):
             out[combo] = [c for s in combo for c in by[s]]
+            if "thermal" in combo:
+                for low in LOW_RES_THERMAL:
+                    if by.get(low):
+                        alt = tuple(low if s == "thermal" else s for s in combo)
+                        out[alt] = [c for s in alt for c in by[s]]
     return out
+
+
+def full_resolution(columns: list[str]) -> list[str]:
+    return [c for c in columns if setup_of(c) not in LOW_RES_THERMAL]
 
 
 # --------------------------------------------------------------------------- #
 # leave-one-plant-out
 # --------------------------------------------------------------------------- #
-def lopo_predict(train: pd.DataFrame, feats: list[str], kind: str,
-                 predict: pd.DataFrame | None = None) -> np.ndarray:
+def lopo_predict(train: pd.DataFrame, feats: list[str], kind: str, predict: pd.DataFrame | None = None) -> np.ndarray:
     """Out-of-fold P(deficit) for each row of `predict` (default: `train`).
 
     The model for a plant never saw any row of that plant.
@@ -117,8 +137,9 @@ def _curve(rows: pd.DataFrame, group: str, n_boot: int) -> pd.DataFrame:
         pos = sub.loc[sub["bed"].isin(GROUPS[group]), "prob"].to_numpy()
         neg = sub.loc[sub["bed"].isin(CONTROL_BEDS), "prob"].to_numpy()
         auc, lo, hi = auc_ci(pos, neg, n_boot=n_boot, rng=rng)
-        out.append(dict(date=date, day=int(day), auc=auc, ci_low=lo, ci_high=hi,
-                        n_deficit=len(pos), n_control=len(neg)))
+        out.append(
+            dict(date=date, day=int(day), auc=auc, ci_low=lo, ci_high=hi, n_deficit=len(pos), n_control=len(neg))
+        )
     return pd.DataFrame(out)
 
 
@@ -137,19 +158,29 @@ def evaluate(daily: pd.DataFrame, feats: list[str], kind: str, groups, n_boot: i
         (e, elo, ehi), npos, nneg = _per_plant_auc(stress, g, n_boot, EARLY_DAYS)
         (f, _, _), _, _ = _per_plant_auc(stress, g, 0, FULL_DAYS)
         (p, plo, phi), _, _ = _per_plant_auc(pre, g, n_boot)
-        summary.append(dict(
-            group=g, early_auc=e, early_ci_low=elo, early_ci_high=ehi, full_auc=f,
-            onset_day=onset_day(curve) if len(curve) else np.nan,
-            placebo_auc=p, placebo_ci_low=plo, placebo_ci_high=phi,
-            bed_effect=bool(np.isfinite(plo) and (plo > 0.5 or phi < 0.5) and max(p, 1 - p) >= 0.7),
-            n_deficit=npos, n_control=nneg,
-        ))
+        summary.append(
+            dict(
+                group=g,
+                early_auc=e,
+                early_ci_low=elo,
+                early_ci_high=ehi,
+                full_auc=f,
+                onset_day=onset_day(curve) if len(curve) else np.nan,
+                placebo_auc=p,
+                placebo_ci_low=plo,
+                placebo_ci_high=phi,
+                bed_effect=bool(np.isfinite(plo) and (plo > 0.5 or phi < 0.5) and max(p, 1 - p) >= 0.7),
+                n_deficit=npos,
+                n_control=nneg,
+            )
+        )
         curves.append(curve.assign(group=g))
     return summary, curves
 
 
-def run_benchmark(df: pd.DataFrame, models=MODELS, groups=("all", "W2", "W3"),
-                  n_boot: int = 2000) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_benchmark(
+    df: pd.DataFrame, models=MODELS, groups=("all", "W2", "W3"), n_boot: int = 2000
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Every sensor combination x model, plus the size-only baseline.
 
     Returns (benchmark, curves). `curves` uses the auc_by_day layout with
@@ -168,15 +199,21 @@ def run_benchmark(df: pd.DataFrame, models=MODELS, groups=("all", "W2", "W3"),
         for kind in models:
             summary, cs = evaluate(daily, feats, kind, groups, n_boot)
             for s in summary:
-                rows.append(dict(
-                    sensors=name, model=kind, n_sensors=0 if combo == ("size",) else len(combo),
-                    n_features=len(feats),
-                    cost_rank=0 if combo == ("size",) else cost_rank(combo),
-                    is_size_baseline=combo == ("size",), size_column=size_col, **s,
-                ))
+                rows.append(
+                    dict(
+                        sensors=name,
+                        setup=("Plant size only" if combo == ("size",) else " + ".join(SETUP_LABEL[s] for s in combo)),
+                        model=kind,
+                        n_sensors=0 if combo == ("size",) else len(combo),
+                        n_features=len(feats),
+                        cost_rank=0 if combo == ("size",) else cost_rank(combo),
+                        is_size_baseline=combo == ("size",),
+                        size_column=size_col,
+                        **s,
+                    )
+                )
             for c in cs:
-                curves.append(c.assign(signal=f"model:{name}:{kind}", kind="model",
-                                       column=f"model:{name}:{kind}"))
+                curves.append(c.assign(signal=f"model:{name}:{kind}", kind="model", column=f"model:{name}:{kind}"))
     bench = pd.DataFrame(rows)
     if not bench.empty:
         bench = bench.sort_values(["group", "cost_rank", "model"]).reset_index(drop=True)
@@ -201,12 +238,13 @@ def cheapest_close(bench: pd.DataFrame, group: str = "all", margin: float = 0.05
 # stress probability per run (handoff to Sam's Plant profile)
 # --------------------------------------------------------------------------- #
 def stress_scores(df: pd.DataFrame, kind: str = "logistic") -> pd.DataFrame:
-    """detect_stress_prob for every run, out of fold, from all sensors present.
+    """detect_stress_prob for every run, out of fold, from all sensors present
+    (full resolution only).
 
     The model is trained on plant-day rows (days 0-12) of the other plants and
     applied to each run of the held-out plant, on run-level baseline deltas.
     """
-    cols = trait_columns(df)
+    cols = full_resolution(trait_columns(df))
     if not cols:
         return pd.DataFrame()
     daily = daily_features(df, cols)

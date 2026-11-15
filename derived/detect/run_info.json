@@ -1,0 +1,19 @@
+{
+  "finished": "2026-11-15T01:01:55+00:00",
+  "seconds": 57.2,
+  "n_boot": 2000,
+  "traits": [
+    "rgb_green_cover",
+    "rgb_exg",
+    "rgb_ngrdi",
+    "rgb_hue",
+    "thermal_leaf_t",
+    "thermal_leaf_t_p10",
+    "thermal_leaf_t_r160",
+    "thermal_leaf_t_r80",
+    "thermal_leaf_air_dt",
+    "thermal_leaf_ref_dt"
+  ],
+  "plants": 39,
+  "skipped": []
+}

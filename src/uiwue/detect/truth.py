@@ -13,8 +13,11 @@ MIN_PLANTS_PER_DAY = 5
 
 
 def turgor_column(df: pd.DataFrame) -> str | None:
-    cands = [c for c in df.columns if c.startswith("truth_") and "turgor" in c and "qc" not in c
-             and pd.api.types.is_numeric_dtype(df[c])]
+    cands = [
+        c
+        for c in df.columns
+        if c.startswith("truth_") and "turgor" in c and "qc" not in c and pd.api.types.is_numeric_dtype(df[c])
+    ]
     pref = [c for c in cands if "shift" in c]
     return (pref or cands or [None])[0]
 
@@ -41,15 +44,23 @@ def truth_link(df: pd.DataFrame, columns=None, days=(0, 12)) -> pd.DataFrame:
         pooled = m[["trait", "turgor"]].corr(method="spearman").iloc[0, 1]
         per_day = [
             g[["trait", "turgor"]].corr(method="spearman").iloc[0, 1]
-            for _, g in m.groupby("date") if len(g) >= MIN_PLANTS_PER_DAY
+            for _, g in m.groupby("date")
+            if len(g) >= MIN_PLANTS_PER_DAY
         ]
         per_day = [r for r in per_day if np.isfinite(r)]
-        rows.append(dict(
-            signal=c, label=label_of(c), sensor=prefix_of(c), turgor_column=tcol,
-            rho_pooled=float(pooled), rho_within_day=float(np.mean(per_day)) if per_day else np.nan,
-            n_days_within=len(per_day), n_plants=m[["bed", "plant"]].drop_duplicates().shape[0],
-            n_obs=len(m),
-        ))
+        rows.append(
+            dict(
+                signal=c,
+                label=label_of(c),
+                sensor=prefix_of(c),
+                turgor_column=tcol,
+                rho_pooled=float(pooled),
+                rho_within_day=float(np.mean(per_day)) if per_day else np.nan,
+                n_days_within=len(per_day),
+                n_plants=m[["bed", "plant"]].drop_duplicates().shape[0],
+                n_obs=len(m),
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -85,10 +96,13 @@ def recovery(df: pd.DataFrame, columns=None) -> pd.DataFrame:
         ctl_sd = ctl.std() if len(ctl) > 1 else np.nan
         t = t[t.index.get_level_values("bed").isin(DEFICIT_BEDS)].reset_index()
         t["recovery_ratio"] = (t["after"] - t["end"]) / (t["before"] - t["end"]).replace(0, np.nan)
-        t["measurable"] = (
-            (t["drop"] - ctl_mid).abs() > 2 * ctl_sd if np.isfinite(ctl_sd) else False
-        )
+        t["measurable"] = (t["drop"] - ctl_mid).abs() > 2 * ctl_sd if np.isfinite(ctl_sd) else False
         t["signal"] = c
         t["label"] = label_of(c)
         rows.append(t)
-    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    if not rows:
+        return pd.DataFrame()
+    out = pd.concat(rows, ignore_index=True)
+    # A result table, not a run table: one id column instead of bed/plant keys.
+    out.insert(0, "plant_id", out.pop("bed") + "_" + out.pop("plant"))
+    return out

@@ -44,8 +44,10 @@ def test_benchmark_and_scores(fake_derived):
     s = stress_scores(df)
     assert {"bed", "plant", "date", "hour", "detect_stress_prob"} <= set(s.columns)
     late = s[pd.to_datetime(s["date"]) == "2025-09-12"]
-    assert late.loc[late["bed"] != "W1", "detect_stress_prob"].mean() > late.loc[
-        late["bed"] == "W1", "detect_stress_prob"].mean()
+    assert (
+        late.loc[late["bed"] != "W1", "detect_stress_prob"].mean()
+        > late.loc[late["bed"] == "W1", "detect_stress_prob"].mean()
+    )
 
 
 def test_truth_and_recovery(fake_derived):
@@ -53,5 +55,21 @@ def test_truth_and_recovery(fake_derived):
     t = truth_link(df).set_index("signal")
     assert t.loc["thermal_leaf_air_dt", "rho_pooled"] > 0.5
     r = recovery(df)
-    assert {"recovery_ratio", "measurable", "signal"} <= set(r.columns)
-    assert set(r["bed"]) <= {"W2", "W3"}
+    assert {"plant_id", "recovery_ratio", "measurable", "signal"} <= set(r.columns)
+    assert "bed" not in r.columns  # a result table, so the validator's key rules do not apply
+    assert r["plant_id"].str[:2].isin(["W2", "W3"]).all()
+
+
+def test_low_res_thermal_is_a_substitute_setup():
+    from uiwue.detect.benchmark import full_resolution, sensor_sets
+    from uiwue.detect.data import cost_rank
+
+    cols = ["rgb_exg", "thermal_leaf_t", "thermal_leaf_t_r160", "thermal_leaf_t_r80"]
+    sets = sensor_sets(cols)
+    assert sets[("thermal",)] == ["thermal_leaf_t"]
+    assert sets[("thermal_r80",)] == ["thermal_leaf_t_r80"]
+    assert sets[("rgb", "thermal_r160")] == ["rgb_exg", "thermal_leaf_t_r160"]
+    assert ("thermal", "thermal_r80") not in sets
+    assert len(sets) == 1 + 3 + 3  # rgb; three thermal cameras alone; each with rgb
+    assert cost_rank(["thermal_r80"]) < cost_rank(["thermal_r160"]) < cost_rank(["thermal"])
+    assert full_resolution(cols) == ["rgb_exg", "thermal_leaf_t"]

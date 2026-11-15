@@ -6,17 +6,21 @@ import sys
 from pathlib import Path
 
 import dash
+import dash_bootstrap_components as dbc
 from dash import dash_table, html
 
-try:
-    import uiwue  # noqa: F401
-except ImportError:  # package not installed yet: run from a clone
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+APP = Path(__file__).resolve().parents[1]
+if str(APP) not in sys.path:  # the shell has app/ on the path; a page run alone does not
+    sys.path.insert(0, str(APP))
+
+import components
 
 from uiwue.detect.data import load_result
 
+header = components.header
 
-def register(module: str, **kw) -> None:
+
+def register_page(module: str, **kw) -> None:
     """Register with the shell's page registry; harmless when the page runs alone."""
     try:
         dash.register_page(module, **kw)
@@ -26,16 +30,18 @@ def register(module: str, **kw) -> None:
 
 def not_available(what: str) -> html.Div:
     return html.Div(
-        [html.Strong("Not available yet. "),
-         html.Span(f"{what} Run "),
-         html.Code("python -m uiwue.detect.run"),
-         html.Span(" once the trait tables are in derived/.")],
-        style={"padding": "1rem", "background": "#f6f6f6", "borderRadius": "6px", "margin": "1rem 0"},
+        [
+            components.not_available(what),
+            html.P(
+                [
+                    "Detection results are made by ",
+                    html.Code("python -m uiwue.detect.run"),
+                    " from the trait tables in derived/.",
+                ],
+                className="text-secondary small",
+            ),
+        ]
     )
-
-
-def answer(text: str) -> html.P:
-    return html.P(text, style={"fontSize": "1.15rem", "fontWeight": 500, "margin": "0.5rem 0 1rem"})
 
 
 def table(df, columns: dict, page_size: int = 15, id=None):
@@ -50,19 +56,26 @@ def table(df, columns: dict, page_size: int = 15, id=None):
     return dash_table.DataTable(
         data=d.to_dict("records"),
         columns=[{"name": h, "id": c} for c, h in columns.items()],
-        page_size=page_size, sort_action="native",
-        style_cell={"fontFamily": "inherit", "fontSize": 13, "padding": "4px 8px",
-                    "textAlign": "left", "whiteSpace": "normal", "height": "auto"},
-        style_header={"fontWeight": 600, "background": "#fafafa"},
+        page_size=page_size,
+        sort_action="native",
+        style_cell={
+            "fontFamily": "inherit",
+            "fontSize": 13,
+            "padding": "4px 8px",
+            "textAlign": "left",
+            "whiteSpace": "normal",
+            "height": "auto",
+        },
+        style_header={"fontWeight": 600, "background": components.INK["surface"]},
         **kw,
     )
 
 
 def run_alone(layout) -> None:
     """`python app/pages/<page>.py` serves just this page on :8050."""
-    app = dash.Dash(__name__, suppress_callback_exceptions=True)
-    app.layout = layout() if callable(layout) else layout
+    app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[dbc.themes.FLATLY])
+    app.layout = dbc.Container(layout() if callable(layout) else layout, fluid=True, className="py-3")
     app.run(debug=True)
 
 
-__all__ = ["answer", "load_result", "not_available", "register", "run_alone", "table"]
+__all__ = ["header", "load_result", "not_available", "register_page", "run_alone", "table"]

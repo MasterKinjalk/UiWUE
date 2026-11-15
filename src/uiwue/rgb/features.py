@@ -20,23 +20,33 @@ MIN_VEG_PIXELS = 200
 TRAITS = {
     # column: (label, unit, direction, description)
     "rgb_green_cover": (
-        "Green cover", "fraction", -1,
+        "Green cover",
+        "fraction",
+        -1,
         "Share of centre-crop pixels classed as vegetation (2G-R-B > 5).",
     ),
     "rgb_exg": (
-        "Greenness (ExG)", "", -1,
+        "Greenness (ExG)",
+        "",
+        -1,
         "Mean excess green 2g-r-b on chromatic coordinates, vegetation pixels.",
     ),
     "rgb_ngrdi": (
-        "NGRDI", "", -1,
+        "NGRDI",
+        "",
+        -1,
         "Mean (G-R)/(G+R) over vegetation pixels.",
     ),
     "rgb_hue": (
-        "Mean hue", "deg", -1,
+        "Mean hue",
+        "deg",
+        -1,
         "Circular mean HSV hue of vegetation pixels; yellowing moves it down from ~100.",
     ),
     "rgb_brightness": (
-        "Brightness", "0-255", 0,
+        "Brightness",
+        "0-255",
+        0,
         "Mean brightness of the whole centre crop (exposure check, not a trait).",
     ),
 }
@@ -45,7 +55,7 @@ TRAITS = {
 def centre_crop(img: np.ndarray, frac: float = 0.5) -> np.ndarray:
     """Central `frac` of the height, as a square, so neighbours stay mostly out."""
     h, w = img.shape[:2]
-    side = int(round(min(h, w) * frac))
+    side = round(min(h, w) * frac)
     y0, x0 = (h - side) // 2, (w - side) // 2
     return img[y0 : y0 + side, x0 : x0 + side]
 
