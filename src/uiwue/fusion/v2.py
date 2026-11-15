@@ -76,6 +76,7 @@ CANARY_DAYS = (-3, -1)
 class V2Config(Config):
     parts: tuple = ("delta", "ref")  # per token: "now" e(t), "delta" e(t) - e(base), "ref" delta - control delta
     emb: bool = True  # image-encoder tokens
+    thermal_emb: bool = True  # the ImageBind thermal token (False: the thermal camera is the hand-made token only)
     tfeat: bool = True  # hand-made thermal token
     env: bool = False  # weather token
     adv: float = 0.0  # weight of the bed adversary on pre-cutoff runs (0 = off)
@@ -101,6 +102,8 @@ VARIANTS: dict[str, dict] = {
     "delta+ref+tfeat+hn": dict(parts=("delta", "ref"), tfeat=True, hardneg=5.0),
     "delta+ref+tfeat+win6": dict(parts=("delta", "ref"), tfeat=True, window=6),
     "tfeat_only+win6": dict(parts=("delta", "ref"), tfeat=True, emb=False, window=6),
+    # every camera, thermal as the hand-made token only (no ImageBind thermal token)
+    "fused_tfeat": dict(parts=("delta", "ref"), tfeat=True, thermal_emb=False),
     "delta+ref+tfeat+mean": dict(parts=("delta", "ref"), tfeat=True, layers=0),
     "v1+tfeat": dict(parts=("now", "delta"), tfeat=True),
 }
@@ -381,6 +384,17 @@ class FusionV2(nn.Module):
         )
 
 
+def model_cameras(tokens) -> list[str]:
+    """The cameras a model's tokens come from, in cost order (what train.results calls sensors)."""
+    cams = {TOKEN_CAMERA[t] for t in tokens}
+    return [c for c in train.SENSOR_ORDER if c in cams]
+
+
+def camera_view(rs: RunSet, tokens) -> RunSet:
+    """rs with `sensors` set to the model's cameras, for train.results (its all-sensor scores)."""
+    return RunSet(rs.keys, model_cameras(tokens), rs.dims, rs.emb, rs.base, rs.has)
+
+
 def token_list(rs: RunSet, cfg: V2Config) -> list[str]:
     out = []
     for t in rs.sensors:
@@ -389,6 +403,8 @@ def token_list(rs: RunSet, cfg: V2Config) -> list[str]:
         if t == "env" and not cfg.env:
             continue
         if t in CAMERAS and not cfg.emb:
+            continue
+        if t == "thermal" and not cfg.thermal_emb:
             continue
         out.append(t)
     return out
@@ -639,7 +655,8 @@ def save_fold(ckpt_dir: Path, k: int, rs: RunSet, cfg: V2Config, model, pmodel, 
     g = pd.DataFrame({"date": rs.keys["date"], "hour": rs.keys["hour"], "group": groups}).drop_duplicates("group")
     ref = {f"{t}|{v}": {int(i): torch.from_numpy(m) for i, m in meds.items()} for (t, v), meds in medians.items()}
     common = dict(
-        design="v2", config=asdict(cfg), tokens=list(model.tokens), dims=dict(rs.dims), sensors=list(rs.sensors),
+        design="v2", config=asdict(cfg), tokens=list(model.tokens), dims=dict(rs.dims),
+        sensors=model_cameras(model.tokens),
         train_pids=sorted(rs.keys["pid"].iloc[train_rows].unique()),
         test_pids=sorted(rs.keys["pid"].iloc[test_rows].unique()),
         runs={"date": g["date"].dt.strftime("%Y-%m-%d").tolist(), "hour": g["hour"].astype(int).tolist(),
@@ -735,6 +752,8 @@ def run_new(caches, folds: list[dict], model_name: str, device: str, n_boot=2000
     pids = sorted(rs.keys["pid"].unique())
     print(f"{len(rs.keys)} runs, {len(pids)} new plants, {len(folds)} fold models ({model_name})")
     cv = ensemble(rs, folds, device)
+    present = {s: sorted(rs.keys.loc[rs.has[(s, "full")], "pid"].unique()) for s in rs.sensors if (s, "full") in rs.has}
+    rs.sensors = model_cameras(folds[0]["tokens"])  # train.results scores the model's own cameras
     tables = pr.external_tables(rs, shared_setups(cv), model_name, n_boot, traits)
     if summary_path is not None:  # the ablation columns (canary days, recovery, severity) for these plants
         clips = pr.clip_plants()
@@ -743,7 +762,6 @@ def run_new(caches, folds: list[dict], model_name: str, device: str, n_boot=2000
         rows += summarise(sub, cv_sub, model_name, ("thermal", "rgb+depth+thermal+hsi"), n_boot, plants="no_clip")
         Path(summary_path).parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(rows).to_parquet(summary_path, index=False)
-    present = {s: sorted(rs.keys.loc[rs.has[(s, "full")], "pid"].unique()) for s in rs.sensors if (s, "full") in rs.has}
     info = dict(
         model=model_name, design="v2", plants=pids, n_plants=len(pids), runs=len(rs.keys),
         excluded_training_plants=len(dropped),
@@ -868,9 +886,13 @@ def benchmark_rows(
         stress = daily[daily["days_since_cutoff"].between(*TRAIN_DAYS)]
         pre = daily[daily["days_since_cutoff"].between(*CANARY_DAYS)].copy()
         pre["prob"] = lopo_predict(stress, feats, "logistic", predict=pre)
+        # the detection model's own score over the placebo window (train.score's placebo_auc_main)
+        plac = daily[daily["date"].between(*(pd.Timestamp(d) for d in core.PLACEBO))].copy()
+        plac["prob"] = lopo_predict(stress, feats, "logistic", predict=plac)
         for row, curve in zip(summary, curves, strict=True):
             c = curve.set_index("day")
             pc = _curve(pre, row["group"], 0).set_index("day")
+            row["placebo_auc_main"] = _per_plant_auc(plac, row["group"], 0)[0][0]
             extra = {f"day{d}_auc": c["auc"].get(d, np.nan) for d in (0, 1, 2, 3)}
             extra |= {f"day{d}_ci_low": c["ci_low"].get(d, np.nan) for d in (0, 1, 2, 3)}
             extra |= {f"day_m{-d}_auc": pc["auc"].get(d, np.nan) for d in range(CANARY_DAYS[0], CANARY_DAYS[1] + 1)}
@@ -1116,7 +1138,7 @@ def main(argv=None) -> None:
     name = a.name
     cv = cross_validate(rs, cfg, a.device, ckpt_dir=a.runs_dir / name)
     named = shared_setups(cv)
-    tables = train.results(rs, named, name, cfg.n_boot)
+    tables = train.results(camera_view(rs, token_list(rs, cfg)), named, name, cfg.n_boot)
     scores = tables.pop("fusion_scores_runs")  # v1's table keeps v1's scores; v2 writes its own
     out = train.write(tables, name, a.out)
     if name == "fusion_v2":

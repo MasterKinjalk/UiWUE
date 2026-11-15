@@ -266,3 +266,31 @@ def test_causal_window_averages_the_same_plants_earlier_runs_of_the_day():
     shuffled = np.array([5, 2, 0, 4, 1, 3])
     again = causal_window(k.iloc[shuffled].reset_index(drop=True), x[shuffled], valid[shuffled], 6)
     assert again.ravel().tolist() == causal_window(k, x, valid, 6).ravel()[shuffled].tolist()
+
+
+def test_a_thermal_only_v2_model_trains_scores_its_oof_subsets_and_new_plants(tmp_path, fake_derived, monkeypatch):
+    """A v2 model without image encoders (tfeat_only) has only thermal setups: the shared tables,
+    the out-of-fold subsets and the lock-box path must all score just its own camera."""
+    from uiwue.core.validate import validate
+    from uiwue.fusion import predict, v2
+
+    keys = _cv_keys()
+    feats = tmp_path / "thermal_features.parquet"
+    _fake_features(keys).to_parquet(feats)
+    cache = _fake_cache(tmp_path / "cache", keys)
+    out, runs = tmp_path / "derived" / "detect", tmp_path / "runs"
+    v2.main(["train", "--cache", str(cache), "--variant", "tfeat_only", "--name", "fusion_v2", "--epochs", "3",
+             "--runs-dir", str(runs), "--features", str(feats), "--n-boot", "20", "--out", str(out), "--min-ref", "2"])  # fmt: skip
+    b = pd.read_parquet(out / "fusion_benchmark.parquet")
+    assert set(b["sensors"]) == {"thermal", "thermal_r160", "thermal_r80"}
+    assert validate(out / "fusion_v2_scores_runs.parquet") == []
+    ck = torch.load(runs / "fusion_v2" / "fold0.pt", weights_only=True)
+    assert ck["tokens"] == ["tfeat"] and ck["sensors"] == ["thermal"]
+    monkeypatch.setattr(predict, "clip_plants", lambda: set())
+    sub = predict.oof_tables(runs / "fusion_v2", "fusion_v2", n_boot=20)["fusion_cv_subsets_benchmark"]
+    assert set(sub["sensors"]) <= {"thermal", "thermal_r160", "thermal_r80", "size"}
+    lock = [p for p in v2.lockbox.LOCKBOX if p in set(keys["bed"] + "_" + keys["plant"])]
+    tables, info = predict.run(cache, runs / "fusion_v2", "fusion_v2", "cpu", n_boot=20, labels=_labels(keys),
+                               features=feats, only=lock, summary_path=tmp_path / "lock.parquet")  # fmt: skip
+    assert info["n_plants"] == len(lock) and (tmp_path / "lock.parquet").exists()
+    assert set(tables["fusion_external_benchmark"]["sensors"]) <= {"thermal", "thermal_r160", "thermal_r80"}
