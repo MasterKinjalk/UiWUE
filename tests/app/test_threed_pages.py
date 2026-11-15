@@ -400,6 +400,47 @@ def test_browser_rgb_palette_is_exact(dash_app):
     assert idx[0] == idx[2] and cmax == len(scale) - 1
 
 
+def _cloud_mm(xyz_mm, rgb) -> dict:
+    xyz = np.asarray(xyz_mm, np.float32) / 1000.0
+    n = len(xyz)
+    return {"xyz": xyz, "rgb": np.asarray(rgb, np.uint8), "height": xyz[:, 2], "plant": np.ones(n, bool), "temp": None}
+
+
+def test_browser_rgb_is_brightened_and_uncoloured_points_are_grey(dash_app):
+    b = page("threed_browser")
+    rng = np.random.default_rng(0)
+    xyz = np.column_stack([rng.uniform(-100, 100, 200), rng.uniform(-100, 100, 200), rng.uniform(0, 150, 200)])
+    rgb = np.tile([40, 50, 30], (200, 1))
+    rgb[:90] = [60, 85, 50]  # the camera is under-exposed: nothing above 85 of 255
+    rgb[-20:] = 0  # no RGB sample (schema: 0 where no RGB sample)
+    fig = b.cloud_figure(_cloud_mm(xyz, rgb), "rgb")
+    grey = [t for t in traces(fig, "scatter3d") if t.name == "no colour"]
+    assert len(grey) == 1 and len(grey[0].x) == 20 and grey[0].marker.color == b.NO_RGB_GREY
+    main = traces(fig, "scatter3d")[-1]
+    assert len(main.x) == 180
+    channels = np.array([[int(v) for v in c[4:-1].split(",")] for _, c in main.marker.colorscale])
+    assert channels.max() >= 250  # brightest colour stretched to the top of the range
+    assert "rgb(0,0,0)" not in [c for _, c in main.marker.colorscale]
+    assert "×3.0" in main.hovertemplate  # the gain is stated on hover: 255 / 85
+    dark = b.cloud_figure(_cloud_mm(xyz, np.full((200, 3), 5)), "rgb")
+    channels = np.array([[int(v) for v in c[4:-1].split(",")] for _, c in dark.data[-1].marker.colorscale])
+    assert channels.max() <= 5 * b.MAX_RGB_GAIN  # a dark frame stays dark, noise is not amplified
+
+
+def test_browser_cloud_hides_stray_points_below_the_floor(dash_app):
+    b = page("threed_browser")
+    rng = np.random.default_rng(1)
+    xyz = np.column_stack([rng.uniform(-100, 100, 300), rng.uniform(-100, 100, 300), rng.uniform(-120, 150, 300)])
+    xyz[:3, 2] = [-250, -280, -301]  # stray points far below the floor between pots
+    cloud = _cloud_mm(xyz, np.full((300, 3), 90))
+    for colour in ("rgb", "height", "plant"):
+        fig = b.cloud_figure(cloud, colour)
+        points = traces(fig, "scatter3d")
+        assert sum(len(t.z) for t in points) == 297
+        assert min(min(t.z) for t in points) >= b.Z_FLOOR_MM
+        assert min(min(t.z) for t in points) <= -100  # the real floor (to about −120 mm) stays
+
+
 def test_browser_second_view_and_side(dash_app):
     b = page("threed_browser")
     fig, md, style, disabled = b.render_second(False, "2025-09-03", "W2", "J5", 15, "rgb", False)

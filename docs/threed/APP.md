@@ -65,6 +65,14 @@ pipeline rewrites is picked up on the next page load or callback, with no restar
   - "Second view"
 - **Main view:**
   - `Scatter3d` of the cached cloud in mm, marker size 2
+  - RGB colours get one brightness gain per cloud, which puts the 99th percentile of the sampled
+    colour values at 255. The gain is at most ×4, so night frames stay dark, and the hover shows
+    it. The camera is under-exposed: coloured points average about 48 of 255.
+  - points without an RGB sample (`rgb` = 0, a median of 8 % of a cloud) are drawn in `gray-500`,
+    not black
+  - points more than 150 mm below the reference plane are hidden. They are strays (the floor
+    between pots lies at about −60 to −120 mm), and with `aspectmode="data"` they stretched the
+    height axis.
   - `aspectmode="data"`, so x, y and height share one scale
   - the reference plane at z = 0 as a faint `Mesh3d`
   - the camera is kept while the date changes

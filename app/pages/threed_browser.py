@@ -28,6 +28,14 @@ TRAIT_SERIES = "height_p75"  # the trait plotted under the 3D view
 DEFAULT_DATE = schema.TREATMENT_WINDOW[1]  # last day of the drought: the clearest effect
 GRAPH_CONFIG = {"displaylogo": False, "scrollZoom": True}
 PLANT_GREEN, SOIL_BROWN, PLANE_GREY = "#2E9E44", "#A08C78", "#8A9BB0"
+NO_RGB_GREY = "#8a959c"  # design token gray-500: points the RGB camera did not see (rgb = 0)
+# The RGB camera is under-exposed (coloured points average about 48 of 255), so colours are
+# scaled by one gain per cloud that puts the 99th percentile at 255, as in the pipeline's
+# diagnostics. The cap keeps dark (night) frames dark instead of amplifying their noise.
+RGB_PERCENTILE, MAX_RGB_GAIN = 99, 4.0
+# Points more than 15 cm below the pot soil are strays (the floor between pots lies at about
+# −60 to −120 mm). With aspectmode="data" a handful of them stretched the height axis.
+Z_FLOOR_MM = -150
 COLOURS = [
     ("rgb", "RGB"),
     ("height", "Height"),
@@ -55,6 +63,16 @@ def rgb_colour_index(rgb: np.ndarray) -> tuple[np.ndarray, list, int]:
     return idx, [[i / (k - 1), c] for i, c in enumerate(colours)], k - 1
 
 
+def rgb_gain(rgb: np.ndarray) -> float:
+    """One brightness gain for a cloud: 255 over the 99th percentile of its sampled colour
+    values, between 1 and ``MAX_RGB_GAIN``. Points without an RGB sample (0, 0, 0) are ignored."""
+    seen = rgb[rgb.any(axis=1)]
+    if len(seen) == 0:
+        return 1.0
+    hi = float(np.percentile(seen, RGB_PERCENTILE))
+    return float(np.clip(255.0 / max(hi, 1.0), 1.0, MAX_RGB_GAIN))
+
+
 def cloud_figure(
     cloud: dict | None,
     colour: str = "rgb",
@@ -71,6 +89,7 @@ def cloud_figure(
     # whole mm as int16: half the bytes of float32, finer than the depth noise (6-12 mm)
     full = np.clip(np.round(cloud["xyz"] * 1000.0), -32768, 32767).astype(np.int16)
     keep = cloud["plant"] if plant_only else np.ones(len(full), bool)
+    keep = keep & (full[:, 2] >= Z_FLOOR_MM)
     xyz = full[keep]
     if len(xyz) == 0:
         return td.message_figure("This cloud has no plant points.", 560)
@@ -92,6 +111,7 @@ def cloud_figure(
         )
     )
     marker: dict = {"size": 2}
+    hover = "x %{x:.0f} mm, y %{y:.0f} mm<br>height %{z:.0f} mm<extra></extra>"
     temp = cloud.get("temp")
     if colour == "temp" and temp is not None:
         t = temp[keep]
@@ -133,8 +153,26 @@ def cloud_figure(
             colorscale=[[0, SOIL_BROWN], [0.5, SOIL_BROWN], [0.5, PLANT_GREEN], [1, PLANT_GREEN]],
         )
     else:
-        idx, scale, cmax = rgb_colour_index(cloud["rgb"][keep])
+        rgb = cloud["rgb"][keep]
+        seen = rgb.any(axis=1)
+        if (~seen).any():  # points without an RGB sample, drawn grey rather than black
+            fig.add_trace(
+                go.Scatter3d(
+                    x=xyz[~seen, 0],
+                    y=xyz[~seen, 1],
+                    z=xyz[~seen, 2],
+                    mode="markers",
+                    marker={"size": 2, "color": NO_RGB_GREY},
+                    hoverinfo="skip",
+                    name="no colour",
+                )
+            )
+        gain = rgb_gain(cloud["rgb"])
+        xyz = xyz[seen]
+        bright = np.clip(np.round(rgb[seen].astype(np.float32) * gain), 0, 255).astype(np.uint8)
+        idx, scale, cmax = rgb_colour_index(bright)
         marker.update(color=idx, colorscale=scale, cmin=0, cmax=cmax, showscale=False)
+        hover = hover.replace("<extra>", f"<br>colour ×{gain:.1f}<extra>")
     fig.add_trace(
         go.Scatter3d(
             x=xyz[:, 0],
@@ -143,7 +181,7 @@ def cloud_figure(
             mode="markers",
             marker=marker,
             name="points",
-            hovertemplate="x %{x:.0f} mm, y %{y:.0f} mm<br>height %{z:.0f} mm<extra></extra>",
+            hovertemplate=hover,
         )
     )
     fig.update_layout(
