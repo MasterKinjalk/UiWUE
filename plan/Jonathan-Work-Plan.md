@@ -4,7 +4,10 @@
 - **Challenge:** 1 — early stress detection, sensor benchmarking, severity and recovery
 - **Dataset:** ADA 2025 ([paper](https://arxiv.org/html/2610.23609v1), [code](https://github.com/pippowell/ada2025), data DOI `10.26249/FK2/DMDLTE`)
 - **Time box:** 2026-11-14 and 2026-11-15
-- **Status:** plan only. Nothing is built or downloaded yet. Build starts after the team master plan is agreed.
+- **Status (Sat 14 Nov):**
+  - **Benchmark track:** built, with results in `derived/detect/`.
+  - **Main track:** built in `src/uiwue/fusion/`, with a run guide in `docs/fusion.md`. It still has to be trained on the GPU machine.
+  - Both tracks are on the `jack` branch.
 
 ## 1. Goal
 
@@ -185,6 +188,35 @@ depth       -> ImageBind-D -> embedding ┘
 
 Augmentation: flips, 90° rotations, small crops, per-band brightness jitter.
 Early stopping uses an inner validation split of training plants.
+
+### Implementation (`src/uiwue/fusion/`)
+
+| Plan step | File |
+|---|---|
+| Inputs per sensor, Part B variants, augmentation | `inputs.py` |
+| DOFA, ImageBind, LoRA (rank 8, last 4 blocks) | `encoders.py` |
+| Stage 1 embeddings (`python -m uiwue.fusion.embed`) | `embed.py` |
+| Deficit, stage and turgor labels | `labels.py` |
+| Fusion head | `fusion.py` |
+| 5 plant-grouped folds, stages 1-3, evaluation (`python -m uiwue.fusion.train`) | `train.py` |
+
+Where the build differs from the text above:
+
+- **Normalisation.**
+  - Inputs use fixed physical scalings, not per-band statistics.
+  - The embeddings are standardised per feature on each fold's training plants. A per-sample
+    layer norm would erase offsets shared by all features.
+- **ImageBind encoder size.** ImageBind's thermal and depth encoders are ViT-S/16 (projected to
+  1024), not ViT-B/16.
+- **Part B variants are swapped in at evaluation, not retrained.** Low-resolution thermal and
+  the hyperspectral variants (spatial 112 and 64, 3 bands, 20 nm windows) measure what the
+  trained model loses with the cheaper input.
+- **Placebo.**
+  - A placebo model is trained to tell the beds apart on 24-29 Aug.
+  - The main model's own pre-cutoff score is reported too.
+  - A sensor that only carries a bed difference scores well after the cutoff for the wrong
+    reason (controls are never positive), so both checks are needed.
+- **Thermal in the LoRA stage** uses its centre frame, so runs stack into batches.
 
 ## 6. Part A: Early detection
 

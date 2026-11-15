@@ -6,11 +6,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-from _jack_common import header, load_result, not_available, register_page, run_alone, table
+from _jack_common import header, not_available, register_page, run_alone, table
 from dash import Input, Output, callback, dcc, html
 
 from uiwue.detect import figures
 from uiwue.detect.benchmark import cheapest_close
+from uiwue.detect.data import load_benchmark
 
 register_page(__name__, path="/sensor-comparison", name="Sensor comparison", order=40)
 
@@ -34,7 +35,7 @@ def _headline(bench, group):
 
 
 def layout(**_):
-    bench = load_result("benchmark")
+    bench = load_benchmark()
     head = [
         header(
             "Sensor comparison",
@@ -74,8 +75,9 @@ def layout(**_):
             dcc.Graph(id="sc-figure"),
             html.P(
                 "Each point is one sensor setup scored on plants it never saw "
-                "(leave-one-plant-out), from each plant's change against its own pre-cutoff "
-                "baseline. Setups run left to right from cheapest (webcam) to dearest "
+                "(leave-one-plant-out for the feature models; 5 folds grouped by plant for the fusion "
+                "model, which runs every sensor subset through one trained model), from each "
+                "plant's change against its own pre-cutoff baseline. Setups run left to right from cheapest (webcam) to dearest "
                 "(hyperspectral). Open markers separated the beds before any plant was stressed "
                 "and are excluded from the recommendation. Cost is a rank, not a price.",
                 style={"color": "#555", "fontSize": "0.9rem"},
@@ -93,7 +95,7 @@ def layout(**_):
     Input("sc-metric", "value"),
 )
 def _update(group, metric):
-    bench = load_result("benchmark")
+    bench = load_benchmark()
     fig = figures.cost_performance(bench, group, metric)
     b = bench[bench["group"] == group].sort_values(metric, ascending=False)
     tbl = table(

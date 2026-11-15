@@ -137,7 +137,14 @@ Yuming. `git pull --rebase` before every push.
 
 - **Keep:** your ground rules (adopted for the whole team, 6.7), the benchmark track (logistic regression and small boosted trees, leave-one-plant-out), onset by AUC with a confidence interval, sensor combinations and the cost ranking, recovery ratio, RGB features.
 - **Hand over:** thermal, hyperspectral and depth features come from their owners' tables (this answers your question 1); "repeat per hour" and "one run a day" go to Yuming's schedule analysis; the single-plant view goes into Sam's Plant profile, which shows your stress probability; Export goes to Kinjalk.
-- **Deferred to "next steps":** the fine-tuned fusion model (DOFA, ImageBind, LoRA), the resolution sweep and anything else that needs raw cubes or a GPU. Nothing is downloaded yet, and the plan needs about 90 GB, an overnight embedding run and Sunday-afternoon steps that fall after the deadline. A frozen-embedding experiment may start only if your must-haves are pushed by Sat 23:00.
+- **Main track, now in scope (changed Sat 14 Nov, no longer deferred):** the fusion model from your plan's section 5. It lives in `src/uiwue/fusion/`, with a run guide in `docs/fusion.md`:
+  - DOFA for RGB and hyperspectral, ImageBind for thermal and depth.
+  - One token per sensor carrying its change from the plant's own baseline, a 2-layer transformer, and heads for deficit, stage and turgor.
+  - Stage 1 uses frozen encoders; stages 2-3 add LoRA.
+  - It also covers the Part B hyperspectral resolution sweep, the 3 vs 300 band comparison and the 20 nm window masking.
+  - **Status:** the code and its tests are on the `jack` branch. Training runs on a separate GPU machine, because the build machine has no usable GPU. That machine downloads its own raw thermal, depth and hyperspectral data (about 1 GB per plant for hyperspectral).
+  - **Output:** results land in `derived/detect/fusion_*`. The Sensor comparison page shows them beside the feature models once pushed.
+  - **Fallback:** the benchmark track stays the bar the fusion model must clear. If fusion results are not pushed by the submission freeze, the pages show the benchmark alone, with no other change.
 - **New:** you own `uiwue.stats`, the one implementation of baseline, placebo, AUC and onset that every analysis calls (6.6), and you run it over every trait in the catalogue. That produces the Early warning page for all signals at once. You also own the ground-truth link for all traits and the Methods & limits page.
 - **Must-have:** `uiwue.stats` v1 by Sat 20:30; RGB traits (greenness, green cover, hue; frame 7, centre crop) as the "visible" baseline; placebo and onset for every available trait; sensor-combination table; Early warning and Sensor comparison pages.
 - **Cut first:** severity stages (the clip's daily cycle is only 3–4 raw units and absent in W3, so staging on midday recovery is fragile), then the wavelength analysis, then recovery, then Methods & limits (falls back to a short text page).
@@ -301,7 +308,7 @@ plotly 7.1.0, pandas 3.1.1, numpy 2.5.4, open3d 0.20.0, OpenCV 5.0.0;
 | 2 | No way to share derived tables | `.gitignore` blocks `data/` and every `*.parquet`, yet every page needs every module's table | allow `derived/**/*.parquet` and `derived/**/catalogue.csv`; add `cache/` to the ignore list; move table paths from `data/derived/` to `derived/` |
 | 3 | Versions are not pinned | only minimums are given, and they resolved to new major versions (pandas 3, OpenCV 5, dash 4) | commit `requirements.lock.txt` from the verified install; everyone installs from the lock |
 | 4 | Hyperspectral dependencies are missing | Sam's pipeline needs `hyperio`, `rasterio`, `spectral` and `torch` (the authors' mask model); none are listed | add `requirements-hsi.txt` for the spectral owner only. `hyperio` declares support for Python 3.10–3.12. **Sam's first check:** that `rasterio` opens a `.jp2` cube in this environment. If not, extract in the authors' conda environment; the app only needs the table. |
-| 5 | Deep-learning dependencies are missing | Jack's main track needs `torch`, TorchGeo, ImageBind and a GPU | do not add them. The track is deferred (section 4). If the stretch runs, it uses its own `requirements-ml.txt`, and the ImageBind licence (non-commercial, per Jack's plan) must be confirmed and stated. |
+| 5 | Deep-learning dependencies and a GPU | Jack's main track needs `torch`, TorchGeo, ImageBind, `hyperio` and a GPU | kept out of `requirements.txt`: they are in `requirements-ml.txt` (shared with Kinjalk's ML extras). ImageBind is installed with `--no-deps` because it pins old torch. Training runs on a GPU machine and only the small `derived/detect/fusion_*` tables are pushed. Tests skip without torch. The ImageBind weights are CC BY-NC 4.0 (research use), stated on Methods & limits. |
 | 6 | The `hour` convention conflicts with the contract | the stack doc says keys match "the dataset folder names" | change to the scheduled slot (6.1) and add the column-prefix and catalogue rules |
 
 Left alone on purpose: `pyvista`, `jupyterlab`, `kaleido` and `matplotlib` are
@@ -341,7 +348,7 @@ gap. Nobody blocks on a teammate.
 | Which air sensor for W2 | Sam, Yuming | the W1-end sensor for every bed (6.8) |
 | Team-wide splits | Sam | 6.7; no `splits.yaml` needed beyond the fixed control lists |
 | `hyperio` and `torch` in requirements | Sam | in `requirements-hsi.txt` (section 8) |
-| GPU; ImageBind licence | Jack | not needed for the Sunday deliverable (section 8) |
+| GPU; ImageBind licence | Jack | training on a separate GPU machine (docs/fusion.md); ImageBind is CC BY-NC 4.0, research use only, stated in the app |
 | App shell, integration | all | Yuming; Kinjalk is deputy |
 | Slides, presenter | Kinjalk, Sam, Jack | the brief asks for a form and a video, not slides (section 12) |
 | Who owns challenge 4 | Yuming | Yuming; Sam's rules and definitions are built in (section 5) |

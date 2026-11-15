@@ -117,8 +117,9 @@ LIMITS = [
         "centre crop and an excess-green mask, not a per-plant segmentation."
     ),
     (
-        "The fine-tuned image-encoder track (DOFA, ImageBind) in the original plan is deferred: it "
-        "needs raw cubes and a GPU that the deadline did not allow."
+        "The fusion model (DOFA for RGB and hyperspectral, ImageBind for thermal and depth) trains on a "
+        "GPU. Its results appear beside the feature models once its tables are in derived/detect/. "
+        "DOFA was pretrained on satellite images and ImageBind's weights are for non-commercial use only."
     ),
 ]
 

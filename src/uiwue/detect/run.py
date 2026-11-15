@@ -37,8 +37,33 @@ SCORES_CATALOGUE = pd.DataFrame(
             "Stress probability",
             "0-1",
             1,
-            ("Out-of-fold P(deficit) from a leave-one-plant-out logistic model on all sensors' baseline-delta traits."),
-        )
+            "Out-of-fold P(deficit) from a leave-one-plant-out logistic model on all sensors' baseline-delta traits.",
+        ),
+        # Written by the fusion model (python -m uiwue.fusion.train) to fusion_scores_runs.
+        (
+            "detect_fusion_prob",
+            "Stress probability (fusion model)",
+            "0-1",
+            1,
+            (
+                "Out-of-fold P(deficit) from the fusion model on DOFA / ImageBind embeddings of all sensors "
+                "present; 5 folds grouped by plant."
+            ),
+        ),
+        (
+            "detect_fusion_stage",
+            "Severity stage (fusion model)",
+            "stage",
+            1,
+            "Expected stage 0-3 from the ordinal head (S0 healthy to S3 severe), out of fold.",
+        ),
+        (
+            "detect_fusion_turgor",
+            "Turgor deviation (fusion model)",
+            "raw units",
+            1,
+            "Predicted leaf-clip shift from the turgor head, out of fold.",
+        ),
     ],
     columns=["column", "label", "unit", "direction", "description"],
 )

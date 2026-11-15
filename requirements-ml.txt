@@ -11,3 +11,9 @@ timm>=1.0
 einops>=0.8
 tensorboard>=2.17
 pycocotools>=2.0.8
+# Challenge 1 fusion model (uiwue.fusion, docs/fusion.md)
+torchgeo>=0.7            # DOFA ViT-B/16 for RGB and hyperspectral
+hyperio @ git+https://github.com/unklar/hyperio   # reads the Pika L .jp2 cubes (as the ADA code)
+iopath>=0.1.10           # ImageBind imports these; install ImageBind itself without its old pins:
+ftfy>=6.1                #   pip install --no-deps git+https://github.com/facebookresearch/ImageBind
+regex>=2024.0

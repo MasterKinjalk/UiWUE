@@ -77,6 +77,12 @@ def size_baseline_column(df: pd.DataFrame) -> str | None:
     return None
 
 
+def load_benchmark() -> pd.DataFrame | None:
+    """Both tracks' setups in one table: the feature benchmark and, once trained, the fusion model."""
+    parts = [t for t in (load_result("benchmark"), load_result("fusion_benchmark")) if t is not None and not t.empty]
+    return pd.concat(parts, ignore_index=True) if parts else None
+
+
 def load_result(name: str) -> pd.DataFrame | None:
     """A table from derived/detect/, or None if it does not exist yet."""
     f = derived_dir() / "detect" / f"{name}.parquet"

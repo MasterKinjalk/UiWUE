@@ -20,7 +20,13 @@ SENSOR_COLOURS = {
     "Depth": "#2166ac",
     "size": "#636363",
 }
-MODEL_SYMBOL = {"logistic": "circle", "boosted": "diamond"}
+MODEL_SYMBOL = {
+    "logistic": "circle",
+    "boosted": "diamond",
+    "fusion": "star",  # main track (uiwue.fusion): frozen encoders
+    "fusion+lora_hsi": "hexagram",
+    "fusion+lora_thermal": "star-diamond",
+}
 TEMPLATE = "plotly_white"
 STRESS_END_DAY = 12  # rewatered 15 Sep 18:35
 
