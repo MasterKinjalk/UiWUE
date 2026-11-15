@@ -244,7 +244,13 @@ def size_baseline(traits: pd.DataFrame | None, pids: set[str], groups=GROUPS, n_
 # tables
 # --------------------------------------------------------------------------- #
 def external_tables(
-    rs: RunSet, cv: dict, model_name: str, n_boot: int, traits: pd.DataFrame | None = None, groups=GROUPS
+    rs: RunSet,
+    cv: dict,
+    model_name: str,
+    n_boot: int,
+    traits: pd.DataFrame | None = None,
+    groups=GROUPS,
+    subsets=("all", "no_clip", "with_size"),
 ) -> dict[str, pd.DataFrame]:
     """train.results() on the external plants, for `all`, `no_clip` and `with_size` plants."""
     pid = rs.keys["pid"].to_numpy()
@@ -253,6 +259,10 @@ def external_tables(
     sets = {"all": np.ones(len(pid), bool), "no_clip": ~np.isin(pid, list(clips))}
     if with_size:
         sets["with_size"] = np.isin(pid, list(with_size))
+    sets = {k: v for k, v in sets.items() if k in subsets}
+    if "with_size" not in subsets:
+        size_rows = []
+    scores = None
     bench, curves, hsi = [], [], []
     for plants, mask in sets.items():
         if not mask.any():
@@ -288,6 +298,36 @@ def external_tables(
     )
 
 
+def oof_tables(
+    run_dir: Path, model_name: str, n_boot: int = 2000, traits: pd.DataFrame | None = None, groups=GROUPS
+) -> dict[str, pd.DataFrame]:
+    """The cross-validation's out-of-fold scores (train.save_oof), scored for plant subsets of
+    the 39 training plants: `no_clip` (the clip shortcut is out of reach) and `with_size`
+    (beside the size-only baseline on the same plants). Written as fusion_cv_subsets_*."""
+    from uiwue.fusion.labels import run_labels
+
+    run_dir = Path(run_dir)
+    prob = pd.read_parquet(run_dir / "oof_prob.parquet")
+    plac = pd.read_parquet(run_dir / "oof_placebo.parquet")
+    ck = torch.load(run_dir / "fold0.pt", map_location="cpu", weights_only=True)
+    keys = core.normalize_keys(prob[core.KEYS])
+    keys = keys.merge(run_labels(keys), on=core.KEYS, how="left", validate="one_to_one")
+    keys["pid"] = keys["bed"] + "_" + keys["plant"]
+    names = [c for c in prob.columns if c not in (*core.KEYS, "pid", "days_since_cutoff")]
+    setups = {n: ({"hsi": n[4:]} if n.startswith("hsi@") else {p: "full" for p in n.split("+")}) for n in names}
+    rs = RunSet(keys, list(ck["sensors"]), dict(ck["dims"]), {}, {}, {})
+    nan = np.full(len(keys), np.nan)
+    cv = dict(
+        prob={n: prob[n].to_numpy(float) for n in names}, placebo={n: plac[n].to_numpy(float) for n in names},
+        stage=nan, turgor=nan, setups=setups,
+    )  # fmt: skip
+    t = external_tables(rs, cv, model_name, n_boot, traits, groups, subsets=("no_clip", "with_size"))
+    return {
+        "fusion_cv_subsets_benchmark": t["fusion_external_benchmark"],
+        "fusion_cv_subsets_auc_by_day": t["fusion_external_auc_by_day"],
+    }
+
+
 def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None = None) -> Path:
     """As train.write: this model's rows replace its old ones, other models' rows are kept; the
     run-level scores come from stage 1 (model "fusion")."""
@@ -298,7 +338,7 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
         if df is None or df.empty:
             continue
         if name == "fusion_external_scores_runs":
-            if model_name != "fusion":
+            if model_name != "fusion" or "detect_fusion_ext_prob" not in df:
                 continue
             out_df = df.copy()
             out_df["date"] = pd.to_datetime(out_df["date"]).dt.date
@@ -365,10 +405,21 @@ def main(argv=None) -> None:
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--oof", action="store_true", help="instead: score the CV's out-of-fold scores for no-clip and size plants"
+    )
     a = ap.parse_args(argv)
 
     t0 = time.time()
     traits = pd.read_parquet(a.size_traits) if a.size_traits.exists() else None
+    if a.oof:
+        tables = oof_tables(a.runs_dir / a.model, a.model, a.n_boot, traits)
+        out = write(tables, a.model, a.out)
+        b = tables["fusion_cv_subsets_benchmark"]
+        cols = ["plants", "n_plants", "sensors", "model", "early_auc", "early_ci_low", "onset_day", "placebo_auc"]
+        print(b[b["group"] == "all"][cols].to_string(index=False))
+        print(f"{a.model}: out-of-fold subsets scored in {time.time() - t0:.0f} s -> {out}")
+        return
     tables, info = run(
         a.cache, a.runs_dir / a.model, a.model, a.device, a.n_boot, a.data_dir, traits, workers=a.workers
     )

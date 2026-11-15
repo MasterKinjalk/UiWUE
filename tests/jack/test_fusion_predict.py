@@ -52,7 +52,8 @@ def test_fold_checkpoints_score_external_plants(tmp_path, fake_derived, monkeypa
     rs = train.assemble(_fake_cache(tmp_path / "cache", train_keys), labels=_labels(train_keys))
     cfg = train.Config(folds=3, epochs=30, patience=5, batch=128, n_boot=50, d_model=32, layers=1, heads=2)
     ckpt = tmp_path / "runs" / "fusion"
-    train.cross_validate(rs, cfg, "cpu", ckpt_dir=ckpt)
+    cv = train.cross_validate(rs, cfg, "cpu", ckpt_dir=ckpt)
+    train.save_oof(rs, cv, ckpt)
     assert sorted(p.name for p in ckpt.glob("*.pt")) == [
         *(f"fold{k}.pt" for k in range(3)),
         *(f"placebo_fold{k}.pt" for k in range(3)),
@@ -84,6 +85,12 @@ def test_fold_checkpoints_score_external_plants(tmp_path, fake_derived, monkeypa
     assert set(size["plants"]) == {"with_size"} and (size["full_auc"] > 0.9).all()  # growth stops on day 4
     cv_cols = {"early_auc", "early_ci_low", "full_auc", "onset_day", "placebo_auc", "placebo_auc_main", "bed_effect"}
     assert cv_cols | {"setup", "cost_rank", "is_size_baseline", "n_deficit", "n_control"} <= set(b.columns)
+
+    # the CV's own out-of-fold scores, for the no-clip training plants: same numbers as the CV table
+    sub = predict.oof_tables(ckpt, "fusion", n_boot=50)["fusion_cv_subsets_benchmark"]
+    cvb = train.results(rs, cv, "fusion", 50)["fusion_benchmark"].set_index(["sensors", "group"])["early_auc"]
+    noclip = sub[sub["plants"] == "no_clip"].set_index(["sensors", "group"])["early_auc"]
+    assert len(noclip) == len(cvb) and np.allclose(noclip, cvb.loc[noclip.index])  # no clip plant among A-F
 
     out = tmp_path / "derived" / "detect"
     predict.write(tables, "fusion", out)
