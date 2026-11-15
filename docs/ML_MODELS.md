@@ -8,7 +8,7 @@ the plan. Neither needs hand labels on ADA data.
 |---|---|---|---|---|---|
 | Prompt Depth Anything ViT-L | [`depth-anything/prompt-depth-anything-vitl-hf`](https://hf.co/depth-anything/prompt-depth-anything-vitl-hf) | 340M | Apache-2.0 | ADA ToF + RGB, self-supervised | ToF is 224 x 171 with 6-12 mm noise, so inclination and leaf-area traits may fail E1 |
 | Prompt Depth Anything ViT-S | [`depth-anything/prompt-depth-anything-vits-hf`](https://hf.co/depth-anything/prompt-depth-anything-vits-hf) | 25M | Apache-2.0 | same | same, fast variant for local GPUs |
-| Mask2Former Swin-L (COCO instance) | [`facebook/mask2former-swin-large-coco-instance`](https://hf.co/facebook/mask2former-swin-large-coco-instance) | 216M | see model card | [PhenoBench](https://www.phenobench.org) sugar beet plant + leaf instances | ExG fails on dark 06 h frames; neighbours merge with the centre plant; per-leaf traits |
+| Mask2Former Swin-L (COCO instance) | [`facebook/mask2former-swin-large-coco-instance`](https://hf.co/facebook/mask2former-swin-large-coco-instance) | 216M | see model card | [PhenoBench](https://www.phenobench.org) sugar beet plant + leaf instances | neighbours merge with the centre plant; per-leaf traits (it does not help on dark 06 h frames, section 2) |
 | SAM 3 (optional, gated) | [`facebook/sam3`](https://hf.co/facebook/sam3) | 848M | SAM licence | not set up | text-prompted zero-shot "sugar beet leaf" masks, for comparison |
 
 Weights are in `models/` (not in git). Download them with:
@@ -101,12 +101,32 @@ classes: `sugar_beet_plant` and `sugar_beet_leaf`. Weeds are dropped. The traini
 augmentation from 0.5x to 2x, because ADA RGB at 0.6 m is about 0.43 mm per pixel. Inference
 on ADA frames runs at 0.5x.
 
-Use in the 3D pipeline: segment the undistorted RGB frame, take the plant instance nearest the
-centre (`Segmentation.centre_plant()`), and keep only the ToF points that project inside it.
-This replaces ExG + DBSCAN isolation when neighbours touch, and it also works on dark frames. The
-leaf masks make per-leaf traits possible (plan section 11).
+Use in the 3D pipeline (`run --plant-model`, `uiwue.threed.plantmask`, details and the
+comparison in [`docs/threed/PIPELINE.md`](threed/PIPELINE.md), section "Learned plant mask"):
 
-Status, 2026-11-14:
+- The raw, distorted RGB frame goes into the model at 0.5x (`seg.forward(rgb, 0.5,
+  undistort=False)`). The plant instances are cached at half resolution, and every ToF point
+  with colour reads them at its own RGB pixel (`Cloud.rgb_uv`).
+- The centre plant is the instance with the most points within 3 cm of the plant axis, plus any
+  other instance with at least half of its points inside the plant cylinder (fragments of a
+  split plant). Not `Segmentation.centre_plant()`: its image-centre rule picks a neighbour in
+  frames other than 7.
+- **It does not work on dark frames.** At 06 h (mean brightness about 4.7; 60 % of the 06 h runs
+  are `qc_dark`, all of them in 2025-09-01..09-14) it finds no plant instance in 97.6 % of the
+  dark frames (W1_J5 2025-09-08 06 h: 0 instances in all 3 used frames). Dark frames at 09 h and
+  18 h-19 h (brightness 8-10) do get instances, but they are not checked. The pipeline keeps the
+  height rule on every dark frame and wherever no instance reaches the centre, so the method
+  changes across the day: in 08-24..09-14 the model is used in 1 % of the 06 h frames, 75 % at
+  09 h, 95 % at 12 h, 92 % at 15 h and 65 % at 18 h.
+- The leaf masks make per-leaf traits possible (plan section 11); they are not used yet.
+
+`instance_masks` in `infer.py` replaces `post_process_instance_segmentation`: the same masks and
+scores (a test checks this against transformers), 8 ms instead of 1.8 s per frame, because only
+(query, class) pairs that can pass the score threshold are upsampled. The model itself takes about
+0.1 s per frame on the local RTX 5070 Ti in fp32 (fp16/bf16 autocast was slower, and bf16 changed
+some masks).
+
+Status, 2026-11-15:
 
 - v1, stopped at step 1000 of 8,750. On PhenoBench val: plant AP 0.46 (AP50 0.80), leaf AP 0.44
   (AP50 0.78). The checkpoint is in `runs/leafseg-m2f-step1000/` on the workstation.
@@ -117,11 +137,33 @@ Status, 2026-11-14:
     PhenoBench has no wilted or dark images.
 - v2 adds colour augmentation towards ADA conditions (`photometric()` in `leafseg/data.py`):
   gamma 0.6-2.2 to darken, hue shifted towards yellow and saturation lowered on green pixels
-  only, and light blur. It also centres 80 % of crops on a plant pixel. v2 is queued on the GPU server
-  after PromptDA.
-- Before trusting the masks on stressed plants, check `python -m uiwue.ml.leafseg.infer ...`
-  overlays on dates after 2025-09-08. If wilted leaves are still missed, try SAM 3 text prompts
-  or pseudo-labels on ADA frames.
+  only, and light blur. It also centres 80 % of crops on a plant pixel.
+- v2 checkpoint: `runs/leafseg-m2f/best`, step 8,000 of about 8,800 (50 epochs, 768 px crops,
+  batch 8, 200 queries). PhenoBench val: plant AP 0.54 (AP50 0.90), leaf AP 0.49 (AP50 0.81).
+- How v2 does on ADA (frame 7 at 15 h, IoU of its points with the ExG-isolated plant, points with
+  colour inside the plant cylinder):
+
+  | Run | Case | IoU | What differs |
+  |---|---|---|---|
+  | W1_J5 2025-08-20 | seedling | 0.89 | |
+  | W1_J5 2025-09-03 | closed canopy | 0.71 | 973 points only in ExG: a neighbour's leaves over the pot |
+  | W2_J5 2025-09-12 | wilted | 0.57 | 406 points only in ExG: thin petioles and wilting leaf fringes of the plant itself, and some neighbour leaves |
+  | W1_J5 2025-09-08 06 h | dark, brightness 4.4 | – | no plant instance |
+
+  Over 28 plants, 09-18 h, 09-01..09-14 (after the voxel vote and DBSCAN,
+  `scripts/plant_mask_agreement.py`), the median IoU is 0.75 / 0.77 for W1 before / after 09-08
+  and 0.74 / 0.71 for W2. The wilted W2 frames have the lowest IoU (p25 0.55) and four times as
+  many frames without an instance at the centre (4.0 % against 1 %).
+
+- Failure modes seen on ADA, in order of how often they matter:
+  - dark frames (above);
+  - thin structures: the mask logits are at 1/8 of the frame, so petioles and the thin fringes
+    of wilting leaves fall out of the mask. This hits the wilted deficit bed most and steepens
+    the area-type treatment slopes (PIPELINE.md, "Learned plant mask");
+  - large W1 plants from about 2025-09-04 split into several instances (W1_J5 2025-09-04: the
+    instance at the centre is only the heart of the plant). The fragment merge recovers part of
+    this;
+  - the centre plant and a neighbour merged into one instance (W2_J5 2025-09-06).
 
 ## Running
 

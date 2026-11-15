@@ -15,8 +15,11 @@ def test_vegetation_rules():
     dark = segment.vegetation_mask(h, exg, has, dark=True)
     assert dark.tolist() == [False, False, False, True, True]
     assert segment.vegetation_mask(h).tolist() == dark.tolist()
-    learned = segment.vegetation_mask(h, exg, has, learned=np.array([1, 1, 0, 0, 1], bool))
-    assert learned.tolist() == [False, True, False, False, True]
+    lm = np.array([1, 1, 0, 0, 1], bool)
+    learned = segment.vegetation_mask(h, exg, has, learned=lm)
+    # point 3 has no colour, so the mask cannot be read there: height rule (20 mm > 15 mm)
+    assert learned.tolist() == [False, True, False, True, True]
+    assert segment.vegetation_mask(h, learned=lm).tolist() == [False, True, False, False, True]
 
 
 def test_is_dark():
