@@ -108,11 +108,30 @@ placebo-checked folds (plan section 5).
     jitter. Other sensors use their cached embeddings.
   - After each fold, every run is re-embedded with that fold's tuned encoder. The fold's
     held-out plants were never used to tune it.
-  - Thermal uses its centre frame in these stages so that runs stack into batches.
-- **Not verified here.**
-  - The code was written and tested on CPU with tiny random encoders
-    (`tests/jack/test_fusion.py`).
-  - The real DOFA weights load (TorchGeo), but ImageBind's real checkpoint has not been
-    loaded on this machine. Check `ImageBindEncoder` on the first run.
-  - The input scalings for thermal (27.5 ± 8.75 °C) and disparity are assumptions; fine-tuning
-    adapts to them.
+  - Thermal uses its centre frame (frame 2) in every stage; see section 6.
+- **Verified on real data and weights** on 2026-11-14 (section 6). The tests still use tiny
+  random encoders (`tests/jack/test_fusion.py`).
+
+## 6. Verification (2026-11-14)
+
+Checked on the GPU machine with the real DOFA and ImageBind weights and the raw ADA files.
+One line per fix (code in `src/uiwue/fusion/`, tests in `tests/jack/test_fusion.py`):
+
+- **ImageBind import.** `imagebind/__init__.py` imports `imagebind.data`, which needs `pkg_resources` (gone from setuptools >= 81), `torchaudio` and `pytorchvideo`; `encoders._imagebind_model_module` now imports only the model code, which needs none of them.
+- **ImageBind checkpoint.** It is loaded from `.checkpoints/imagebind_huge.pth` in the repo (or `UIWUE_IMAGEBIND_CKPT`) with `strict=True`, not from the working directory, so a run started elsewhere does not download 4.8 GB again.
+- **DOFA under bf16.** The wavelength-to-kernel generator ran in bf16 under autocast (30 % median error per generated band kernel); `DOFAEncoder.forward` now runs the patch embedding in float32 and the blocks in bf16.
+- **Thermal frames.** The 5 thermal frames are an 8 cm sweep: the plant sits at 26-80 % of the image width from frame 0 to 4 (ADA calibration), so only the centre frame 2 is embedded in every stage, as RGB and depth use their centre frame 7.
+- **Disparity scaling.** `(1 / depth - 2.5) / 0.75` replaces `(1 / depth - 1.6) / 0.6`: soil (0.45-0.52 m) maps to about -0.7 and the tallest canopy (0.19 m) to +3.6, inside the range of ImageBind's standardised SUN RGB-D disparity; the old constants put every pixel at +0.5 to +7.
+- **Hyperspectral hours.** Only the 9, 12 and 15 h cubes are used (Master Plan 6.5); the 06 h cubes are dark and flat-field to values up to 1e8.
+- **Hyperspectral guards.** A dark or saturated cube (p99 > 6) fails its run instead of being embedded, reflectance is clipped to 0-2 before scaling, and a missing dark reference raises instead of silently skipping the flat-field correction; the default path now also looks in `external/ada2025`.
+- **Hyperspectral memory.** The `rgb3` and `mask<nm>` variants are cut from the full input in `embed.py` (band selection commutes with the resize), and HSI loader batches hold a quarter of `--batch` runs; with `--hsi-windows` the loader previously held about 2 GB per run.
+- **Cutoff day.** The deficit runs at 12, 15 and 18 h on 3 Sep are still positive and scored as day 0, but are left out of training: 1-7 h after the last watering only bed cues could separate them.
+- **Capacity.** `embed.py` writes the peak GPU memory per sensor into the manifest.
+- **LoRA on the GPU.** `LoRALinear` now creates its adapters on the base layer's device and dtype; `LoRAStage` adds LoRA after moving the encoder to the GPU, so stages 2-3 failed there with "mat2 is on cpu" (the CPU tests could not see it).
+- **LoRA augmentation.** `_LiveImages` draws flips, crops and the baseline run from a generator per (epoch, item); the one generator made in `__init__` was copied into every DataLoader worker, so workers repeated the same augmentations.
+- **Requirements.** `requirements-ml.txt` says which packages the ImageBind model code needs; `setuptools<80`, `torchaudio` and `pytorchvideo` are not needed.
+
+Checked and found correct: the hyperspectral reader equals ADA's `HSI.read(..., dark_reference=...)`
+exactly (no Savitzky-Golay smoothing here), wavelengths go to DOFA in µm from `hsi_000.json`,
+depth and thermal are rotated by 180° as in ADA's loaders, the RGB centre crop holds the target
+plant, folds and early stopping are grouped by plant, and scoring reuses `uiwue.stats`.

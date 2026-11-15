@@ -239,3 +239,120 @@ def test_lora_stage_end_to_end(tmp_path, monkeypatch):
     cv = train.cross_validate_lora(rs, stage, cfg, "cpu", ckpt_dir=tmp_path / "ckpt")
     assert np.isfinite(cv["prob"]["rgb"]).mean() > 0.9
     assert (tmp_path / "ckpt" / "fold1.pt").exists()
+
+
+# --------------------------------------------------------------------------- #
+# verification 2026-11-14 (docs/fusion.md): real-data fixes
+# --------------------------------------------------------------------------- #
+def test_dofa_patch_embedding_runs_in_fp32_under_autocast():
+    """Wavelength -> kernel generation must not run in bf16 (it garbles the sine code of ~1000 nm)."""
+    enc = tiny_dofa("hsi").eval()
+    wl = tuple(np.linspace(0.384, 1.025, 20))
+    x = torch.randn(2, 20, 224, 224)
+    seen = []
+    enc.model.patch_embed.register_forward_hook(lambda m, i, o: seen.append(o[0].dtype))
+    with torch.no_grad():
+        ref = enc.model.forward_features(x, list(wl))  # TorchGeo's own forward, fp32
+        assert torch.allclose(enc(x, wl), ref, atol=1e-5)  # the re-implementation is the same model
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            enc(x, wl)
+    assert seen[-1] == torch.float32
+
+
+def test_imagebind_model_module_imports_without_package_init():
+    """imagebind/__init__ needs pkg_resources, torchaudio and pytorchvideo; the model code does not."""
+    import importlib.util
+
+    if importlib.util.find_spec("imagebind") is None:
+        pytest.skip("ImageBind not installed")
+    from uiwue.fusion.encoders import _imagebind_model_module
+
+    assert hasattr(_imagebind_model_module(), "imagebind_huge")
+
+
+def test_thermal_uses_the_centre_frame_upright(tmp_path):
+    import tifffile
+
+    for k in range(5):  # frame k is 20 + k degC, with a hot pixel stored at the top-left
+        img = np.full((48, 64), 20.0 + k, np.float32)
+        img[0, 0] = 60.0
+        tifffile.imwrite(tmp_path / f"thermal_{k:03d}.tif", img)
+    frames = inputs.read_thermal(str(tmp_path), inputs.FRAMES["thermal"])
+    assert len(frames) == 1 and frames[0][-1, -1] == 60.0  # stored rotated by 180 degrees
+    s = inputs.load_thermal(str(tmp_path))
+    assert s.frames.shape == (1, 1, 224, 224)
+    assert np.isclose(np.median(s.frames), (22.0 - inputs.THERMAL_SCALE[0]) / inputs.THERMAL_SCALE[1])
+
+
+def test_depth_disparity_scaling(tmp_path):
+    import tifffile
+
+    d = np.full((171, 224), 0.25, np.float32)  # canopy at 0.25 m: disparity 4 / m
+    d[:, :100] = 0.5  # soil at 0.5 m: disparity 2 / m
+    d[80:90, 150:160] = 0  # invalid
+    with tifffile.TiffWriter(tmp_path / "depth_007.tif") as w:
+        w.write(np.rot90(d, 2))  # ADA stores depth rotated by 180 degrees
+    x = inputs.load_depth(str(tmp_path)).frames[0, 0]
+    lo, sd = inputs.DISPARITY_SCALE
+    assert np.isclose(np.percentile(x, 5), (2.0 - lo) / sd, atol=1e-3)
+    assert np.isclose(np.percentile(x, 95), (4.0 - lo) / sd, atol=1e-3)
+    assert x[:, :50].mean() < 0 < x[:, -40:].mean()  # orientation kept: soil on the left
+    assert -1.5 < (1 / 0.52 - lo) / sd < 0 < (1 / 0.19 - lo) / sd < 4  # rig range inside ImageBind's
+
+
+def test_hsi_runs_only_at_9_12_15_and_dark_reference_is_required(tmp_path, monkeypatch):
+    for h in ("06", "09", "12", "15", "18"):
+        d = tmp_path / "hsi" / "W1_A2" / "2025_09_05" / h
+        d.mkdir(parents=True)
+        (d / "hsi_000.jp2").write_bytes(b"")
+    runs = inputs.list_runs(tmp_path, "hsi")
+    assert sorted(runs["hour"]) == [9, 12, 15]
+    with pytest.raises(FileNotFoundError):
+        inputs.read_hsi(runs["path"].iloc[0], dark_reference=tmp_path / "missing.npy")
+
+
+def test_hsi_spectral_variants_are_cut_from_the_full_input():
+    from uiwue.fusion.embed import _variant
+
+    wl = np.linspace(383.8, 1025.2, 300).astype(np.float32)
+    cube = np.random.default_rng(0).uniform(-0.2, 2.5, (256, 256, 300)).astype(np.float32)
+    full = inputs.load_hsi("", "full", cube=(cube, wl))
+    assert full.frames.min() >= (inputs.REFLECTANCE_RANGE[0] - inputs.REFLECTANCE_SCALE[0]) / inputs.REFLECTANCE_SCALE[1]
+    d = {"full": (torch.from_numpy(full.frames), full.wavelengths)}
+    for v in ("rgb3", "mask664", "mask1004"):
+        direct = inputs.load_hsi("", v, cube=(cube, wl))
+        x, w = _variant(d, v)
+        assert w == direct.wavelengths and np.allclose(x.numpy(), direct.frames, atol=1e-6)
+
+
+def test_cutoff_day_afternoon_is_positive_but_not_trained_on():
+    keys = pd.DataFrame(
+        [dict(bed="W2", plant="J5", date="2025-09-03", hour=h) for h in (6, 9, 12, 15, 18)]
+        + [dict(bed="W2", plant="J5", date="2025-09-04", hour=6), dict(bed="W1", plant="A2", date="2025-09-03", hour=12)]
+    )
+    lab = run_labels(keys, turgor=pd.DataFrame(), plants=pd.DataFrame()).set_index(["bed", "date", "hour"])
+    day0 = lab.loc["W2"].loc[pd.Timestamp("2025-09-03")]
+    assert day0["y_deficit"].tolist() == [0, 0, 1, 1, 1]  # 06 and 09 h are before the 11:00 cutoff
+    assert day0["train"].tolist() == [True, True, False, False, False]
+    assert lab.loc[("W2", pd.Timestamp("2025-09-04"), 6), "train"] and lab.loc[("W1", pd.Timestamp("2025-09-03"), 12), "train"]
+
+
+def test_lora_adapters_follow_the_encoder_device_and_dtype():
+    """LoRAStage adds LoRA after moving the encoder to the GPU; adapters must land there too."""
+    enc = tiny_dofa().to(torch.float64)
+    add_lora(enc, last_n=1, rank=2)
+    assert {p.dtype for p in lora_parameters(enc)} == {torch.float64}
+    enc = tiny_dofa().to("meta")
+    add_lora(enc, last_n=1, rank=2)
+    assert {p.device.type for p in lora_parameters(enc)} == {"meta"}
+
+
+def test_live_images_augment_per_item_not_per_worker(monkeypatch):
+    from uiwue.fusion import train
+
+    img = torch.arange(3 * 32 * 32, dtype=torch.float32).reshape(1, 3, 32, 32).numpy()
+    monkeypatch.setattr(train.inputs, "load", lambda sensor, path: inputs.Sample(img.copy(), inputs.RGB_WAVELENGTHS))
+    ds = train._LiveImages(["a"] * 6, [["b"]] * 6, "rgb", aug=True, seed=3)
+    xs = [ds[i][1] for i in range(6)]
+    assert torch.equal(ds[2][1], xs[2])  # reproducible per item
+    assert len({tuple(x.flatten()[:50].tolist()) for x in xs}) > 1  # items differ

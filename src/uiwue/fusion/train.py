@@ -477,24 +477,26 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
 # --------------------------------------------------------------------------- #
 class _LiveImages(torch.utils.data.Dataset):
     def __init__(self, paths: list[str | None], base_paths: list[list[str]], sensor: str, aug: bool, seed: int):
-        self.paths, self.base_paths, self.sensor, self.aug = paths, base_paths, sensor, aug
-        self.rng = np.random.default_rng(seed)
+        self.paths, self.base_paths, self.sensor, self.aug, self.seed = paths, base_paths, sensor, aug, seed
 
     def __len__(self):
         return len(self.paths)
 
-    def _load(self, path):
+    def _load(self, path, rng):
         if self.sensor == "thermal":  # one centre frame so runs stack
             s = inputs.load_thermal(path, frames=(2,))
         else:
             s = inputs.load(self.sensor, path)
         x = torch.from_numpy(s.frames)
-        return (inputs.augment(x, self.rng) if self.aug else x), s.wavelengths
+        return (inputs.augment(x, rng) if self.aug else x), s.wavelengths
 
     def __getitem__(self, i):
+        # One generator per (epoch seed, item): a generator made in __init__ is copied into every
+        # DataLoader worker, so all workers drew the same flips, crops and baseline runs.
+        rng = np.random.default_rng([self.seed, i])
         try:
-            x, wl = self._load(self.paths[i])
-            xb, _ = self._load(self.base_paths[i][int(self.rng.integers(len(self.base_paths[i])))])
+            x, wl = self._load(self.paths[i], rng)
+            xb, _ = self._load(self.base_paths[i][int(rng.integers(len(self.base_paths[i])))], rng)
             return i, x, xb, wl
         except Exception:  # noqa: BLE001  (an unreadable run is dropped from the batch)
             return i, None, None, None
