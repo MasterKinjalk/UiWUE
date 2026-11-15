@@ -235,7 +235,9 @@ def size_baseline(traits: pd.DataFrame | None, pids: set[str], groups=GROUPS, n_
         )  # fmt: skip
         name = f"model:size:size_only:{col}"
         curves.append(
-            curve.drop(columns=["column", "direction"]).assign(group=g, signal=name, kind="model", column=name)
+            curve.drop(columns=["column", "direction"]).assign(
+                group=g, signal=name, kind="model", column=name, model="size_only"
+            )
         )
     return rows, curves, have
 
@@ -346,7 +348,7 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
             old = pd.read_parquet(path) if path.exists() else None
             if old is not None:  # the size-only rows are replaced whenever a run brings new ones
                 replaced = {model_name} | ({"size_only"} if (df["model"] == "size_only").any() else set())
-                old = old[~old["model"].isin(replaced)]
+                old = old[~train.model_of(old).isin(replaced)]
             out_df = df if old is None else pd.concat([old, df], ignore_index=True)
         out_df.to_parquet(path, index=False)
     SCORES_CATALOGUE.to_csv(out / "catalogue.csv", index=False)

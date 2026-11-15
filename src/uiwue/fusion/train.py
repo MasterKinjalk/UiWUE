@@ -459,7 +459,12 @@ def results(rs: RunSet, cv: dict, model_name: str, n_boot: int, groups=("all", "
                 bench.append(row)
         for c in cs:
             curves.append(
-                c.assign(signal=f"model:{name}:{model_name}", kind="model", column=f"model:{name}:{model_name}")
+                c.assign(
+                    signal=f"model:{name}:{model_name}",
+                    kind="model",
+                    column=f"model:{name}:{model_name}",
+                    model=model_name,
+                )
             )
     hsi = pd.DataFrame(hsi)
     if not hsi.empty:
@@ -508,6 +513,15 @@ def _hsi_analysis(v: str) -> str:
     return "20 nm window masked"
 
 
+def model_of(table: pd.DataFrame) -> pd.Series:
+    """Each row's model. Tables written before 2026-11-15 have no `model` column in the per-day
+    curves; there it is the last part of `signal` ("model:<sensors>:<model>"). A second stage's
+    write failed on those with KeyError 'model'."""
+    if "model" in table:
+        return table["model"].fillna(table["signal"].str.split(":").str[-1]) if "signal" in table else table["model"]
+    return table["signal"].str.split(":").str[-1]
+
+
 def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None = None) -> Path:
     """Upsert this model's rows (other stages' rows are kept) and the run-level scores."""
     out = Path(out_dir) if out_dir else core.DERIVED / OUT
@@ -523,7 +537,7 @@ def write(tables: dict[str, pd.DataFrame], model_name: str, out_dir: Path | None
             out_df["date"] = pd.to_datetime(out_df["date"]).dt.date
         else:
             old = pd.read_parquet(path) if path.exists() else None
-            out_df = df if old is None else pd.concat([old[old["model"] != model_name], df], ignore_index=True)
+            out_df = df if old is None else pd.concat([old[model_of(old) != model_name], df], ignore_index=True)
         out_df.to_parquet(path, index=False)
     SCORES_CATALOGUE.to_csv(out / "catalogue.csv", index=False)
     return out

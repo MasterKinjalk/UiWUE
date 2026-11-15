@@ -202,9 +202,16 @@ def test_stage1_end_to_end(tmp_path, monkeypatch):
     assert validate(out / "fusion_scores_runs.parquet") == []
     for name in ("fusion_benchmark", "fusion_auc_by_day"):
         assert validate(out / f"{name}.parquet") == []
-    # a second model's rows are added next to the first, not over them
-    train.write({"fusion_benchmark": res["fusion_benchmark"].assign(model="fusion+lora_hsi")}, "fusion+lora_hsi", out)
-    assert set(pd.read_parquet(out / "fusion_benchmark.parquet")["model"]) == {"fusion", "fusion+lora_hsi"}
+    # a second model's rows are added next to the first, not over them, in every table (the
+    # per-day curves had no `model` column, and a second stage's write failed with KeyError)
+    curves = pd.read_parquet(out / "fusion_auc_by_day.parquet")
+    curves.drop(columns="model").to_parquet(out / "fusion_auc_by_day.parquet")  # as written before the fix
+    train.write(train.results(rs, cv, "fusion+lora_hsi", cfg.n_boot, groups=("all",)), "fusion+lora_hsi", out)
+    for name in ("fusion_benchmark", "fusion_auc_by_day", "fusion_hsi"):
+        if (out / f"{name}.parquet").exists():
+            t = pd.read_parquet(out / f"{name}.parquet")
+            assert set(train.model_of(t)) == {"fusion", "fusion+lora_hsi"}, name
+    assert len(pd.read_parquet(out / "fusion_auc_by_day.parquet")) == 2 * len(curves)
 
 
 def test_lora_stage_end_to_end(tmp_path, monkeypatch):
