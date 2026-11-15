@@ -1,6 +1,9 @@
 """Geometry checks for the Prompt Depth Anything sample builder (no dataset needed)."""
 
 import numpy as np
+import pytest
+
+pytest.importorskip("torch", reason="needs the ML extras: pip install -e '.[ml]'")
 
 from uiwue.ml.promptda import prep
 from uiwue.ml.promptda.infer import output_intrinsics

@@ -141,6 +141,19 @@ def to_team_table(runs: pd.DataFrame) -> tuple[pd.DataFrame, list[list]]:
     return out, catalogue
 
 
+def from_team_table(table: pd.DataFrame) -> pd.DataFrame:
+    """Team table -> pipeline columns, so the 3D pages run on a fresh clone without data/.
+
+    Inverse of ``to_team_table`` for the columns it keeps: the prefix is dropped, the slot goes
+    back to ``slot``, the capture hour to ``hour``, and the design columns are recomputed.
+    """
+    runs = table.rename(columns=lambda c: c.removeprefix(PREFIX))
+    runs = runs.rename(columns={"hour": "slot", "capture_hour": "hour"})
+    runs["treatment"] = runs["bed"].map(schema.BED_TREATMENT)
+    runs["days_since_cutoff"] = (pd.to_datetime(runs["date"]) - pd.Timestamp(schema.CUTOFF)).dt.days
+    return runs
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--source", default=str(schema.TRAITS_RUNS), help="pipeline table to convert")

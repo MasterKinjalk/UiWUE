@@ -5,7 +5,7 @@ import pandas as pd
 from uiwue.core import CATALOGUE_COLUMNS
 from uiwue.core.validate import validate
 from uiwue.threed import schema
-from uiwue.threed.contract import pick_slot_runs, to_team_table
+from uiwue.threed.contract import from_team_table, pick_slot_runs, to_team_table
 
 
 def test_team_table_passes_validator(tmp_path):
@@ -33,3 +33,12 @@ def test_rerun_rule_prefers_scheduled_folder_then_most_frames():
     )
     picked = pick_slot_runs(runs).set_index("slot_")["hour"].to_dict()
     assert picked == {15: 14, 12: 12}
+
+
+def test_team_table_converts_back_for_the_pages():
+    table, _ = to_team_table(schema.synthetic_runs())
+    runs = from_team_table(table)
+    schema.validate_runs(runs)  # every pipeline column the pages need is back
+    row = runs.iloc[0]
+    assert row.slot == table.hour.iloc[0] and row.hour == table.depth_capture_hour.iloc[0]
+    assert row.treatment == schema.BED_TREATMENT[row.bed]

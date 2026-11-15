@@ -4,9 +4,10 @@ Every file name and column comes from the shared contract ``uiwue.threed.schema`
 by path and modification time, so a page callback costs a dictionary lookup once a file is read,
 and a file rewritten by the pipeline is picked up on the next callback.
 
-When ``data/derived/threed/traits_runs.parquet`` is absent or unreadable, or when the environment
-variable ``UIWUE_SYNTHETIC=1`` is set, the loaders fall back to the contract's synthetic data and
-``runs_source().synthetic`` is True. Pages show ``source_banner()`` so a reader always knows.
+The trait table is the pipeline's ``data/derived/threed/traits_runs.parquet`` when this machine has
+it, else the team table committed in git (``derived/threed/traits_runs.parquet``). When neither is
+usable, or when the environment variable ``UIWUE_SYNTHETIC=1`` is set, the loaders fall back to the
+contract's synthetic data and ``runs_source().synthetic`` is True. Pages show ``source_banner()`` so a reader always knows.
 
 Environment:
     UIWUE_SYNTHETIC=1   always use synthetic data, even when the real files exist
@@ -31,9 +32,11 @@ import pandas as pd
 
 try:
     from uiwue.threed import schema
+    from uiwue.threed.contract import from_team_table
 except ModuleNotFoundError:  # package not installed in this environment: use the source tree
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from uiwue.threed import schema
+    from uiwue.threed.contract import from_team_table
 
 MAX_POINTS = 40_000  # clouds larger than this are randomly downsampled for the browser
 THUMB_WIDTH = 480  # px, width of the RGB frame sent to the side panel
@@ -41,6 +44,7 @@ RGB_FRAME = "rgb_007.jpg"  # the frame the cached cloud comes from
 LEAF_READINGS = schema.DATA_DIR / "leaf_readings.parquet"
 SENSOR_SHEET = schema.DATA_DIR / "metadata_rwc_par_en.xlsx"
 PIPELINE_DOC = Path("docs") / "threed" / "PIPELINE.md"
+TEAM_RUNS = Path("derived") / "threed" / "traits_runs.parquet"  # the committed team table (Master-Plan 6.4)
 INTERNAL_COLUMNS = ("plant_id", "day")  # added by the loader, never exported
 SYNTHETIC_RESULTS = ("e1_noise.csv", "e3_onset.csv")  # placeholders made in synthetic mode
 GROUPINGS = {"treatment": "treatment", "bed": "bed", "plants": "plant_id"}
@@ -137,17 +141,22 @@ class Source:
 
 
 def runs_source() -> Source:
-    rel = schema.TRAITS_RUNS.as_posix()
+    """The pipeline's working table if this machine has it, else the team table committed in git."""
     if synthetic_forced():
         return Source(True, "UIWUE_SYNTHETIC=1 is set")
-    path = repo_root() / schema.TRAITS_RUNS
-    stamp = _stamp(path)
-    if stamp is None:
-        return Source(True, f"{rel} does not exist yet")
-    _, error = _read_runs(str(path), stamp)
-    if error:
-        return Source(True, f"{rel} could not be used: {error}", path, stamp)
-    return Source(False, rel, path, stamp)
+    reasons = []
+    for rel_path in (schema.TRAITS_RUNS, TEAM_RUNS):
+        rel, path = rel_path.as_posix(), repo_root() / rel_path
+        stamp = _stamp(path)
+        if stamp is None:
+            reasons.append(f"{rel} does not exist yet")
+            continue
+        _, error = _read_runs(str(path), stamp)
+        if error:
+            reasons.append(f"{rel} could not be used: {error}")
+            continue
+        return Source(False, rel, path, stamp)
+    return Source(True, "; ".join(reasons))
 
 
 def load_runs() -> pd.DataFrame:
@@ -163,6 +172,8 @@ def load_runs() -> pd.DataFrame:
 def _read_runs(path: str, stamp: int) -> tuple[pd.DataFrame | None, str | None]:
     try:
         df = pd.read_parquet(path)
+        if "depth_capture_hour" in df:  # the team table (derived/threed/), not the pipeline's own
+            df = from_team_table(df)
         schema.validate_runs(df)
         return _prepare(df), None
     except Exception as exc:  # noqa: BLE001 - a half-written or wrong file must not take the app down
