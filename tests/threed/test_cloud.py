@@ -49,6 +49,28 @@ def test_fill_small_holes_only_fills_small_enclosed_regions():
     assert not mask[0:40, 0:40].any() and (f[0:40, 0:40] == 0).all()
 
 
+def test_fill_small_holes_stays_within_the_local_rim_range():
+    # Telea on float32 returned values far outside the rim with OpenCV 5.0 (a 4 x 6 hole on a
+    # 0.30 / 0.40 m step filled with -0.86..1.57 m). Every filled value must lie within the
+    # min/max of the valid pixels of its 7 x 7 window.
+    d = flat(0.40)
+    d[:, : W // 2] = 0.30  # step between two levels
+    d[80:84, W // 2 - 3 : W // 2 + 3] = 0  # 4 x 6 hole across the step
+    d[40:45, 30:36] = 0  # hole on the upper level only
+    ramp = np.tile(np.linspace(0.42, 0.52, 20, dtype=np.float32), (20, 1))
+    d[130:150, 150:170] = ramp  # tilted patch with a hole in it
+    d[137:142, 157:163] = 0
+    f, mask = fill_small_holes(d)
+    assert mask.sum() == 24 + 30 + 30
+    valid = np.where(mask, np.nan, d)
+    win = np.lib.stride_tricks.sliding_window_view(np.pad(valid, 3, constant_values=np.nan), (7, 7))
+    lo, hi = np.nanmin(win, axis=(-2, -1)), np.nanmax(win, axis=(-2, -1))
+    r, c = np.nonzero(mask)
+    tol = 2e-4  # 0.2 mm
+    assert (f[r, c] >= lo[r, c] - tol).all() and (f[r, c] <= hi[r, c] + tol).all()
+    assert np.allclose(f[40:45, 30:36], 0.30, atol=1e-3)
+
+
 def test_build_cloud_unprojects_along_rays():
     c = build_cloud(flat(0.5), fill_holes=False)
     assert len(c) == H * W - 4  # the 4 image corners have only 4 valid pixels in their window

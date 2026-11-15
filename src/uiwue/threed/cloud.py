@@ -215,6 +215,7 @@ def zbuffer_visible(xn: np.ndarray, yn: np.ndarray, z: np.ndarray, ok: np.ndarra
 
 
 MAX_HOLE_PX = 150  # enclosed invalid regions up to this size are filled (fill_holes=True)
+DEPTH_U16_PER_M = 10_000.0  # hole filling inpaints depth as uint16 in 0.1 mm units (max 6.55 m)
 
 
 def fill_small_holes(depth: np.ndarray, max_px: int = MAX_HOLE_PX) -> tuple[np.ndarray, np.ndarray]:
@@ -224,6 +225,10 @@ def fill_small_holes(depth: np.ndarray, max_px: int = MAX_HOLE_PX) -> tuple[np.n
     The Pico Flexx returns no depth on the bright interior of leaves (saturation), most visibly
     on young plants: only the leaf rims get a depth. Large invalid regions (image corners,
     shadows) touch the border or exceed ``max_px`` and stay invalid.
+
+    The inpainting runs on a uint16 copy in 0.1 mm units. With OpenCV 5.0, Telea on float32
+    returns values far outside the rim (metres off on a step edge); on uint16 it stays within
+    the rim range.
     """
     inv = (depth <= 0).astype(np.uint8)
     n, lab, stats, _ = cv2.connectedComponentsWithStats(inv, connectivity=4)
@@ -235,7 +240,8 @@ def fill_small_holes(depth: np.ndarray, max_px: int = MAX_HOLE_PX) -> tuple[np.n
     mask = sel[lab] & (inv > 0)
     if not mask.any():
         return depth, mask
-    out = cv2.inpaint(depth.astype(np.float32), mask.astype(np.uint8), 2, cv2.INPAINT_TELEA)
+    d16 = np.clip(np.rint(np.where(depth > 0, depth, 0) * DEPTH_U16_PER_M), 0, 65535).astype(np.uint16)
+    out = cv2.inpaint(d16, mask.astype(np.uint8), 2, cv2.INPAINT_TELEA).astype(np.float32) / DEPTH_U16_PER_M
     filled = np.where(mask, out, depth).astype(np.float32)
     return filled, mask
 
