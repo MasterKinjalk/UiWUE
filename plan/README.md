@@ -17,6 +17,14 @@ Suggested sections, so the plans are easy to merge:
 8. Risks
 9. Questions for the master plan
 
+**[Master plan](Master-Plan.md)** (proposed 2026-11-14): who builds what, the
+shared table contract, the schedule to the Sunday 12:00 PM deadline. Where it
+differs from a work plan, the master plan wins.
+
 Plans so far:
 
+- [Jonathan (Jack) — Challenge 1, early stress detection and sensor benchmark](Jonathan-Work-Plan.md)
 - [Kinjalk — Challenge 3, 3D phenotyping](Kinjalk-Work-Plan.md)
+- [Yuming — Challenge 4, diurnal and environmental modeling](Yuming-Work-Plan.md) (overlaps Sam's challenge 4; see its question 1)
+- [Sam — Challenges 2 & 4, spectral/thermal physiology and diurnal modeling](Sam-Work-Plan.md) (detailed notes and first-pass results: [docs/Sam-Analysis-Notes.md](../docs/Sam-Analysis-Notes.md))
+

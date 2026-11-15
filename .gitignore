@@ -9,9 +9,14 @@ data/
 *.parquet
 *.zip
 
+# Derived tables are shared through git; large derived files are not
+!derived/**/*.parquet
+cache/
+
 # Python
 .venv/
 __pycache__/
+*.egg-info/
 *.pyc
 .pytest_cache/
 .ruff_cache/
@@ -38,4 +43,3 @@ logs/
 
 # Per-workdir caches made by scripts/setup_gpu.sh
 .cache/
-*.egg-info/

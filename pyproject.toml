@@ -5,26 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "uiwue"
 version = "0.1.0"
-description = "UiWUE: water-deficit stress analysis tools for the ADA 2025 sugar beet dataset"
+description = "Trait extraction and water-deficit stress analysis for the ADA 2025 sugar beet dataset"
 requires-python = ">=3.12"
+# Install pinned versions with requirements.lock.txt first; these are the minimums.
 dynamic = ["dependencies", "optional-dependencies"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
+# Challenge 3 model fine-tuning: uv pip install -e ".[ml]" --torch-backend auto
 optional-dependencies.ml = { file = ["requirements-ml.txt"] }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-extend-exclude = ["external", "data", "models", "notebooks"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
-ignore = ["E501"]  # long docstring / comment lines; `ruff format` wraps code at 100
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["external", "data", "models", "notebooks"]
+
+[tool.ruff.lint]
+ignore = ["C408"]   # dict(...) is the idiom in Plotly layouts

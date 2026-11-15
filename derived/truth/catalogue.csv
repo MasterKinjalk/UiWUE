@@ -1,0 +1,10 @@
+column,label,unit,direction,description
+truth_turgor_raw,Leaf-clip reading,raw units,1,"AgriHouse clip, median within 5 min of the run; higher = lower turgor"
+truth_turgor_shift,Leaf-clip shift,raw units,1,reading minus the clip's own median over 2 Sep 12:00 - 3 Sep 11:00 (before the cutoff); positive = turgor lost
+truth_rwc,Relative water content,%,-1,(fresh - dry) / (saturated - dry) x 100; first sampled leaf (smallest fully extended on 15 Sep)
+truth_rwc_leaf2,"RWC, second leaf",%,-1,next-youngest leaf; sampled on 15 Sep only
+truth_fw_g,Fresh weight,g,0,first sampled leaf
+truth_sw_g,Saturated weight,g,0,first sampled leaf
+truth_dw_g,Dry weight,g,0,first sampled leaf
+truth_clip_onset_date,Clip shift onset,date,0,first day the clip's daily-median shift exceeds 5 units on 2 days in a row; clip plants only
+truth_first_symptom_date,First stress symptom,date,0,"first notes-sheet date (2, 6, 8, 10, 12, 15 Sep) with wilting, yellowing or drooping; an upper bound on the true day"

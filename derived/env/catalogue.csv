@@ -1,0 +1,10 @@
+column,label,unit,direction,description
+env_air_t,Air temperature,°C,0,"W1-end sensor, used for every bed (no sensor at W2); 10-min median at the run"
+env_air_t_w3,"Air temperature, W3 end",°C,0,W3-end sensor; reads ~3 °C warmer than the W1 end in the afternoon
+env_rh,Relative humidity,%,0,"W1-end sensor, 10-min median at the run"
+env_rh_w3,"Relative humidity, W3 end",%,0,"W3-end sensor, 10-min median at the run"
+env_vpd,Vapour pressure deficit,kPa,0,from env_air_t and env_rh; the evaporative demand on the leaves
+env_vpd_w3,"Vapour pressure deficit, W3 end",kPa,0,from the W3-end sensor
+env_par_mv,Light (PAR sensor),mV,0,"raw sensor output, not converted to µmol m⁻² s⁻¹; nearest 15-min reading"
+env_vpd_since_water,Demand since last watering,kPa·h,0,VPD integrated over time since the bed was last watered (schedule 11:00 and 19:00; W2/W3 dry 3–15 Sep)
+env_hours_since_water,Hours since last watering,h,0,time since the bed was last watered

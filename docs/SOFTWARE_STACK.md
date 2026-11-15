@@ -23,9 +23,11 @@ runs on every machine.
 | Dev | pytest, ruff, tqdm | tests, lint + format, progress bars |
 
 Hyperspectral files are read with `hyperio` from the
-[ADA 2025 repo](https://github.com/pippowell/ada2025). It is not in
-`requirements.txt`; whoever owns the hyperspectral challenge should add the
-install line once confirmed.
+[ADA 2025 repo](https://github.com/pippowell/ada2025). It and the authors'
+plant-mask model need `rasterio`, `spectral` and `torch`, which only the
+hyperspectral owner installs, from `requirements-hsi.txt`. First check that
+`rasterio` opens a `.jp2` cube in this environment; if it cannot, run the
+extraction in the authors' conda environment (the app only needs the table).
 
 ## App framework: Dash + Plotly web app
 
@@ -64,13 +66,14 @@ Install uv: <https://docs.astral.sh/uv/getting-started/installation/>
 git clone https://github.com/MasterKinjalk/UiWUE.git
 cd UiWUE
 uv venv --python 3.12
+uv pip install -r requirements.lock.txt
 uv pip install -e .
 ```
 
-`-e .` installs the `uiwue` package from `src/` in editable mode, with the
-dependencies in `requirements.txt`. For model fine-tuning, add the ML extras
-(`requirements-ml.txt`: torch, transformers, accelerate). `--torch-backend auto`
-picks the CUDA build that matches the GPU driver:
+`-e .` installs the `uiwue` package from `src/` in editable mode. For model
+fine-tuning (Challenge 3), add the ML extras (`requirements-ml.txt`: torch,
+transformers, accelerate). `--torch-backend auto` picks the CUDA build that
+matches the GPU driver:
 
 ```bash
 uv pip install -e ".[ml]" --torch-backend auto
@@ -103,8 +106,12 @@ source .venv/bin/activate
 Option B only, after activating:
 
 ```bash
+pip install -r requirements.lock.txt
 pip install -e .
 ```
+
+`pip install -e .` makes the shared package importable as `uiwue` from
+anywhere in the repo.
 
 For the ML extras with pip, install torch first from
 <https://pytorch.org/get-started/locally/> (pick the CUDA build), then run
@@ -113,32 +120,46 @@ For the ML extras with pip, install torch first from
 ### Check the install
 
 ```bash
-python -c "import open3d, dash, plotly, pyvista, statsmodels, cv2, tifffile, uiwue; print('ok')"
+python -c "import open3d, dash, plotly, pyvista, statsmodels, cv2, tifffile, uiwue.core; print('ok')"
+python -m pytest -q
 ```
 
+### Run the app
+
 ```bash
-pytest -q
+cd app
+python app.py
 ```
+
+Then open <http://127.0.0.1:8050>. The app reads only the tables in
+`derived/`, so it runs from a fresh clone with no raw data.
 
 ## Versions
 
-`requirements.txt` and `requirements-ml.txt` give minimum versions. On
-2026-11-14 a full install on Windows 11 (Python 3.12.14, RTX 5070 Ti) gave,
-among others: open3d 0.20.0, dash 4.5.0, plotly 7.1.0, pyvista 0.49.2,
-pandas 3.1.1, numpy 2.5.4, statsmodels 0.15.0, opencv-python 5.0.0.93,
-torch 2.14.1+cu130, transformers 5.23.0, accelerate 1.15.0.
+`requirements.txt` gives minimum versions. `requirements.lock.txt` pins the
+exact versions everyone installs; it is compiled for Windows, macOS and Linux
+with `uv pip compile requirements.txt --universal --python-version 3.12 -o
+requirements.lock.txt`. On 2026-11-14 the lock installed on Linux and the
+import check and tests passed (dash 4.5.0, plotly 7.1.0, pandas 3.1.1,
+numpy 2.5.4, open3d 0.20.0, opencv-python 5.0.0). Note the new major versions:
+pandas 3 (copy-on-write, string dtype), OpenCV 5, Dash 4.
 
-If two machines behave differently, compare with `pip freeze` and pin the
-version that works in `requirements.txt`.
+The ML extras are not in the lock. On 2026-11-14 they resolved to torch
+2.14.1+cu130 (Windows, RTX 5070 Ti) and 2.15.0+cu132 (Linux GPU machine),
+transformers 5.23.0, accelerate 1.15.0.
+
+To add a library: put the minimum in `requirements.txt`, re-run the compile
+command, and push both files (shared files go through Yuming).
 
 ## Data
 
-Data never goes in git. `.gitignore` blocks `data/` and the large file types.
-`scripts/download_data.sh` clones the ADA repo into `external/ada2025` and
-downloads the subsets from the work plan into `data/` with the ADA tools
-(resumable, MD5-checked). Stages: `env`, `dev`, `tier1`, `tier2`, `tier3`,
-`train`, `unzip`; no argument runs all except `train`. `DATA_DIR` overrides
-the location.
+Raw data never goes in git. `.gitignore` blocks `data/` and the large file
+types. Download with the ADA repo tools into a local `data/` folder, or point
+the package at another folder with the `UIWUE_DATA` environment variable.
+`scripts/download_data.sh` clones the ADA repo into `external/ada2025` and runs
+those tools in stages (`env`, `dev`, `tier1`, `tier2`, `tier3`, `train`,
+`unzip`; no argument runs all except `train`). Downloads resume and are
+MD5-checked; `DATA_DIR` sets the folder:
 
 ```bash
 scripts/download_data.sh env tier1 tier2 tier3 unzip
@@ -155,26 +176,46 @@ The full camera set is about 618 GB. The paper subset (`--paper`) is about
 `scripts/download_phenobench.sh`. Pretrained weights come from
 `scripts/download_models.py`; see [ML_MODELS.md](ML_MODELS.md).
 
+Derived tables do go in git: `derived/<module>/*.parquet` (under 20 MB each)
+plus `derived/<module>/catalogue.csv`. That is how teammates and the demo
+machine get your results. Larger derived files (frame-level tables, point
+clouds, thumbnails) go in `cache/`, which git ignores.
+
 ## Conventions
 
-- Per-plant results use the keys `bed`, `plant`, `date`, `hour`, matching the
-  dataset folder names, so tables from different challenges join directly.
-- Tables are saved as parquet (and CSV for export).
+The full contract is section 6 of [`plan/Master-Plan.md`](../plan/Master-Plan.md).
+In short:
+
+- Run-level tables have one row per `bed`, `plant`, `date`, `hour`, where
+  **`hour` is the scheduled slot** (6, 9, 12, 15, 18), not the folder hour. A
+  re-run folder maps to the nearest slot at most 1 h away;
+  `uiwue.core.slot_for_hour` does this. Store the folder hour as
+  `<prefix>capture_hour`.
+- Every other column starts with its module prefix (`thermal_`, `depth_`,
+  `rgb_`, `hsi_`, `env_`, `truth_`, `detect_`, `diurnal_`). Do not store
+  `treatment`, `days_since_cutoff` or `phase`; `uiwue.core` adds them.
+- Each module writes `catalogue.csv` (`column, label, unit, direction,
+  description`) next to its table. The app's pickers read it.
+- Write tables with `uiwue.core.write_table`, read the merged table with
+  `uiwue.core.load_traits()`, and run `python -m uiwue.core.validate` before
+  pushing.
 - Format and lint with `ruff format .` and `ruff check .` before pushing.
-- Repo layout (created 2026-11-14; the master plan can still change it):
+
+Repo layout:
 
 ```
-plan/        work plans and the master plan
-docs/        stack, setup, design notes
-src/uiwue/   shared package (io, calibration, per-challenge modules)
-  threed/    Challenge 3: calib.py (ADA calibration), io.py (runs, loaders)
-  ml/        fine-tuning: promptda/ (depth), leafseg/ (plant + leaf masks)
-scripts/     data, model and GPU-machine setup scripts
-app/         Dash app; one file per page in app/pages/
-notebooks/   exploration
-tests/       pytest
-data/        local only, not in git
-models/      pretrained weights, not in git
-runs/        training outputs, not in git
-external/    third-party clones (ada2025), not in git
+plan/                 work plans and the master plan
+docs/                 stack, setup, result cards (docs/results/<name>.md); docs/threed/ for Challenge 3
+src/uiwue/core/       shared contract, validator (Yuming)
+src/uiwue/<module>/   one folder per module: thermal, env, diurnal, threed, spectral, truth, rgb, stats, detect
+src/uiwue/ml/         fine-tuning of pretrained models: promptda/ (depth), leafseg/ (plant + leaf masks)
+scripts/              data and model downloads, GPU-machine setup and training
+app/app.py            app shell; app/components.py shared look and pickers
+app/pages/            one file per page, one owner each
+derived/<module>/     small result tables + catalogue.csv, in git
+cache/                large derived files, not in git
+tests/                pytest
+data/                 raw data, local only, not in git
+models/, runs/        pretrained weights and training outputs, not in git
+external/             third-party clones (ada2025), not in git
 ```
