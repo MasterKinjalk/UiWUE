@@ -8,18 +8,33 @@ and Idso's published sugar beet baseline (sources below).
 
 ## Three numbers
 
-1. **Day 4, a day or two before the leaf clip.** One thermal flyover a day at
-   09 h, each plant scored against the control bed, flags all **9 of 9**
-   held-out stressed plants (W3) by **day 4**, 1 day before the leaf clip
-   registers turgor loss (2 days on W2). There are **0 of 9** false alerts on
-   held-out watered plants and **0 of 18** before the cutoff. **15 h is the
-   second choice**: W3 by day 3, but W2 only by day 6 (16 of 17 plants). The
-   paper's set-up (one 15 h flyover, leaf minus air temperature) needs until
-   **day 8**, 2–3 days *after* the clip.
-2. **No control bed needed.** Scoring each plant against a healthy-plant line
-   (leaf minus air temperature as a function of VPD, from air temperature and
-   humidity only) also flags **9 of 9** by **day 4**, with no false alerts. It
-   needs all five daily flyovers to get there.
+1. **Day 5, with flyovers at 12 h and 15 h.** Each plant scored against the
+   control bed (threshold 2.02 z, set on W2 with 4 controls) flags **all 26**
+   stressed plants: **24 of 26 by day 5** and **26 of 26 by day 7**. The median
+   first alert is day 5 on both W2 (tuning) and W3 (held out; all 9 by day 5).
+   There are **0 of 13** false alerts on watered plants during the stress
+   window and **0 of 39** plants alerting before the cutoff. Only **3.7 %**
+   of single watered scans (27 of 736) are above the threshold. Six plants
+   alert as early as day 3 (4 in W2, 2 in W3), so "day 3" is the earliest
+   alert, not the typical one. Against the leaf clip, the alert comes
+   0 days before the turgor shift on W3 (median) and 2 days before on W2.
+   - **Why not 09 h.** 09 h alone flags W3 by day 4, but it fails the
+     watered-day check: before the cutoff, **24 %** of W2-set scans are above
+     its threshold, and on day −10 **86 %** of the plants are, while all of
+     them were watered. Its "0 false alerts before the cutoff" holds only
+     because a cloudy day broke the two-in-a-row run. That is a morning-sun or
+     bed effect, not stress, so 09 h is not recommended.
+   - **06 h never separates the groups, and 18 h is late** (W2 median day 8)
+     and fails the watered-day check too (38 % of plants above on day −2).
+   - The paper's set-up (one 15 h flyover, leaf minus air temperature) needs
+     until **day 8**, 2–3 days *after* the clip.
+2. **No control bed needed, at five flyovers a day.** Scoring each plant
+   against a healthy-plant line (leaf minus air temperature as a function of
+   VPD, fitted on the baseline days 30 Aug – 2 Sep, from air temperature and
+   humidity only) has a median first alert of **day 4** on W2 and W3, with no
+   false alerts. Its alerts spread out more, though: all plants are flagged
+   only by day 8 on W2 and day 7 on W3, against day 7 and day 5 for the
+   control-bed rule. It needs all five daily flyovers.
    - **Against the published line.** The sugar beet line Tc − Ta = 2.50 − 1.92 ×
      VPD (Idso 1982) reaches **day 5** with 12 h and 15 h flyovers, against day 6
      for raw leaf minus air on the same flyovers.
@@ -47,18 +62,34 @@ and Idso's published sugar beet baseline (sources below).
 ![Separability by day and time of day](yuming_separability.png)
 
 Each cell: how well the thermal score separates deficit from control plants
-(AUC; 0.5 = no difference, 1 = perfect). Red appears first in the 09 h and
-15 h rows.
+(AUC; 0.5 = no difference, 1 = perfect). Separation appears first in the 09 h
+and 15 h rows; the 09 h row also shows the bed difference on watered days.
+
+## Advice in the app
+
+The Irrigation advisor opens on the control-bed rule at 12 h + 15 h (chosen
+on W2 alone by `uiwue.diurnal.best_rule`) and on the latest day with a usable
+scan. A plant that alerts stays "irrigate" until re-watering (day 12,
+`uiwue.diurnal.daily_status`). A day without a usable scan is marked
+"no scan", not "fine". With that latch, the count of plants to water climbs
+6 → 7 → 24 → 25 → 26 over days 3–7 and stays at 26 through day 12.
 
 ## Two limits
 
 1. **One control bed.** Before the cutoff, when every plant was watered, the
-   beds already differ at 06 h (AUC 0.26) and 09 h (0.62), so part of the 09 h
-   lead may be a bed difference rather than stress. Correcting for the air
-   warming between bed scans did not remove it. 15 h is close to no
-   difference (0.56), which is why it is the second choice. Thresholds were
-   tuned on W2 with only 4 control plants; W3 and the other 9 controls were
-   never used for tuning.
+   beds already differ at 06 h (AUC 0.26) and 09 h (0.62), so the early 09 h
+   signal is at least partly a bed difference rather than stress. Correcting
+   for the air warming between bed scans did not remove it. 12 h (0.51) and
+   15 h (0.56) are close to no difference. Thresholds were tuned on W2 with
+   only 4 control plants; W3 and the other 9 controls were never used for
+   tuning. The watered-day check (at most 5 % of watered scans and at most a
+   quarter of the plants on any watered day above threshold) is our choice
+   of cut-off, not a published one, and the recommended 12 h + 15 h rule
+   passes it with some margin on rate (4.4 % on the W2 set, 2.8 % on the W3 set)
+   and plenty on the worst day (12 % and 14 %). The 3.7 % figure above pools
+   all 39 plants, so it includes the tuning plants. The watered days include
+   the baseline days the scores are referenced to, which flatters the rate a
+   little.
 2. **No counterfactual irrigation.** The greenhouse watered on a fixed
    schedule and the soil sensors are unusable, so the results say *when* a
    rule would have fired, not how much water it would save. The
@@ -81,7 +112,7 @@ shows a direction, not a precise size.
 export UIWUE_DATA=/path/to/ada2025/data     # raw thermal + environmental files
 python -m uiwue.env                          # downloads the DWD file (1.5 MB) on first run
 python -m uiwue.thermal
-python -m uiwue.diurnal                      # prints the checks and the schedule table
+python -m uiwue.diurnal                      # rebuilds derived/diurnal/ from derived/ alone; prints the checks
 ```
 
 Pages: Daily rhythm and Irrigation advisor (`cd app && python app.py`).

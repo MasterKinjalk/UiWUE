@@ -1,4 +1,10 @@
 column,label,unit,direction,description
 diurnal_score_ref,Thermal stress score (vs control bed),z,1,"leaf minus control-bed leaf temperature, as a z-score against the plant's own 30 Aug–2 Sep values at the same time of day"
-diurnal_score_local,Thermal stress score (no control bed),z,1,"leaf minus air temperature above a line in VPD fitted on healthy plants (24 Aug–2 Sep), as a z-score against the plant's own baseline"
+diurnal_score_local,Thermal stress score (no control bed),z,1,"leaf minus air temperature above a line in VPD fitted on all plants in the baseline window (30 Aug–2 Sep), as a z-score against the plant's own baseline"
 diurnal_score_idso,Leaf − air above the published sugar beet line,°C,1,"leaf minus air temperature minus Idso's (1982) non-water-stressed sugar beet line, 2.50 − 1.92 × VPD (kPa)"
+diurnal_ref_afternoon_minus_morning,"Leaf − control bed, 15 h − 09 h",°C,0,"afternoon (15 h) minus morning (09 h) run of the same day, of thermal_leaf_ref_dt"
+diurnal_ref_daily_range,"Leaf − control bed, daily range",°C,0,"highest minus lowest run of the day (at least 4 runs), of thermal_leaf_ref_dt"
+diurnal_ref_overnight_change,"Leaf − control bed, overnight",°C,0,"next morning's 06 h minus this evening's 18 h run, of thermal_leaf_ref_dt"
+diurnal_air_afternoon_minus_morning,"Leaf − air, 15 h − 09 h",°C,0,"afternoon (15 h) minus morning (09 h) run of the same day, of thermal_leaf_air_dt"
+diurnal_air_daily_range,"Leaf − air, daily range",°C,0,"highest minus lowest run of the day (at least 4 runs), of thermal_leaf_air_dt"
+diurnal_air_overnight_change,"Leaf − air, overnight",°C,0,"next morning's 06 h minus this evening's 18 h run, of thermal_leaf_air_dt"

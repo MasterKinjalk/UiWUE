@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from uiwue.core import add_design
-from uiwue.diurnal import alert_days, status, tune
+from uiwue.diurnal import alert_days, daily_status, pre_check, recommend, status, tune
 from uiwue.env import at_times, dwd_frame, since_water, vpd_kpa
 from uiwue.thermal import block_mean, leaf_t
 
@@ -48,6 +48,57 @@ def test_tuned_threshold_clears_every_healthy_alert():
     st = status(df, "score", (15,), k)
     days_ = alert_days(df, st)
     assert days_[["W1_A2", "W1_J5"]].isna().all() and days_["W2_J5"] >= 0
+
+
+def test_alert_stays_latched_until_rewatering():
+    # days -1 .. 15: alert on day 2, a cool scan on day 4, no usable scan on day 6, re-watered after day 12
+    vals = [0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    df = plants(vals, start="2025-09-02")
+    df.loc[7, "diurnal_evidence"] = "weak"  # day 6
+    ds = daily_status(df, status(df, "score", (15,), k=2)).set_index("day")
+    assert ds.loc[1, "status"] == "watch" and ds.loc[2, "status"] == "irrigate" and ds.loc[2, "since"] == 2
+    assert (ds.loc[2:12, "status"] == "irrigate").all() and (ds.loc[3:12, "since"] == 2).all()
+    assert ds.loc[4, "raw"] == "fine" and ds.loc[4, "latched"]
+    assert ds.loc[6, "raw"] == "no scan" and not ds.loc[6, "scanned"] and ds.loc[6, "status"] == "irrigate"
+    assert ds.loc[13, "status"] == "fine" and ds.loc[13:, "since"].isna().all()  # latch cleared by re-watering
+
+
+def test_no_scan_is_not_fine():
+    df = plants([0, 0, 0], start="2025-09-05")
+    df.loc[1, "diurnal_evidence"] = "weak"
+    ds = daily_status(df, status(df, "score", (15,), k=2))
+    assert list(ds.status) == ["fine", "no scan", "fine"] and list(ds.scanned) == [True, False, True]
+
+
+def test_watered_day_check_catches_a_bed_wide_morning_effect():
+    # watered days -10 .. -1: every deficit plant is hot on two sunny mornings with a cloudy day between,
+    # so the two-in-a-row rule never fires, but the watered-day check still fails the schedule
+    sunny = [3 if d in (-10, -8) else 0 for d in range(-10, 0)]
+    df = pd.concat(
+        [plants(sunny, plant=p, start="2025-08-24") for p in ("A2", "B3", "C4")]
+        + [plants([0] * 10, bed="W1", plant=p, start="2025-08-24") for p in ("A2", "B3")],
+        ignore_index=True,
+    )
+    st = status(df, "score", (15,), k=2)
+    assert not (st == "irrigate").any()
+    r = pre_check(df, "score", (15,), 2)
+    assert r["pre_alert_plants"] == 0 and r["pre_worst_day"] == -10 and r["pre_worst_day_frac"] == 0.6
+    assert abs(r["pre_above_rate"] - 6 / 50) < 1e-9 and not r["pre_pass"]
+    assert pre_check(df, "score", (15,), 5)["pre_pass"]
+
+
+def test_recommendation_skips_schedules_that_fail_the_watered_day_check():
+    row = dict(rule="r", set="W2 tuning", n_detected=17, scans_per_day=1)
+    sch = pd.DataFrame(
+        [
+            row | dict(schedule="09 h", median_alert_day=3.0, pre_pass=False),
+            row | dict(schedule="12 + 15 h", median_alert_day=5.0, pre_pass=True, scans_per_day=2),
+            row | dict(schedule="18 h", median_alert_day=8.0, pre_pass=True),
+            row | dict(schedule="09 h", median_alert_day=3.0, pre_pass=False, set="W3 check"),
+        ]
+    )
+    assert recommend(sch) == [False, True, False, False]
+    assert recommend(sch.assign(pre_pass=False)) == [True, False, False, True]  # none pass: best regardless
 
 
 def test_leaf_rule_and_downsampling():
