@@ -219,3 +219,28 @@ def add_lora(encoder: Encoder, last_n: int = 4, rank: int = 8, alpha: float = 16
 
 def lora_parameters(module: nn.Module) -> list[nn.Parameter]:
     return [p for m in module.modules() if isinstance(m, LoRALinear) for p in (m.a, m.b)]
+
+
+def lora_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
+    """Only the adapter weights (A and B of every LoRALinear), on the CPU: what a tuned fold adds
+    to the pretrained encoder. Rebuild with build_encoder + add_lora + load_lora_state_dict."""
+    return {
+        f"{n}.{k}": getattr(m, k).detach().cpu()
+        for n, m in module.named_modules()
+        if isinstance(m, LoRALinear)
+        for k in "ab"
+    }
+
+
+def load_lora_state_dict(module: nn.Module, state: dict[str, torch.Tensor]) -> None:
+    """Load adapter weights saved by lora_state_dict; the module must already carry the same LoRA layers."""
+    layers = {n: m for n, m in module.named_modules() if isinstance(m, LoRALinear)}
+    expected = {f"{n}.{k}" for n in layers for k in "ab"}
+    if set(state) != expected:
+        raise ValueError(
+            f"LoRA layers differ: {len(set(state) ^ expected)} names do not match (blocks or rank changed?)"
+        )
+    with torch.no_grad():
+        for name, t in state.items():
+            n, k = name.rsplit(".", 1)
+            getattr(layers[n], k).copy_(t)

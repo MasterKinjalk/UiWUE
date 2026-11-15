@@ -64,6 +64,30 @@ SCORES_CATALOGUE = pd.DataFrame(
             1,
             "Predicted leaf-clip shift from the turgor head, out of fold.",
         ),
+        # Written by python -m uiwue.fusion.predict to fusion_external_scores_runs: plants that the
+        # fusion model never saw, scored by the 5 fold models. Own names, so that load_traits can
+        # join both scores tables without clashing columns.
+        (
+            "detect_fusion_ext_prob",
+            "Stress probability (fusion model, external plants)",
+            "0-1",
+            1,
+            "Mean P(deficit) of the 5 fold models on plants outside the training set (external test).",
+        ),
+        (
+            "detect_fusion_ext_stage",
+            "Severity stage (fusion model, external plants)",
+            "stage",
+            1,
+            "Expected stage 0-3 from the ordinal head, mean of the 5 fold models, external plants.",
+        ),
+        (
+            "detect_fusion_ext_turgor",
+            "Turgor deviation (fusion model, external plants)",
+            "raw units",
+            1,
+            "Predicted leaf-clip shift from the turgor head, mean of the 5 fold models, external plants.",
+        ),
     ],
     columns=["column", "label", "unit", "direction", "description"],
 )

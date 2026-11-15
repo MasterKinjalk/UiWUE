@@ -230,7 +230,12 @@ def read_hsi(path: str, dark_reference: Path | None = None) -> tuple[np.ndarray,
     if not np.isfinite(sample).all() or np.percentile(sample, 99) > 3 * REFLECTANCE_RANGE[1]:
         raise ValueError(f"{jp2}: dark or saturated cube (p99 reflectance {np.percentile(sample, 99):.3g})")
     meta = json.loads(jp2.with_suffix(".json").read_text())
-    return cube, np.asarray(meta["wavelengths"], dtype=np.float32)
+    wl = np.asarray(meta["wavelengths"], dtype=np.float32)
+    # A truncated cube (hyperio warns "cube has 256 channels") must fail its run here, in the
+    # loader: with 300 wavelengths it would reach DOFA and the band masks and stop the whole job.
+    if cube.shape[-1] != len(wl):
+        raise ValueError(f"{jp2}: {cube.shape[-1]} channels but {len(wl)} wavelengths (truncated cube)")
+    return cube, wl
 
 
 def hsi_bands(wl_nm: np.ndarray, variant: str) -> np.ndarray | None:

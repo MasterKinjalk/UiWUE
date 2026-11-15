@@ -317,7 +317,9 @@ def test_hsi_spectral_variants_are_cut_from_the_full_input():
     wl = np.linspace(383.8, 1025.2, 300).astype(np.float32)
     cube = np.random.default_rng(0).uniform(-0.2, 2.5, (256, 256, 300)).astype(np.float32)
     full = inputs.load_hsi("", "full", cube=(cube, wl))
-    assert full.frames.min() >= (inputs.REFLECTANCE_RANGE[0] - inputs.REFLECTANCE_SCALE[0]) / inputs.REFLECTANCE_SCALE[1]
+    assert (
+        full.frames.min() >= (inputs.REFLECTANCE_RANGE[0] - inputs.REFLECTANCE_SCALE[0]) / inputs.REFLECTANCE_SCALE[1]
+    )
     d = {"full": (torch.from_numpy(full.frames), full.wavelengths)}
     for v in ("rgb3", "mask664", "mask1004"):
         direct = inputs.load_hsi("", v, cube=(cube, wl))
@@ -328,13 +330,19 @@ def test_hsi_spectral_variants_are_cut_from_the_full_input():
 def test_cutoff_day_afternoon_is_positive_but_not_trained_on():
     keys = pd.DataFrame(
         [dict(bed="W2", plant="J5", date="2025-09-03", hour=h) for h in (6, 9, 12, 15, 18)]
-        + [dict(bed="W2", plant="J5", date="2025-09-04", hour=6), dict(bed="W1", plant="A2", date="2025-09-03", hour=12)]
+        + [
+            dict(bed="W2", plant="J5", date="2025-09-04", hour=6),
+            dict(bed="W1", plant="A2", date="2025-09-03", hour=12),
+        ]
     )
     lab = run_labels(keys, turgor=pd.DataFrame(), plants=pd.DataFrame()).set_index(["bed", "date", "hour"])
     day0 = lab.loc["W2"].loc[pd.Timestamp("2025-09-03")]
     assert day0["y_deficit"].tolist() == [0, 0, 1, 1, 1]  # 06 and 09 h are before the 11:00 cutoff
     assert day0["train"].tolist() == [True, True, False, False, False]
-    assert lab.loc[("W2", pd.Timestamp("2025-09-04"), 6), "train"] and lab.loc[("W1", pd.Timestamp("2025-09-03"), 12), "train"]
+    assert (
+        lab.loc[("W2", pd.Timestamp("2025-09-04"), 6), "train"]
+        and lab.loc[("W1", pd.Timestamp("2025-09-03"), 12), "train"]
+    )
 
 
 def test_lora_adapters_follow_the_encoder_device_and_dtype():
@@ -356,3 +364,20 @@ def test_live_images_augment_per_item_not_per_worker(monkeypatch):
     xs = [ds[i][1] for i in range(6)]
     assert torch.equal(ds[2][1], xs[2])  # reproducible per item
     assert len({tuple(x.flatten()[:50].tolist()) for x in xs}) > 1  # items differ
+
+
+def test_truncated_hsi_cube_fails_its_run_in_the_loader(tmp_path, monkeypatch):
+    """A cube with fewer bands than its wavelength list must raise in read_hsi (the loader reports
+    the run as failed); reaching DOFA or the band masks it would stop the whole embedding job."""
+    import json
+
+    hyperio = pytest.importorskip("hyperio")
+    (tmp_path / "hsi_000.jp2").write_bytes(b"")
+    (tmp_path / "hsi_000.json").write_text(json.dumps({"wavelengths": list(np.linspace(384, 1025, 300))}))
+    np.save(tmp_path / "dark.npy", np.zeros(300))
+    cube = np.full((16, 16, 256), 0.3, np.float32)
+    monkeypatch.setattr(hyperio.HSI, "read", staticmethod(lambda *a, **k: cube))
+    with pytest.raises(ValueError, match="truncated"):
+        inputs.read_hsi(str(tmp_path), dark_reference=tmp_path / "dark.npy")
+    cube = np.full((16, 16, 300), 0.3, np.float32)  # 256 x 256 pixels is fine: only the bands count
+    assert inputs.read_hsi(str(tmp_path), dark_reference=tmp_path / "dark.npy")[0].shape == (16, 16, 300)
