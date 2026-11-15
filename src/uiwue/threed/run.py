@@ -6,7 +6,10 @@ Usage::
         --dates 2025-08-12 2025-09-19 --hours 15 --jobs 20
     python -m uiwue.threed.run --data-dir data --parity          # paper-parity heights (E0a)
     python -m uiwue.threed.run --data-dir data --diagnose W1_J5:2025-09-03:15   # figures
-    python -m uiwue.threed.run --data-dir data --depth-model runs/promptda-vitl/best \n        --hours 15 --out data/derived/threed_refined                # refined depth (GPU)
+    python -m uiwue.threed.run --data-dir data --depth-model runs/promptda-vitl/best \
+        --hours 15 --out data/derived/threed_refined                # refined depth (GPU)
+    python -m uiwue.threed.run --data-dir data --plant-model runs/leafseg-m2f/best \
+        --out data/derived/threed_plantmask                         # learned plant mask (GPU)
 
 Writes into ``--out`` (default ``data/derived/threed``): ``traits_frames.parquet``,
 ``traits_runs.parquet``, ``clouds/<bed>_<plant>/<date>_<HH>.npz``, ``run_log.csv`` and
@@ -21,7 +24,8 @@ Per run (details in docs/threed/PIPELINE.md):
 2. Frames whose whole plant cylinder lies inside the depth and the RGB views are used.
 3. One soil plane per run, RANSAC on the pooled non-vegetation points around the centre of the
    used frames; if rejected, the plant's carried reference (``qc_ref_carried``).
-4. Per used frame: vegetation mask, DBSCAN + cylinder isolation, traits.
+4. Per used frame: vegetation mask (ExG / height rule, or the learned plant mask with
+   ``--plant-model``), DBSCAN + cylinder isolation, traits.
 5. Median and MAD over the used frames, QC flags; frame 7 is cached as the viewer cloud.
 """
 
@@ -64,6 +68,7 @@ from uiwue.threed.io import (
     load_rgb_reduced,
     run_frames,
 )
+from uiwue.threed.plantmask import SOURCE_MODEL, SOURCE_RULE, PlantMasks, precompute_masks
 
 SOIL_Z_GUESS = 0.47  # m, typical pot-soil depth in frame 7 (W1_J5 / W2_J5, 2025-08)
 # Plant centre in frame-7 depth coordinates when the run has no poses (median of the RGB-axis
@@ -198,8 +203,13 @@ def process_run(
 ) -> dict:
     """Process one run. Returns ``{"status", "error", "frames", "run", "cloud", "ref"}``.
 
-    ``plant_mask_fn(run, k, cloud) -> bool array or None`` replaces the ExG + height vegetation
-    rule with a learned per-point plant mask (not used by the CLI yet).
+    ``plant_mask_fn(run, k, cloud, local)`` replaces the ExG + height vegetation rule of frame k
+    with a learned per-point plant mask (``plantmask.PlantMasks``, used by ``--plant-model``).
+    ``local`` is the frame's plane-local coordinates with the plant centre at a = b = 0. It
+    returns None (keep the rule), a bool array, or ``(mask or None, info)``; ``info["source"]``
+    and its ``n_instances`` / ``score`` / ``n_merged`` go into the frame columns ``mask_source``,
+    ``mask_instances``, ``mask_score`` and ``mask_merged``. The soil candidates of the reference plane always use
+    the ExG rule: a centre-plant mask would make the neighbours' leaves over the pot soil.
 
     ``depth_fn(run, k, depth)`` replaces the ToF depth of a built frame k with a refined map on the
     same 224 x 171 grid. It returns ``(depth, refined_mask)`` (the mask marks pixels whose depth
@@ -208,7 +218,7 @@ def process_run(
     ToF fallback pixels). Used by ``--depth-model``.
 
     ``plan_only`` returns after frame selection with ``out["build"]``, the frames that would be
-    built (the refined-depth pre-pass uses it).
+    built, and ``out["no_pose"]`` (the refined-depth and plant-mask pre-passes use it).
     """
     data_dir = Path(data_dir)
     out = {"status": "ok", "error": "", "frames": [], "run": None, "cloud": None, "ref": None}
@@ -252,6 +262,7 @@ def process_run(
     build = sorted(set(used) | {k7})
     if plan_only:
         out["build"] = build
+        out["no_pose"] = no_pose
         return out
 
     # -- clouds (colour only with poses)
@@ -275,12 +286,7 @@ def process_run(
     pts, nv = [], []
     for k in pool_frames:
         c = clouds[k]
-        exg = c.exg
-        veg0 = c.has_rgb & (np.nan_to_num(exg, nan=-1e9) > segment.EXG_THRESHOLD)
-        if plant_mask_fn is not None:
-            m = plant_mask_fn(run, k, c)
-            if m is not None:
-                veg0 = np.asarray(m, bool)
+        veg0 = c.has_rgb & (np.nan_to_num(c.exg, nan=-1e9) > segment.EXG_THRESHOLD)
         ck = c7 - rel[k]
         near = np.hypot(c.xyz[:, 0] - ck[0], c.xyz[:, 1] - ck[1]) < ground.SOIL_RADIUS
         pts.append(c.xyz[near] + rel[k])
@@ -312,7 +318,7 @@ def process_run(
     c = clouds[k7]
     loc = plane7.to_local(c.xyz, c7)
     dark7 = segment.is_dark(c.brightness)
-    veg = _veg(run, k7, c, loc[:, 2], dark7, plant_mask_fn)
+    veg, _ = _veg(run, k7, c, loc, dark7, plant_mask_fn)
     da, db = segment.refine_centre(loc, veg)
     e1, e2 = plane7.basis()
     c7 = c7 + da * e1 + db * e2
@@ -323,23 +329,18 @@ def process_run(
         pk = plane7.shifted(rel[k])
         loc = pk.to_local(c.xyz, c7 - rel[k])
         dark = segment.is_dark(c.brightness)
-        geo[k] = (pk, loc, dark, _veg(run, k, c, loc[:, 2], dark, plant_mask_fn))
+        geo[k] = (pk, loc, dark, *_veg(run, k, c, loc, dark, plant_mask_fn))
     iso_frames = used if used else [k7]
-    isos = dict(
-        zip(
-            iso_frames,
-            segment.isolate_plant_multi([geo[k][1] for k in iso_frames], [geo[k][3] for k in iso_frames]),
-            strict=True,
-        )
-    )
+    isos = dict(zip(iso_frames, _isolate(iso_frames, clouds, geo), strict=True))
     if k7 not in isos:  # frame 7 not used: isolate it on its own for the viewer cloud
-        isos[k7] = segment.isolate_plant_multi([geo[k7][1]], [geo[k7][3]])[0]
+        isos[k7] = _isolate([k7], clouds, geo)[0]
     rows, iso7, loc7 = [], isos[k7], geo[k7][1]
     dbg = {
         "clouds": clouds,
         "loc": {k: g[1] for k, g in geo.items()},
         "iso": isos,
         "veg": {k: g[3] for k, g in geo.items()},
+        "mask_info": {k: g[4] for k, g in geo.items()},
         "rel": rel,
         "used": used,
         "fit": fit,
@@ -376,11 +377,21 @@ def process_run(
             n_filled=0,
             refined_frac=np.nan,
             refined_frac_view=np.nan,
+            mask_source="",
+            mask_instances=0,
+            mask_score=np.nan,
+            mask_merged=0,
         )
         if k in clouds:
             c = clouds[k]
-            pk, loc, dark, veg = geo[k]
+            pk, loc, dark, veg, minfo = geo[k]
             row.update(brightness=c.brightness, dark=dark, n_veg=int(veg.sum()))
+            row.update(
+                mask_source=minfo["source"],
+                mask_instances=int(minfo["n_instances"]),
+                mask_score=float(minfo["score"]),
+                mask_merged=int(minfo["n_merged"]),
+            )
             row.update(cylinder_traits(loc, veg, c.pixel_area))
         if k in isos:
             iso = isos[k]
@@ -427,6 +438,7 @@ def process_run(
         centre_y_mm=1000 * float(c7[1]),
         centre_shift_mm=1000 * float(np.hypot(da, db)),
         n_frames_on_disk=len(fr["depth_files"]),
+        **mask_summary(usedf["mask_source"]),
     )
     out["run"] = qc.aggregate_run(fdf, meta)
     if debug:
@@ -474,16 +486,52 @@ def cylinder_traits(loc: np.ndarray, veg: np.ndarray, pixel_area: np.ndarray) ->
     return out
 
 
-def _veg(run, k, cloud: Cloud, height, dark, plant_mask_fn):
-    learned = plant_mask_fn(run, k, cloud) if plant_mask_fn is not None else None
+def _veg(run, k, cloud: Cloud, local, dark, plant_mask_fn) -> tuple[np.ndarray, dict]:
+    """(vegetation mask, mask info) of one frame: the learned plant mask where ``plant_mask_fn``
+    gives one, else the ExG / height rule."""
+    info = {"source": SOURCE_RULE, "n_instances": 0, "score": float("nan"), "n_merged": 0}
+    learned = None
+    if plant_mask_fn is not None:
+        res = plant_mask_fn(run, k, cloud, local)
+        learned, extra = res if isinstance(res, tuple) else (res, {})
+        info |= {"source": SOURCE_MODEL if learned is not None else SOURCE_RULE} | dict(extra)
     has_colour = cloud.has_rgb.any()
-    return segment.vegetation_mask(
-        height,
+    veg = segment.vegetation_mask(
+        local[:, 2],
         cloud.exg if has_colour else None,
         cloud.has_rgb if has_colour else None,
         dark=dark,
         learned=learned,
     )
+    return veg, info
+
+
+def _isolate(frames: list[int], clouds: dict, geo: dict) -> list:
+    """DBSCAN + cylinder isolation over ``frames``. Without a learned mask in any of them this is
+    the ExG / height path (``isolate_plant_multi`` on the vegetation points). With one, the
+    frames vote per voxel (``votes=``): candidates are points with colour above ``H_MIN`` and
+    points without colour above ``H_MIN_DARK``; points with colour vote with their frame's
+    vegetation mask (the learned mask, or the rule in frames that fell back), points without
+    colour do not vote."""
+    locs = [geo[k][1] for k in frames]
+    vegs = [geo[k][3] for k in frames]
+    if not any(geo[k][4]["source"] == SOURCE_MODEL for k in frames):
+        return segment.isolate_plant_multi(locs, vegs)
+    cands, votes = [], []
+    for k, loc, veg in zip(frames, locs, vegs, strict=True):
+        has, h = clouds[k].has_rgb, loc[:, 2]
+        cands.append((has & (h > segment.H_MIN)) | (~has & (h > segment.H_MIN_DARK)))
+        votes.append(np.where(has, veg, np.nan))
+    return segment.isolate_plant_multi(locs, cands, votes=votes)
+
+
+def mask_summary(sources: pd.Series) -> dict:
+    """Run columns from the used frames' ``mask_source``: ``mask_model_frac`` (share of frames with
+    the learned mask) and ``mask_source`` ("model" all, "rule" none, "mixed" some)."""
+    s = sources.astype(str)
+    frac = float((s == SOURCE_MODEL).mean()) if len(s) else float("nan")
+    label = SOURCE_RULE if not len(s) or frac == 0 else SOURCE_MODEL if frac == 1 else "mixed"
+    return {"mask_source": label, "mask_model_frac": frac}
 
 
 # ---------------------------------------------------------------- plant references
@@ -514,6 +562,7 @@ def plant_reference(plant_id: str, data_dir: Path, days: int = PRIOR_DAYS) -> tu
 
 # ---------------------------------------------------------------- refined depth (PromptDA)
 DERIVED_REFINED = Path("data/derived/threed_refined")  # default --out with --depth-model
+DERIVED_PLANTMASK = Path("data/derived/threed_plantmask")  # default --out with --plant-model
 REFINED_DIR = "refined_depth"  # cache of refined maps on the ToF grid, one npz per frame
 
 
@@ -541,9 +590,12 @@ class RefinedDepth:
         return np.where(m, ref, base).astype(np.float32), m
 
 
-def _plan(run: Run, data_dir: str, prior: PlantRef | None) -> tuple[Run, list[int]]:
+def plan_frames(run: Run, data_dir: str, prior: PlantRef | None) -> tuple[Run, list[int], bool]:
+    """(run, frames process_run will build, no_pose) for the GPU pre-passes."""
     res = process_run(run, Path(data_dir), prior, plan_only=True)
-    return run, res.get("build", []) if res["status"] == "ok" else []
+    if res["status"] != "ok":
+        return run, [], True
+    return run, res["build"], res["no_pose"]
 
 
 def precompute_refined(runs: list[Run], refs: dict, data_dir: Path, out_dir: Path, model: str, jobs: int = 8) -> dict:
@@ -554,8 +606,8 @@ def precompute_refined(runs: list[Run], refs: dict, data_dir: Path, out_dir: Pat
 
     from uiwue.ml.promptda.infer import DepthRefiner
 
-    plans = Parallel(n_jobs=jobs)(delayed(_plan)(r, str(data_dir), refs.get(r.plant_id)) for r in runs)
-    todo = [(r, k) for r, ks in plans for k in ks if not refined_path(out_dir, r, k).exists()]
+    plans = Parallel(n_jobs=jobs)(delayed(plan_frames)(r, str(data_dir), refs.get(r.plant_id)) for r in runs)
+    todo = [(r, k) for r, ks, _ in plans for k in ks if not refined_path(out_dir, r, k).exists()]
     stats = {"frames": 0, "missing": 0, "s_model": 0.0, "s_grid": 0.0, "s_total": 0.0}
     if not todo:
         return stats
@@ -593,7 +645,7 @@ def _norm_rgb(c):
     return np.clip(img * 255 / hi, 0, 255).astype(np.uint8)
 
 
-def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=None) -> Path:
+def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=None, plant_mask_fn=None) -> Path:
     """Six-panel verification figure of one run (frame 7 colour, height above reference,
     isolation, side view, plant across frames, reference-plane residuals)."""
     import matplotlib
@@ -602,7 +654,7 @@ def render_diagnostics(run: Run, data_dir: Path, prior, out_dir: Path, depth_fn=
     import matplotlib.pyplot as plt
 
     pid, d, h = run.plant_id, run.date, run.hour
-    res = process_run(run, data_dir, prior, debug=True, depth_fn=depth_fn)
+    res = process_run(run, data_dir, prior, debug=True, depth_fn=depth_fn, plant_mask_fn=plant_mask_fn)
     g = res["debug"]
     r = res["run"]
     c7 = g["clouds"][7]
@@ -708,11 +760,13 @@ def _worker(
     out_dir: str,
     want_cloud: bool,
     refined: bool = False,
+    plant_masks: bool = False,
 ):
     t0 = time.perf_counter()
     try:
         depth_fn = RefinedDepth(Path(out_dir)) if refined else None
-        res = process_run(run, Path(data_dir), prior, want_cloud=want_cloud, depth_fn=depth_fn)
+        mask_fn = PlantMasks(Path(out_dir)) if plant_masks else None
+        res = process_run(run, Path(data_dir), prior, want_cloud=want_cloud, depth_fn=depth_fn, plant_mask_fn=mask_fn)
     except Exception as e:  # noqa: BLE001
         res = {
             "status": "error",
@@ -816,7 +870,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--data-dir", default="data")
     p.add_argument(
         "--out",
-        help=f"output directory (default {schema.DERIVED}; {DERIVED_REFINED} with --depth-model)",
+        help=f"output directory (default {schema.DERIVED}; {DERIVED_REFINED} with --depth-model, "
+        f"{DERIVED_PLANTMASK} with --plant-model)",
     )
     p.add_argument("--plants", nargs="+", help="full IDs such as W1_J5 (default: all on disk)")
     p.add_argument("--dates", nargs=2, metavar=("START", "END"), help="inclusive, YYYY-MM-DD")
@@ -828,6 +883,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="Prompt Depth Anything checkpoint (e.g. runs/promptda-vitl/best): refine the depth "
         "of every built frame on the GPU before the traits; outputs go to a separate --out",
+    )
+    p.add_argument(
+        "--plant-model",
+        metavar="PATH",
+        help="Mask2Former plant checkpoint (e.g. runs/leafseg-m2f/best): segment every built frame "
+        "on the GPU and use the centre-plant mask instead of the ExG rule (the rule stays on dark "
+        "frames and where no plant is found); outputs go to a separate --out",
     )
     p.add_argument("--no-clouds", action="store_true")
     p.add_argument("--flush-every", type=int, default=300, help="checkpoint every N runs")
@@ -841,9 +903,14 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     data_dir = Path(a.data_dir)
-    out = Path(a.out) if a.out else (DERIVED_REFINED if a.depth_model else schema.DERIVED)
-    if a.depth_model and out.resolve() == schema.DERIVED.resolve():
-        p.error(f"--depth-model must not write into {schema.DERIVED} (the raw-ToF contract files)")
+    if a.depth_model and a.plant_model and not a.out:
+        p.error("--depth-model with --plant-model needs an explicit --out")
+    default = DERIVED_PLANTMASK if a.plant_model else DERIVED_REFINED if a.depth_model else schema.DERIVED
+    out = Path(a.out) if a.out else default
+    contract = {schema.DERIVED.resolve(), (data_dir / "derived" / "threed").resolve()}
+    for flag, used in (("--depth-model", a.depth_model), ("--plant-model", a.plant_model)):
+        if used and out.resolve() in contract:
+            p.error(f"{flag} must not write into {schema.DERIVED} (the ExG / raw-ToF contract files)")
     out.mkdir(parents=True, exist_ok=True)
     dates = (_parse_date(a.dates[0]), _parse_date(a.dates[1])) if a.dates else None
     hours = [f"{int(h):02d}" for h in a.hours] if a.hours else None
@@ -856,12 +923,15 @@ def main(argv: list[str] | None = None) -> int:
             if pid not in refs:
                 refs[pid] = plant_reference(pid, data_dir)[0]
             druns.append(Run(pid, _parse_date(d), h))
-        depth_fn = None
+        depth_fn = mask_fn = None
         if a.depth_model:
             precompute_refined(druns, refs, data_dir, out, a.depth_model, jobs=1)
             depth_fn = RefinedDepth(out)
+        if a.plant_model:
+            precompute_masks(druns, refs, data_dir, out, a.plant_model, jobs=1)
+            mask_fn = PlantMasks(out)
         for r in druns:
-            f = render_diagnostics(r, data_dir, refs[r.plant_id], out / "diagnostics", depth_fn)
+            f = render_diagnostics(r, data_dir, refs[r.plant_id], out / "diagnostics", depth_fn, mask_fn)
             print(f, flush=True)
         return 0
 
@@ -908,10 +978,27 @@ def main(argv: list[str] | None = None) -> int:
                 f"{st['missing']} frames without data, total {st['s_total']:.0f} s",
                 flush=True,
             )
+    if a.plant_model:
+        st = precompute_masks(todo, refs, data_dir, out, a.plant_model, jobs=a.jobs)
+        if st["frames"]:
+            print(
+                f"plant masks: {st['frames']} frames, model {st['s_model'] / st['frames']:.3f} s/frame, "
+                f"{st['empty']} frames without a plant instance, {st['missing']} without RGB, "
+                f"total {st['s_total']:.0f} s",
+                flush=True,
+            )
 
     t0 = time.perf_counter()
     gen = Parallel(n_jobs=a.jobs, return_as="generator_unordered", batch_size=1)(
-        delayed(_worker)(r, str(data_dir), refs.get(r.plant_id), str(out), not a.no_clouds, bool(a.depth_model))
+        delayed(_worker)(
+            r,
+            str(data_dir),
+            refs.get(r.plant_id),
+            str(out),
+            not a.no_clouds,
+            bool(a.depth_model),
+            bool(a.plant_model),
+        )
         for r in todo
     )
     n_ok = n_err = 0

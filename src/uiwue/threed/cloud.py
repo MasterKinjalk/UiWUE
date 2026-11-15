@@ -215,15 +215,44 @@ def zbuffer_visible(xn: np.ndarray, yn: np.ndarray, z: np.ndarray, ok: np.ndarra
 
 
 MAX_HOLE_PX = 150  # enclosed invalid regions up to this size are filled (fill_holes=True)
+DEPTH_U16_PER_M = 10_000.0  # hole filling inpaints depth as uint16 in 0.1 mm units (max 6.55 m)
+MAX_RIM_SPAN = 0.025  # m; a hole whose rim spans more lies on a depth edge and stays invalid
 
 
-def fill_small_holes(depth: np.ndarray, max_px: int = MAX_HOLE_PX) -> tuple[np.ndarray, np.ndarray]:
-    """Fill invalid regions of at most ``max_px`` pixels that are enclosed by valid pixels
-    (Telea inpainting from their rim). Returns (filled depth, mask of filled pixels).
+def rim_span(depth: np.ndarray, labels: np.ndarray, n: int) -> np.ndarray:
+    """Per label of ``labels`` (0 = no region): max - min depth of the valid (> 0) pixels that are
+    8-neighbours of the region, its 3 x 3 dilation ring. ``-inf`` for labels without one."""
+    lo, hi = np.full(n, np.inf), np.full(n, -np.inf)
+    valid = depth > 0
+    lp = np.pad(labels, 1)
+    h, w = labels.shape
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dy or dx:
+                nb = lp[1 + dy : 1 + dy + h, 1 + dx : 1 + dx + w]
+                m = valid & (nb > 0)
+                np.minimum.at(lo, nb[m], depth[m])
+                np.maximum.at(hi, nb[m], depth[m])
+    return hi - lo
+
+
+def fill_small_holes(
+    depth: np.ndarray, max_px: int = MAX_HOLE_PX, max_rim_span: float = MAX_RIM_SPAN
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fill invalid regions of at most ``max_px`` pixels that are enclosed by valid pixels and
+    whose rim spans at most ``max_rim_span`` metres (Telea inpainting from their rim). Returns
+    (filled depth, mask of filled pixels).
 
     The Pico Flexx returns no depth on the bright interior of leaves (saturation), most visibly
     on young plants: only the leaf rims get a depth. Large invalid regions (image corners,
-    shadows) touch the border or exceed ``max_px`` and stay invalid.
+    shadows) touch the border or exceed ``max_px`` and stay invalid. Most small holes, however,
+    are dropouts at depth edges (leaf over soil, leaf over leaf), where an inpainted surface would
+    bridge the gap; the rim-span limit (:func:`rim_span`) leaves those invalid. It also bounds
+    the error of every filled value, which lies within its rim range.
+
+    The inpainting runs on a uint16 copy in 0.1 mm units. With OpenCV 5.0, Telea on float32
+    returns values far outside the rim (metres off on a step edge); on uint16 it stays within
+    the rim range.
     """
     inv = (depth <= 0).astype(np.uint8)
     n, lab, stats, _ = cv2.connectedComponentsWithStats(inv, connectivity=4)
@@ -232,10 +261,13 @@ def fill_small_holes(depth: np.ndarray, max_px: int = MAX_HOLE_PX) -> tuple[np.n
     small = (area <= max_px) & (x > 0) & (y > 0) & (x + bw < w) & (y + bh < h)
     sel = np.zeros(n, bool)
     sel[1:] = small[1:]
+    if np.isfinite(max_rim_span) and sel.any():
+        sel &= rim_span(depth, lab, n) <= max_rim_span
     mask = sel[lab] & (inv > 0)
     if not mask.any():
         return depth, mask
-    out = cv2.inpaint(depth.astype(np.float32), mask.astype(np.uint8), 2, cv2.INPAINT_TELEA)
+    d16 = np.clip(np.rint(np.where(depth > 0, depth, 0) * DEPTH_U16_PER_M), 0, 65535).astype(np.uint16)
+    out = cv2.inpaint(d16, mask.astype(np.uint8), 2, cv2.INPAINT_TELEA).astype(np.float32) / DEPTH_U16_PER_M
     filled = np.where(mask, out, depth).astype(np.float32)
     return filled, mask
 
