@@ -10,7 +10,8 @@ The code is in `src/uiwue/fusion/`:
 | `embed.py` | Stage 1: frozen embeddings for every run and variant, to `cache/fusion/` |
 | `labels.py` | Deficit label, severity stage S0-S3 (clip plants), turgor deviation |
 | `fusion.py` | The fusion model: one token per sensor from [e(t), e(t) - e(baseline)], a [CLS] token, a 2-layer transformer, and heads for deficit, stage and turgor; modality dropout 0.3 |
-| `train.py` | 5 folds grouped by plant; stage 1 (frozen) and stages 2-3 (LoRA); evaluation on every sensor subset; results in `derived/detect/fusion_*` |
+| `train.py` | 5 folds grouped by plant; stage 1 (frozen) and stages 2-3 (LoRA); evaluation on every sensor subset; results in `derived/detect/fusion_*`; fold checkpoints in `runs/fusion/<model>/` |
+| `predict.py` | External test: the 5 fold models (and placebo models) score plants outside training, averaged; `--oof` rescores the CV for plants without clips and plants with the size trait |
 
 ## 1. Install
 
@@ -58,6 +59,14 @@ python -m uiwue.fusion.train --stage lora --lora-sensor hsi
 # Stage 3: LoRA on the thermal encoder
 python -m uiwue.fusion.train --stage lora --lora-sensor thermal
 
+# External test: embed new plants (in batches if they arrive in batches), then score them
+python -m uiwue.fusion.embed --plants <ids> --hsi-windows --cache cache/fusion_external/b1
+python -m uiwue.fusion.predict --cache cache/fusion_external/b1 cache/fusion_external/b2 --model fusion
+python -m uiwue.fusion.predict --cache ... --model fusion+lora_thermal --data-dir <raw thermal>
+
+# CV subsets: plants without turgor clips, plants with the size trait
+python -m uiwue.fusion.predict --oof --model fusion
+
 # Check, then commit derived/detect/fusion_* (small) and push
 python -m uiwue.core.validate
 pytest tests/jack
@@ -81,6 +90,9 @@ placebo-checked folds (plan section 5).
 | `fusion_hsi` | Part B: spatial vs spectral detail (`s112`, `s64`), 3 vs 300 bands (`rgb3`), 20 nm windows (`mask<nm>`): change in early AUC against all bands |
 | `fusion_severity` | Part C: do the stage and turgor heads rank the clip plants correctly within each day? |
 | `fusion_scores_runs` | `detect_fusion_prob`, `_stage`, `_turgor` per run, out of fold, for the Plant profile page |
+| `fusion_cv_subsets_benchmark`, `_auc_by_day` | The CV's out-of-fold scores for `no_clip` plants and `with_size` plants (beside size only on the same plants) |
+| `fusion_external_benchmark`, `_auc_by_day`, `_hsi` | External test, same columns as the CV tables plus `plants` (`all`, `no_clip`, `with_size`) and `n_plants` |
+| `fusion_external_scores_runs` | `detect_fusion_ext_prob`, `_stage`, `_turgor` per run of the external plants (own names, so both scores tables join) |
 
 ## 5. Design choices to know
 
@@ -135,3 +147,76 @@ Checked and found correct: the hyperspectral reader equals ADA's `HSI.read(..., 
 exactly (no Savitzky-Golay smoothing here), wavelengths go to DOFA in µm from `hsi_000.json`,
 depth and thermal are rotated by 180° as in ADA's loaders, the RGB centre crop holds the target
 plant, folds and early stopping are grouped by plant, and scoring reuses `uiwue.stats`.
+
+## 7. Results (2026-11-15)
+
+Trained on the 39 plants with all four sensors (26 deficit, 13 control); 5 folds of whole
+plants, stratified by bed. Every number below is out of fold. Early AUC is days 1-4 after
+the cutoff, plant means of the 12 and 15 h runs, all deficit plants against W1, with a
+95 % plant-bootstrap interval. Onset is the first day whose lower bound is above 0.70 on
+that day and the next.
+
+### Commands and timings
+
+| Step | Where | Command | Time |
+|---|---|---|---|
+| Embeddings, 39 plants | local RTX 5070 Ti, 8 workers | `python -m uiwue.fusion.embed --plants <39> --hsi-windows --workers 8` | 23 min (hsi 20 min, 3307 runs x 37 variants, 38 failed the dark/unreadable checks; rgb, thermal, depth 1 min each) |
+| Stage 1 (frozen) | GPU server | `python -m uiwue.fusion.train` | 38 s |
+| Stage 3 (LoRA thermal) | GPU server, 6 workers | `python -m uiwue.fusion.train --stage lora --lora-sensor thermal --workers 6` | 454 s |
+| No-clip and size subsets of the CV | local CPU | `python -m uiwue.fusion.predict --oof --model <model>` | 20 s |
+
+The server needs `cache/fusion`, `derived/` and, for stage 3, the thermal frame-2 TIFFs and
+`frames_thermal.csv` of the 39 plants (2.5 GB) and the ImageBind checkpoint. Logs and the
+run script are in `runs/logs/`.
+
+### Stage 1 and stage 3 against the benchmark and size
+
+| Setup | Fusion, frozen (stage 1) | Fusion + LoRA thermal (stage 3) | Benchmark (logistic) |
+|---|---|---|---|
+| Thermal | 0.896 [0.749, 1.000], onset 3 | **0.988 [0.953, 1.000], onset 3** | 0.991 [0.964, 1.000], onset 2 |
+| Thermal 80 x 60 | 0.778, onset 5 | 0.879, onset 3 | 0.917, onset 2 |
+| Depth | 0.929 [0.825, 0.997], onset 2 | 0.929, onset 0 | 0.630, onset 5 |
+| RGB | 0.722, onset 6 | 0.749, onset 6 | 0.790, onset 4 (18 plants) |
+| Hyperspectral | 0.607 [0.423, 0.790], onset 5 | 0.624, onset 5 | no HSI features |
+| RGB + depth + thermal | 0.947, onset 1 | 0.973, onset 0 | 0.973, onset 2 |
+| All four | 0.947 [0.849, 1.000], onset 2 | 0.973 [0.905, 1.000], onset 0 | - |
+| Plant size only | - | - | 0.491, onset 6 (26 plants) |
+
+**Placebo.** The placebo bed model (trained on 24-29 Aug to tell W1 from W2/W3) separates
+the beds in every fusion setup: AUC 0.71-0.98, so `bed_effect` is true throughout, against
+false for the benchmark's thermal model (0.51). The frozen embeddings carry the bed
+(lighting, pots, neighbours). Whether the detection model *uses* it is shown by its own
+score over the placebo window (`placebo_auc_main`):
+
+- thermal 0.49 (stage 1) and 0.60 (stage 3): near chance, so the thermal result is not a bed
+  effect; its per-day curve stays at 0.5 until day 3 (lower bound 0.46 on day 2, 0.90 on day 3);
+- depth 0.81 (stage 1) and 0.87 (stage 3): depth's early AUC is largely a bed difference.
+  The setups with depth reach onset day 0, the afternoon of the last watering, which only a
+  bed difference can explain;
+- the fused setups sit between (0.58-0.67).
+
+**Plants without turgor clips.** Clip hardware is on 18 of the 26 deficit plants but on only 3
+of the 13 controls, from about 2 Sep, after the placebo window. On the 18 plants without clips
+(8 deficit, 10 control; `fusion_cv_subsets_benchmark`, `plants == "no_clip"`):
+thermal 0.962 (stage 1) and 0.975 [0.888, 1.000] (stage 3); all four sensors 0.925 and 0.950.
+The clip hardware is not what the model detects. With 8 deficit plants the onset days are
+not stable (thermal: day 8 in stage 1, day 3 in stage 3).
+
+**Size baseline.** On the 28 plants with `depth_projected_area`, size alone has an early
+AUC of 0.509 [0.285, 0.739] and onset day 6; thermal through the fusion model on the same
+plants: 0.861 (stage 1) and 0.979 [0.925, 1.000] (stage 3).
+
+**Part B, hyperspectral.** Hyperspectral is the weakest branch (0.607); 112 and 64 px give the
+same AUC (0.601), and 3 RGB-like bands drop it to 0.518. The largest drops from masking one
+20 nm window are 524-564 nm (0.07-0.11, the PRI region), but from a base this weak they are
+within noise. Adding hyperspectral to the other three sensors does not change the fused AUC.
+
+**Part C.** Within-day Spearman between the stage head and the clip stage: median 0.35
+(stage 1) and 0.37 (stage 3) over 17 days; turgor head 0.09 and 0.03. The heads rank
+severity weakly at best.
+
+**Stage 2 (LoRA on hyperspectral) was not run.** The rule (section 5 of the work plan) runs it
+only if stage 1's hyperspectral beats the benchmark's hyperspectral features on placebo-clean
+folds. The benchmark has no hyperspectral features, and stage 1's hyperspectral is the
+weakest branch, flagged by the placebo, and at 0.45 on the no-clip plants. It would cost about
+3-7 h of cube decoding.
