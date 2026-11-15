@@ -82,13 +82,6 @@ CATALOGUE = [
         "DWD station Belm: share of the hour before the run with direct sun",
     ),
     (
-        "env_sky",
-        "Sky at the run",
-        "",
-        0,
-        "sunny (sun ≥ half the last hour), cloudy, or dark (< 20 W/m²); from DWD Belm, independent of the greenhouse",
-    ),
-    (
         "env_light_wm2",
         "Greenhouse light",
         "W/m²",
@@ -210,6 +203,7 @@ def build(data_dir=DATA):
     g["env_light_wm2"] = g.env_par_mv * light_scale(p, sol)[0]
     g["env_global_rad"] = at_times(sol.global_rad.rolling("30min", center=True).mean(), g.env_timestamp_utc)
     g["env_sunshine"] = at_times(sol.sunshine.rolling("60min").mean(), g.env_timestamp_utc)
+    # env_sky is a text label, so it stays out of the catalogue (trait pickers list catalogue columns as numbers)
     sky = np.where(g.env_global_rad < DARK_WM2, "dark", np.where(g.env_sunshine >= SUNNY, "sunny", "cloudy"))
     g["env_sky"] = pd.Series(sky, index=g.index).where(g.env_global_rad.notna() & g.env_sunshine.notna())
     for bed, rows in g.groupby("bed"):

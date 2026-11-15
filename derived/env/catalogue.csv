@@ -10,5 +10,4 @@ env_vpd_since_water,Demand since last watering,kPa·h,0,VPD integrated over time
 env_hours_since_water,Hours since last watering,h,0,time since the bed was last watered
 env_global_rad,"Global radiation, outside",W/m²,0,"DWD station Belm (11 km), 30-min mean around the run"
 env_sunshine,"Sunshine, last hour",fraction,0,DWD station Belm: share of the hour before the run with direct sun
-env_sky,Sky at the run,,0,"sunny (sun ≥ half the last hour), cloudy, or dark (< 20 W/m²); from DWD Belm, independent of the greenhouse"
-env_light_wm2,Greenhouse light,W/m²,0,"greenhouse light sensor (mV) scaled to DWD global radiation on hourly daytime means; outside-equivalent, so it includes the losses through the greenhouse cover"
+env_light_wm2,Greenhouse light,W/m²,0,light sensor (mV) scaled to DWD global radiation on hourly daytime means; outside-equivalent
