@@ -35,6 +35,8 @@ Thumbs.db
 external/
 models/
 runs/
+# ImageBind weights (4.5 GB), downloaded on first use
+.checkpoints/
 logs/
 *.pt
 *.pt2

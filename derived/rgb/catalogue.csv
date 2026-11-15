@@ -1,0 +1,6 @@
+column,label,unit,direction,description
+rgb_green_cover,Green cover,fraction,-1,Share of centre-crop pixels classed as vegetation (2G-R-B > 5).
+rgb_exg,Greenness (ExG),,-1,"Mean excess green 2g-r-b on chromatic coordinates, vegetation pixels."
+rgb_ngrdi,NGRDI,,-1,Mean (G-R)/(G+R) over vegetation pixels.
+rgb_hue,Mean hue,deg,-1,Circular mean HSV hue of vegetation pixels; yellowing moves it down from ~100.
+rgb_brightness,Brightness,0-255,0,"Mean brightness of the whole centre crop (exposure check, not a trait)."
