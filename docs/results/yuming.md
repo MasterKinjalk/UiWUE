@@ -27,6 +27,11 @@ and Idso's published sugar beet baseline (sources below).
      field line at 12 h and 15 h. "Above the line" without re-tuning flags 5 of
      13 watered plants and 7 of 22 plants before the cutoff, so the threshold
      has to be set on site.
+   - **Why it sits lower.** Idso's line was fitted on sunlit canopies in
+     Arizona. In the same paper, shaded canopies sit on average 3.8 °C below
+     the sunlit line. A greenhouse gets less light, and our leaf temperature is
+     the coolest half of the pixels, so an offset in this direction is
+     expected.
 3. **Time of day and sky matter more than flyover count.**
    - Stressed and watered plants separate (AUC ≥ 0.9 on two days running) from
      **day 3 at 09 h**, day 4 at 15 h, day 5 at 12 h and day 7 at 18 h.
@@ -61,15 +66,14 @@ Each cell: how well the thermal score separates deficit from control plants
    irrigation stopped; it is a reference, not a stress detector.
 
 Also: the sunny-against-cloudy split rests on 3–7 runs per time of day, so it
-shows a direction, not a precise size. The Idso coefficients are taken from a
-2023 paper that quotes them; the 1982 original has not yet been checked.
+shows a direction, not a precise size.
 
 ## Outside data
 
 | Source | Use | Licence and credit |
 |---|---|---|
 | DWD station Belm (id 00342), 10-minute global radiation and sunshine duration, file `10minutenwerte_SOLAR_00342_20200101_20251231_hist.zip` | Sky at each flyover (sunny, cloudy, dark). Puts the greenhouse light sensor on a W/m² scale: hourly r = 0.92 with outside radiation, 1 mV ≈ 110 W/m². This is outside-equivalent, so it includes losses through the greenhouse cover. | CC BY 4.0, "Source: Deutscher Wetterdienst" |
-| Idso, S.B. (1982), Non-water-stressed baselines, *Agric. Meteorol.* 27:59–70, as quoted by Yetik & Candoğan (2023), *Sugar Tech* 25:57–68 | Published sugar beet baseline for the "Leaf − air above the published line" rule | Published coefficients |
+| Idso, S.B. (1982), Non-water-stressed baselines: a key to measuring and interpreting plant water stress, *Agric. Meteorol.* 27:59–70, Table I: sugar beet, sunlit, N = 47, r = 0.898, °C and kPa | Published sugar beet baseline for the "Leaf − air above the published line" rule | Coefficients cited from the paper; the paper itself is not redistributed |
 
 ## Reproduce
 

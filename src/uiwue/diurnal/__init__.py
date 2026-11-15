@@ -34,8 +34,8 @@ from uiwue.core import (
 STRESS_DAYS = (0, 12)
 PLACEBO_DAYS = tuple((pd.Timestamp(d) - pd.Timestamp(CUTOFF)).days for d in PLACEBO)  # (-10, -5)
 DULL = 0.5  # a daytime scan is "weak evidence" when light is below half that slot's usual level
-# Published non-water-stressed baseline for sugar beet, leaf − air = A + B·VPD (kPa): Idso (1982), Agric. Meteorol.
-# 27:59-70, as quoted by Yetik & Candoğan (2023), Sugar Tech 25:57-68. Original table not yet checked.
+# Published non-water-stressed baseline for sugar beet, leaf − air (°C) = A + B·VPD (kPa): Idso (1982), Agric.
+# Meteorol. 27:59-70, Table I (sunlit canopy, Mesa, Arizona; N = 47, r = 0.898). Shaded canopies sit ~3.8 °C lower.
 IDSO_A, IDSO_B = 2.50, -1.92
 
 RULES = {  # name -> (column, label, what the grower needs to run it)
