@@ -54,5 +54,8 @@ silently restyle a page or change a token. Changes to the system go through the 
 update `design/DESIGN.md`, `design/tokens.json` and `design/tokens.css` together (DESIGN.md
 section 10).
 
-`app/components.py` (shared, owned by Yuming) still carries the older palette. Do not edit it
-without his agreement. New page code uses the tokens directly until it is migrated.
+`app/components.py` (shared, owned by Yuming) reads the colour tokens from `design/tokens.json`
+(`components.C["teal-700"]`) and holds the Plotly template and the shared parts: `header`, `chip`,
+`segmented`, `select`, `panel`, `graph`, `mark`, `readout`, `not_available`. `app/app.py` injects
+`design/tokens.css`, so CSS uses `var(--uw-teal-700)`; shared page styles are in
+`app/assets/uiwue.css`. Use these rather than raw hex values, and ask Yuming before editing them.

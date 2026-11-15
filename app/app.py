@@ -20,6 +20,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html
 
+FONTS = "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap"
 app = dash.Dash(
     __name__,
     use_pages=True,
@@ -27,19 +28,27 @@ app = dash.Dash(
     assets_folder=str(HERE / "assets"),
     title="UiWUE",
     suppress_callback_exceptions=True,
-    external_stylesheets=[dbc.themes.FLATLY],
+    external_stylesheets=[dbc.themes.FLATLY, FONTS],
 )
+# design/tokens.css is the one copy of the CSS tokens (--uw-*); assets/uiwue.css uses them
+TOKENS_CSS = (HERE.parent / "design" / "tokens.css").read_text(encoding="utf-8")
+app.index_string = app.index_string.replace("{%css%}", "{%css%}\n<style>" + TOKENS_CSS + "</style>")
 server = app.server  # for a WSGI server, e.g. waitress-serve --port 8050 app:server
 
 pages = sorted(dash.page_registry.values(), key=lambda p: (p.get("order") is None, p.get("order") or 0))
-navbar = dbc.NavbarSimple(
-    [dbc.NavLink(p["name"], href=p["relative_path"]) for p in pages],
-    brand="UiWUE · water-deficit workbench",
-    color="primary",
-    dark=True,
-    fluid=True,
+navbar = html.Header(
+    [
+        html.A("UiWUE", href="/", className="uw-brand"),
+        html.Nav(
+            dbc.Nav(
+                [dbc.NavLink(p["name"], href=p["relative_path"], active="exact") for p in pages], className="uw-links"
+            ),
+            **{"aria-label": "Pages"},
+        ),
+    ],
+    className="uw-nav",
 )
-app.layout = html.Div([navbar, dbc.Container(dash.page_container, fluid=True, className="py-3")])
+app.layout = html.Div([navbar, dash.page_container], className="uw-page")
 
 
 def main(argv=None):
