@@ -168,10 +168,22 @@ def plant_link(bed, plant, day=None, cls="", hover=None, text=None):
     )
 
 
-def header(title, question, *right):
-    """Page header: the title (the page's question on hover), then chips and controls to its right."""
+def _group_of(title):
+    """The nav group ('Detect') of the page whose name is ``title``; None for a page outside the groups."""
+    import dash  # the registry is filled by the time a layout calls header()
+
+    path = next((p["path"] for p in dash.page_registry.values() if p["name"] == title), None)
+    return next((group for group, _, items in NAV if any(path == p for p, _ in items)), None)
+
+
+def header(title, question, *right, kicker=None):
+    """Page header: the title (the page's question on hover), then chips and controls to its right. A caps kicker
+    sits over the title: the page's nav group (See, Detect, Act, Data), or ``kicker``. It is drawn by CSS from
+    ``data-kicker``, so the header's children stay title, spacer, controls."""
+    kicker = kicker or _group_of(title)
+    kw = {"data-kicker": kicker} if kicker else {}
     return html.Div(
-        [html.H1(title, title=question, className="uw-title"), html.Div(className="uw-spacer"), *right],
+        [html.H1(title, title=question, className="uw-title", **kw), html.Div(className="uw-spacer"), *right],
         className="uw-header",
     )
 

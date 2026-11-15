@@ -1,0 +1,93 @@
+/* Home (hm-): the trial as a hero (timeline, beds, numbers, two photos of one plant), the first-sign figure and
+   the pages as a numbered path. Token variables only (design/tokens.css); shared parts are in uiwue.css. */
+
+.hm-hero { display: flex; flex-wrap: wrap; gap: var(--uw-space-6); align-items: stretch; padding-bottom: var(--uw-space-2); }
+.hm-hero-text { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-4); }
+.hm-hero-text .uw-header { padding-bottom: 0; }
+.hm-figure { flex: 1 1 420px; max-width: 560px; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--uw-space-2); padding-top: var(--uw-space-5); }
+
+/* the trial as one bar, to scale */
+.hm-timeline { display: flex; gap: var(--uw-space-1); }
+.hm-seg-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--uw-space-1); cursor: help; }
+.hm-seg { min-height: 44px; display: flex; align-items: center; padding: 0 var(--uw-space-3); border-radius: var(--uw-radius-md); background: var(--uw-surface-2); color: var(--uw-ink-muted); overflow: hidden; white-space: nowrap; }
+.hm-seg.uw-mint { background: var(--uw-mint); color: var(--uw-forest-700); }
+.hm-seg.uw-sand { background: var(--uw-sand); color: var(--uw-amber-900); }
+.hm-seg b { font-size: 13px; }
+.hm-seg-date { font-size: 12px; line-height: 16px; color: var(--uw-ink-muted); white-space: nowrap; }
+
+/* the three beds */
+.hm-beds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--uw-space-3); }
+.hm-bed { display: flex; flex-direction: column; gap: 2px; padding: var(--uw-space-3) var(--uw-space-4); border-radius: var(--uw-radius-md); cursor: help; min-width: 0; }
+.hm-bed b { font-family: var(--uw-font-display); font-size: 24px; line-height: 28px; color: var(--uw-ink-display); }
+.hm-bed-word { font-weight: 700; font-size: 13px; line-height: 18px; }
+.hm-bed.uw-sky .hm-bed-word { color: var(--uw-teal-700); }
+.hm-bed-n { font-size: 13px; line-height: 18px; color: var(--uw-slate-600); }
+
+/* the trial in four numbers */
+.hm-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--uw-space-3); border-top: 1px solid var(--uw-rule); padding-top: var(--uw-space-3); }
+.hm-nums > div { display: flex; flex-direction: column; min-width: 0; cursor: help; }
+.hm-num { font-family: var(--uw-font-display); font-size: 36px; line-height: 42px; font-weight: 700; color: var(--uw-ink-display); }
+.hm-num-label { font-size: 13px; line-height: 18px; color: var(--uw-ink-muted); }
+
+/* one deficit plant, before and on day 10 */
+.hm-shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--uw-space-2); }
+.hm-shot { margin: 0; display: flex; flex-direction: column; gap: var(--uw-space-1); min-width: 0; }
+.hm-photo { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: var(--uw-radius-lg); border: 1px solid var(--uw-rule); background: var(--uw-surface-2); }
+.hm-shot figcaption { display: flex; align-items: baseline; gap: var(--uw-space-2); font-size: 13px; color: var(--uw-ink-muted); }
+.hm-shot figcaption b { font-family: var(--uw-font-display); font-size: 17px; color: var(--uw-ink-display); }
+.hm-shot-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2) var(--uw-space-3); }
+
+/* first sign: one track per sensor over the no-water window */
+.hm-race { display: flex; flex-direction: column; gap: var(--uw-space-2); }
+.hm-race-row { display: flex; align-items: center; gap: var(--uw-space-4); min-height: 44px; cursor: help; }
+.hm-race-name { flex: 0 0 132px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-1) var(--uw-space-2); }
+.hm-race-name b { font-family: var(--uw-font-display); font-size: 19px; color: var(--uw-ink-display); }
+.hm-race-size .hm-race-name b { color: var(--uw-ink-muted); }
+.hm-race-track { flex: 1 1 auto; position: relative; height: 28px; border-radius: var(--uw-radius-sm); background: var(--uw-surface-2); }
+.hm-race-seen { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 0 var(--uw-radius-sm) var(--uw-radius-sm) 0; background: var(--uw-amber-200); }
+.hm-race-size .hm-race-seen { background: var(--uw-gray); }
+.hm-race-onset { position: absolute; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; box-sizing: border-box; border-radius: 50%; background: var(--uw-surface); border: 4px solid var(--uw-amber-700); }
+.hm-race-size .hm-race-onset { border-color: var(--uw-gray-500); }
+.hm-race-day { flex: 0 0 108px; display: flex; align-items: baseline; gap: var(--uw-space-2); font-size: 13px; color: var(--uw-ink-muted); white-space: nowrap; }
+.hm-race-day b { font-family: var(--uw-font-display); font-size: 21px; color: var(--uw-ink-display); }
+.hm-race-axisrow { min-height: 18px; cursor: default; }
+.hm-race-axis { flex: 1 1 auto; position: relative; height: 16px; font-size: 12px; color: var(--uw-ink-muted); }
+.hm-race-axis > span { position: absolute; transform: translateX(-50%); }
+.hm-race-key { position: static; margin: 0; width: 16px; height: 16px; border-width: 3px; display: inline-block; }
+.hm-sw-quiet { background: var(--uw-surface-2); }
+.hm-sw-seen { background: var(--uw-amber-200); }
+
+/* the pages as a numbered path: See, Detect, Act, Data */
+.uw-home .uw-paths { counter-reset: step; gap: var(--uw-space-5); padding-top: var(--uw-space-2); }
+.uw-home .uw-path-head { counter-increment: step; display: flex; align-items: center; gap: var(--uw-space-2); padding-bottom: var(--uw-space-1); color: var(--uw-ink-display); font-size: 12px; }
+.uw-home .uw-path-head::before { content: counter(step); width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--uw-navy); color: var(--uw-surface); font-family: var(--uw-font-display); font-size: 15px; letter-spacing: 0; }
+.uw-home .uw-pagetile { position: relative; min-height: 72px; padding: var(--uw-space-3) var(--uw-space-6) var(--uw-space-3) var(--uw-space-4); border-radius: var(--uw-radius-md); }
+.uw-home .uw-pagetile::after { content: "›"; position: absolute; right: var(--uw-space-4); top: 50%; transform: translateY(-50%); font-size: 21px; line-height: 21px; font-weight: 400; color: var(--uw-teal-700); }
+.uw-home .uw-pagetile b { font-family: var(--uw-font-display); font-size: 17px; line-height: 22px; }
+
+/* arrival: each block rises once (none with reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes hm-rise { from { opacity: 0; transform: translateY(12px); } }
+  .uw-home > * { animation: hm-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .uw-home > :nth-child(2) { animation-delay: 80ms; }
+  .uw-home > :nth-child(3) { animation-delay: 160ms; }
+  .uw-home > :nth-child(4) { animation-delay: 240ms; }
+  .uw-home > :nth-child(5) { animation-delay: 320ms; }
+}
+
+@media (max-width: 700px) {
+  .hm-figure { max-width: none; padding-top: 0; }
+  .hm-photo { aspect-ratio: 1 / 1; }
+  .hm-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hm-num { font-size: 28px; line-height: 34px; }
+  .hm-bed { padding: var(--uw-space-2) var(--uw-space-3); }
+  .hm-bed b { font-size: 21px; line-height: 26px; }
+  /* the short segments keep their names: the bar scrolls in its own box */
+  .hm-timeline { overflow-x: auto; }
+  .hm-seg-col { min-width: 84px; }
+  .hm-race-row { gap: var(--uw-space-2); }
+  .hm-race-name { flex-basis: 84px; }
+  .hm-race-name b { font-size: 17px; }
+  .hm-race-day { flex: 0 0 52px; flex-direction: column; gap: 0; }
+  .hm-race-day b { font-size: 17px; }
+}

@@ -40,6 +40,7 @@ QUESTION = "How were the detection results checked, and what can they not tell y
 register_page(__name__, path="/methods", name="Methods & limits", order=90, description=QUESTION)
 
 GROUPS = {"W2": "W2", "W3": "W3", "all": "W2 + W3"}
+KEY_LIMITS = 4  # the first entries of ``_limits``: one control bed, the bed effect, W3's cut leaves, few RGB plants
 
 # How results were checked: (anchor or None, title, what it means)
 RULES = [
@@ -280,7 +281,10 @@ def _limits(tables=None):
         ),
         entry("aphids", "Aphids", plants("W2", "A6", "A8"), "Black bean aphid noted with wilting on two W2 plants."),
     ]
-    return html.Ul(items, className="dt-entries")
+    # the four limits that bound every claim lead the page as cards; the rest follow as a list
+    return html.Ul(items[:KEY_LIMITS], className="dt-entries dt-key"), html.Ul(
+        items[KEY_LIMITS:], className="dt-entries"
+    )
 
 
 LOCKBOX_MODELS = (  # model in the table -> row label
@@ -407,7 +411,7 @@ def layout(**_):
     checks = html.Section(
         [
             html.Div(html.H2("Checks"), className="uw-panel-head"),
-            html.Ul([entry(a, t, "", x) for a, t, x in RULES], className="dt-entries"),
+            html.Ol([entry(a, t, "", x) for a, t, x in RULES], className="dt-entries dt-steps"),
             _split(),
         ],
         id="checks",
@@ -416,18 +420,19 @@ def layout(**_):
     words = html.Section(
         [
             html.Div(html.H2("Words"), className="uw-panel-head"),
-            html.Ul([entry(a, t, "", x) for a, t, x in WORDS], className="dt-entries"),
+            html.Ul([entry(a, t, "", x) for a, t, x in WORDS], className="dt-entries dt-words"),
         ],
         id="words",
         className="uw-panel",
     )
+    key, rest = _limits(tables)
+    lead = html.Section(key, id="limits", className="dt-lead", **{"aria-label": "Limits"})
     limits = html.Section(
         [
-            html.Div(html.H2("Limits"), className="uw-panel-head"),
-            _limits(tables),
+            html.Div(html.H2("More limits"), className="uw-panel-head"),
+            rest,
             html.Ul(_lockbox(), className="dt-entries", style={"paddingTop": "8px"}),
         ],
-        id="limits",
         className="uw-panel",
     )
     watered = panel(
@@ -458,7 +463,7 @@ def layout(**_):
             ),
         ],
         id="scope",
-        className="uw-panel",
+        className="uw-panel dt-scope",
     )
     jump = html.Nav(
         [html.A(t, href=f"#{a}", className="uw-btn uw-btn-outline") for a, t in JUMP],
@@ -470,15 +475,9 @@ def layout(**_):
             head,
             dcc.Store(id="ml-hash", data=1),
             jump,
-            html.Div(
-                [
-                    limits,
-                    html.Div([watered, checks], style={"display": "flex", "flexDirection": "column", "gap": "16px"}),
-                    words,
-                    scope,
-                ],
-                className="dt-groups",
-            ),
+            lead,
+            html.Div([limits, html.Div([watered, checks], className="dt-col")], className="dt-groups"),
+            html.Div([words, scope], className="dt-wide"),
             next_steps(
                 ("Home", "/", "the experiment and its findings"),
                 ("Early warning", "/early-warning", "which sensor warns first, and by how many days"),

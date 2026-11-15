@@ -113,7 +113,35 @@ def first_separation(row):
     return None
 
 
-def heatmap(sep):
+def best_hours(sch):
+    """The flyover hours of the best rule's recommended schedule (uiwue.diurnal), () without one."""
+    rule = best_rule(sch) if sch is not None and "recommended" in sch else None
+    rec = sch[sch.recommended & (sch.rule == rule)] if rule else None
+    return tuple(SCHEDULES.get(rec.schedule.iloc[0], ())) if rec is not None and len(rec) else ()
+
+
+def band_row(days):
+    """The time bands over the grid, named once each: the baseline (mint) and the no-water window (sand)."""
+    kind = {d: "mint" if -4 <= d <= -1 else "sand" if 0 <= d <= 12 else None for d in days}
+    name = {"mint": "baseline", "sand": "no water"}
+    cells, last = [], None
+    for d in days:
+        k = kind[d]
+        cells.append(
+            html.Div(
+                html.Span(name[k], className="rx-band-name") if k and k != last else None,
+                className=f"uw-heat-band rx-band uw-{k}" if k else "uw-heat-band rx-band",
+            )
+        )
+        last = k
+    return html.Div(
+        [html.Div(style={"flex": "0 0 56px"}), *cells, html.Div(style={"flex": "0 0 76px"})],
+        className="uw-heat-row",
+        title="baseline 30 Aug – 2 Sep (mint) · no water 3 – 15 Sep (sand)",
+    )
+
+
+def heatmap(sep, best=()):
     days = list(range(int(sep.columns.min()), int(sep.columns.max()) + 1))
     head = html.Div(
         [
@@ -128,7 +156,7 @@ def heatmap(sep):
         ],
         className="uw-heat-row",
     )
-    rows = [head]
+    rows = [head, band_row(days)]
     for h in SLOTS:
         r = sep.loc[h].dropna() if h in sep.index else pd.Series(dtype=float)
         first = first_separation(r)
@@ -152,7 +180,11 @@ def heatmap(sep):
         rows.append(
             html.Div(
                 [
-                    html.Div(f"{h:02d}", className="uw-heat-key"),
+                    html.Div(
+                        html.Span(f"{h:02d}", className="rx-best" if h in best else None),
+                        className="uw-heat-key",
+                        title="a flyover of the recommended schedule" if h in best else None,
+                    ),
                     *cells,
                     html.Div(
                         "never" if first is None else f"day {first}",
@@ -163,18 +195,6 @@ def heatmap(sep):
                 className="uw-heat-row",
             )
         )
-    band = {d: C["mint"] if -4 <= d <= -1 else C["sand"] if 0 <= d <= 12 else "transparent" for d in days}
-    rows.append(
-        html.Div(
-            [
-                html.Div(style={"flex": "0 0 56px"}),
-                *[html.Div(className="uw-heat-band", style={"background": band[d]}) for d in days],
-                html.Div(style={"flex": "0 0 76px"}),
-            ],
-            className="uw-heat-row",
-            title="baseline 30 Aug – 2 Sep (mint) · no water 3 – 15 Sep (sand)",
-        )
-    )
     ring = {"outline": f"2px solid {C['navy']}", "outlineOffset": "-2px"}
     # one ramp, named at its ends (each bin on hover), and the outline; the band row explains itself on hover
     ramp = html.Span(
@@ -192,6 +212,18 @@ def heatmap(sep):
                 "higher (more stressed); teal, lower",
             ),
             html.Span([html.Span(className="uw-swatch", style=ring), "first 2 days"], title="first two days ≥ 0.9"),
+            *(
+                [
+                    html.Span(
+                        [html.Span("12", className="rx-best rx-best-key", **{"aria-hidden": "true"}), "best flyover"],
+                        title="The flyovers of the recommended schedule: "
+                        + " + ".join(f"{h:02d}" for h in best)
+                        + " h",
+                    )
+                ]
+                if best
+                else []
+            ),
         ],
         className="uw-legend",
     )
@@ -427,7 +459,8 @@ def update_separability(score):
         f"({s.columns.min()} to {s.columns.max()}); stressed and watered plants separate "
         + ", ".join(f"at {h:02d} h from day {d}" if d is not None else f"never at {h:02d} h" for h, d in first.items())
     )
-    grid = html.Div(heatmap(s), role="img", title=SCORE_HOVER[score], **{"aria-label": label})
+    best = best_hours(read_table("diurnal", "schedules"))
+    grid = html.Div(heatmap(s, best), role="img", title=SCORE_HOVER[score], **{"aria-label": label})
     return grid, bed_effect(s)
 
 

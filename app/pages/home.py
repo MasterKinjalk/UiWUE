@@ -1,19 +1,36 @@
 """Home: the experiment in one line, its finding in numbers read live from the tables, and the way to every page."""
 
-from datetime import date
+from datetime import date, timedelta
+from pathlib import Path
 
 import dash
 import numpy as np
 import pandas as pd
 import threed_canopy as tc
-from components import BLURB, NAV, SIZE_ONLY, C, bed_effect_chip, day_label, details, header, not_available, plain, stat
+from components import (
+    BLURB,
+    NAV,
+    SIZE_ONLY,
+    C,
+    bed_effect_chip,
+    chip,
+    day_label,
+    details,
+    header,
+    not_available,
+    panel,
+    plain,
+    plant_link,
+    stat,
+)
 from dash import dcc, html
 
-from uiwue.core import BASELINE, CUTOFF, DERIVED, REWATER, load_traits
+from uiwue.core import BASELINE, CUTOFF, DERIVED, REWATER, SLOTS, load_traits
 
 QUESTION = "What was the experiment, what did it find, and where do I start?"
 dash.register_page(__name__, path="/", name="Home", order=0, description=QUESTION)
 
+ASSETS = Path(__file__).resolve().parents[1] / "assets" / "home"
 SPAN = (date(2025, 8, 12), date(2025, 9, 22))  # the dataset's imaging period
 DRY = (REWATER - CUTOFF).days  # day 12: re-watered
 MODULES = {  # folder in derived/ -> (name, owner); the main table is its largest *_runs table
@@ -38,6 +55,9 @@ GROUPS = {  # page path -> (tile tint, disc colour)
 }
 SENSOR_TAG = {"Thermal": "Thermal", "Depth": "3D", "RGB": "RGB"}
 SENSOR_PAGE = {"Thermal": "/early-warning", "Depth": "/threed", "RGB": "/early-warning"}
+KICKER = "ADA 2025 · greenhouse trial"
+PHOTO_PLANT = ("W2", "A8")  # the plant in the two photos: a deficit plant, the day before the cutoff and on day 10
+PHOTOS = (("w2a8_day-1.jpg", -1), ("w2a8_day10.jpg", 10))  # (file in assets/home/, day since irrigation off)
 BEDS = (  # bed, treatment word, tint, text colour, hover
     ("W1", "control", "sky", "ink-display", "Watered throughout"),
     ("W2", "deficit", "sand", "amber-900", f"No water from day 0 (3 Sep) to re-watering on day {DRY} (15 Sep)"),
@@ -67,28 +87,145 @@ def signed_pct(x):
     return "–" if x is None or not np.isfinite(x) else f"{x:+.0f}".replace("-", "−")
 
 
-# ---------------------------------------------------------------- the experiment, in one row
+# ---------------------------------------------------------------- the experiment: beds, timeline, numbers, photos
 def facts(df):
-    """W1 / W2 / W3 with their plant counts (from the trait table) and the no-water window."""
+    """W1 / W2 / W3 as cards: the bed, its treatment, its plant count (from the trait table)."""
     n = df.groupby("bed").plant.nunique().to_dict() if df is not None and {"bed", "plant"} <= set(df) else {}
     out = [
-        html.Span(
-            [html.B(bed), f"{word} · {n[bed]} plants" if n.get(bed) else f"{word} · –"],
+        html.Div(
+            [
+                html.B(bed),
+                html.Span(word, className="hm-bed-word", style={"color": C[ink]}),
+                html.Span(f"{n[bed]} plants" if n.get(bed) else "–", className="hm-bed-n"),
+            ],
             title=hover,
-            className=f"uw-fact uw-{tint}",
-            style={"color": C[ink]},
+            className=f"hm-bed uw-{tint}",
         )
         for bed, word, tint, ink, hover in BEDS
     ]
-    out.append(
-        html.Span(
-            [html.B("No water"), f"day 0–{DRY} · {CUTOFF.day}–{REWATER.day} Sep"],
-            title=f"Irrigation off on 3 Sep 2025 (day 0), re-watered in the evening of 15 Sep (day {DRY}); "
-            "baseline 30 Aug – 2 Sep",
-            className="uw-fact",
-        )
+    return html.Div(out, className="hm-beds", **{"aria-label": "The beds"})
+
+
+def _d(x):
+    return f"{x.day} {x:%b}"
+
+
+def timeline():
+    """The trial as one bar, to scale: watered, the baseline (mint), the no-water window (sand), re-watered; each
+    segment's first date under it."""
+    one = timedelta(days=1)
+    segs = (  # (label, first day, last day, class, date line, hover)
+        ("Watered", SPAN[0], BASELINE[0] - one, "", _d(SPAN[0]), "Every bed watered"),
+        (
+            "Baseline",
+            BASELINE[0],
+            BASELINE[1],
+            "uw-mint",
+            _d(BASELINE[0]),
+            f"Each plant's own baseline: its median over {_d(BASELINE[0])} – {_d(BASELINE[1])}, at the same flyover",
+        ),
+        (
+            "No water",
+            CUTOFF,
+            REWATER,
+            "uw-sand",
+            f"Day 0–{DRY} · {CUTOFF.day}–{_d(REWATER)}",
+            f"Irrigation off on {_d(CUTOFF)} 2025 (day 0) in W2 and W3, re-watered on the evening of day {DRY}.",
+        ),
+        ("Re-watered", REWATER + one, SPAN[1], "", _d(REWATER + one), f"Every bed watered again, to {_d(SPAN[1])}"),
     )
-    return html.Div(out, className="uw-facts", **{"aria-label": "The experiment"})
+    days = lambda a, b: (pd.Timestamp(b) - pd.Timestamp(a)).days + 1
+    return html.Div(
+        [
+            html.Div(
+                [html.Div(html.B(label), className=f"hm-seg {cls}".strip()), html.Span(when, className="hm-seg-date")],
+                title=hover,
+                className="hm-seg-col",
+                style={"flexGrow": days(a, b)},
+            )
+            for label, a, b, cls, when, hover in segs
+        ],
+        className="hm-timeline",
+        role="img",
+        **{
+            "aria-label": f"Timeline: watered from {_d(SPAN[0])}, baseline {_d(BASELINE[0])} to {_d(BASELINE[1])}, "
+            f"no water {_d(CUTOFF)} to {_d(REWATER)} (day 0 to {DRY}), re-watered to {_d(SPAN[1])}"
+        },
+    )
+
+
+def numbers(df):
+    """The trial in four numbers, read from the trait table: plants, flyovers a day, days without water, leaf clips."""
+    has = df is not None and {"bed", "plant"} <= set(df)
+    plants = df[["bed", "plant"]].drop_duplicates() if has else None
+    clips = (
+        df.loc[df["truth_turgor_shift"].notna(), ["bed", "plant"]].drop_duplicates()
+        if has and "truth_turgor_shift" in df
+        else None
+    )
+    hours = sorted(int(h) for h in df.hour.dropna().unique()) if has and "hour" in df else list(SLOTS)
+    items = (
+        (
+            f"{len(plants)}" if has else "–",
+            f"plants · {plants.bed.nunique()} beds" if has else "plants",
+            "Plants in the trait table" if has else "No trait table in derived/ yet",
+        ),
+        (f"{len(hours)}", "flyovers a day", "Flyovers at " + ", ".join(f"{h:02d}" for h in hours) + " h"),
+        (f"{DRY}", "days without water", f"W2 and W3, day 0 ({_d(CUTOFF)}) to day {DRY} ({_d(REWATER)})"),
+        (
+            f"{len(clips)}" if clips is not None and len(clips) else "–",
+            "leaf clips",
+            "Plants with a leaf-clip turgor sensor, the ground truth"
+            if clips is not None
+            else "No leaf-clip table yet",
+        ),
+    )
+    return html.Div(
+        [
+            html.Div([html.Span(v, className="hm-num"), html.Span(label, className="hm-num-label")], title=hover)
+            for v, label, hover in items
+        ],
+        className="hm-nums",
+        **{"aria-label": "The trial in numbers"},
+    )
+
+
+def photos():
+    """One deficit plant from above, the day before irrigation off and on day 10: what the numbers measure."""
+    bed, plant = PHOTO_PLANT
+    shots = []
+    for name, day in PHOTOS:
+        if not (ASSETS / name).exists():
+            continue
+        d, when = day_label(day)
+        shots.append(
+            html.Figure(
+                [
+                    html.Img(
+                        src=dash.get_asset_url(f"home/{name}"),
+                        alt=f"{bed} {plant} from above, {d.lower()} ({when}): RGB camera",
+                        className="hm-photo",
+                    ),
+                    html.Figcaption([html.B(d), html.Span(when)]),
+                ],
+                className="hm-shot",
+            )
+        )
+    if not shots:
+        return None
+    return html.Div(
+        [
+            html.Div(shots, className="hm-shots"),
+            html.Div(
+                [
+                    plant_link(bed, plant, PHOTOS[-1][1], hover=f"{bed} {plant}: every sensor, on its profile"),
+                    chip("Water deficit", "Bed W2: no water from day 0 to day 12", "context"),
+                ],
+                className="hm-shot-foot",
+            ),
+        ],
+        className="hm-figure",
+    )
 
 
 # ---------------------------------------------------------------- the finding, in numbers
@@ -153,6 +290,88 @@ def leaf_tile():
         sub=f"control {signed_pct(c['mean'])} %",
         chips=chips,
         href="/threed",
+    )
+
+
+def race():
+    """The page's figure: the no-water window as one track per sensor, day 0 to re-watering, with the first day
+    the sensor tells W2 deficit from W1 control (the tiles' onsets), then plant size alone."""
+    o = tc.onsets()
+    if o is None or o.empty:
+        return not_available("Detection onsets")
+    o = o[o["robust_onset_day"].notna()]
+    picks = o[~o["is_size_baseline"] & ~o["bed_effect"] & ~o["fires_before_cutoff"]].drop_duplicates("sensor")
+    shown = [*picks.itertuples(), *o[o["is_size_baseline"]].head(1).itertuples()]
+    if not shown:
+        return not_available("Detection onsets")
+    first = min((int(r.robust_onset_day) for r in shown if not r.is_size_baseline), default=None)
+    at = lambda day: f"{min(max(day, 0), DRY) / DRY * 100:.2f}%"
+    rows, said = [], []
+    for r in shown:
+        day, is_size = int(r.robust_onset_day), bool(r.is_size_baseline)
+        name = SIZE_ONLY if is_size else SENSOR_TAG.get(r.sensor, r.sensor)
+        when = day_label(day)[1]
+        said.append(f"{name} day {day}")
+        lead = day == first and not is_size
+        rows.append(
+            html.Div(
+                [
+                    html.Div(
+                        [html.B(name), html.Span("first", className="uw-chip uw-chip-best") if lead else None],
+                        className="hm-race-name",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(className="hm-race-seen", style={"left": at(day)}),
+                            html.Span(className="hm-race-onset", style={"left": at(day)}),
+                        ],
+                        className="hm-race-track",
+                    ),
+                    html.Div([html.B(f"day {day}"), html.Span(when)], className="hm-race-day"),
+                ],
+                title=f"{name} ({plain(r.signal, r.label)}): W2 deficit plants separate from W1 control from day {day} "
+                f"({when}); {int(r.n_deficit)} deficit, {int(r.n_control)} control plants.",
+                className="hm-race-row hm-race-size" if is_size else "hm-race-row",
+            )
+        )
+    axis = html.Div(
+        [
+            html.Div(className="hm-race-name"),
+            html.Div(
+                [html.Span(f"{d}", style={"left": at(d)}) for d in range(0, DRY + 1, 2)],
+                className="hm-race-axis",
+                title="Days since irrigation off (day 0 = 3 Sep 2025)",
+            ),
+            html.Div(className="hm-race-day"),
+        ],
+        className="hm-race-row hm-race-axisrow",
+        **{"aria-hidden": "true"},
+    )
+    legend = html.Div(
+        [
+            html.Span([html.Span(className="uw-swatch hm-sw-quiet"), "not seen"]),
+            html.Span([html.Span(className="hm-race-onset hm-race-key"), "first seen"]),
+            html.Span([html.Span(className="uw-swatch hm-sw-seen"), "seen"]),
+        ],
+        className="uw-legend",
+    )
+    return panel(
+        "First sign",
+        html.Div(
+            [*rows, axis],
+            className="hm-race",
+            role="img",
+            **{"aria-label": "First day each sensor separates deficit from control: " + ", ".join(said)},
+        ),
+        legend,
+        hover="The no-water window, day 0 to re-watering. The mark is the first day a sensor's best signal tells the "
+        "W2 deficit plants from the W1 controls (robust onset, detect/onsets); Size only is the floor it must beat.",
+        extra=[
+            html.Div(className="uw-spacer"),
+            dcc.Link(
+                "Early warning", href="/early-warning", title="every signal's onset", className="uw-btn uw-btn-outline"
+            ),
+        ],
     )
 
 
@@ -279,8 +498,12 @@ def coverage():
 
 def layout(**_):
     df = load_traits()
-    head = header("Sugar beet water deficit · 2025", QUESTION)
+    head = header("Sugar beet water deficit · 2025", QUESTION, kicker=KICKER)
     finding = html.Div([*onset_tiles(), leaf_tile()], className="uw-tiles uw-home-tiles", **{"aria-label": "Finding"})
+    hero = html.Section(
+        [html.Div([head, timeline(), facts(df), numbers(df)], className="hm-hero-text"), photos()],
+        className="hm-hero",
+    )
     if df is None:
-        return html.Div([head, facts(None), finding, not_available("Trait table"), page_tiles()])
-    return html.Div([head, facts(df), finding, page_tiles(), coverage()], className="uw-home")
+        return html.Div([hero, finding, not_available("Trait table"), page_tiles()], className="uw-home")
+    return html.Div([hero, finding, race(), page_tiles(), coverage()], className="uw-home")

@@ -70,6 +70,11 @@ FUSION_MODEL_HOVER = {
     "fusion_v2": "the chosen design: hand-made thermal features over 6 h, 171 plants",
 }
 SETUPS_MIN_PX = 0  # the setups now run down the page, so the chart fits a phone without its own scroll
+RESOLUTIONS = (("thermal", "640 × 480"), ("thermal_r160", "160 × 120"), ("thermal_r80", "80 × 60"))  # sensors, px
+RES_HOVER = (
+    "One thermal camera, its image averaged down to fewer pixels: does a cheaper camera keep the score and the "
+    "onset? The navy tick is 0.5, chance."
+)
 
 
 def _is_fusion(bench):
@@ -254,6 +259,40 @@ def fusion_tiles(bench, group, metric):
     return out or [missing_tile("Fusion v2", "No fusion results for this group")]
 
 
+def resolution(bench, group, plant_set, metric):
+    """Thermal alone at each resolution in the benchmark: the score as a bar against chance, and the onset."""
+    b = _view(bench, plant_set)
+    b = b[(b["group"] == group) & (b["model"] == MODEL)]
+    rows = []
+    for sensors, px in RESOLUTIONS:
+        r = _row(b, sensors)
+        if r is None:
+            continue
+        onset = _onset(r)
+        rows.append(
+            html.Div(
+                [
+                    html.Div([html.B(px), html.Small("px")], className="sc-res-name"),
+                    html.Span(
+                        [
+                            html.Span(style={"width": f"{100 * float(r[metric]):.0f}%", "background": C["teal-700"]}),
+                            html.I(style={"left": "50%"}),
+                        ],
+                        className="uw-bar",
+                    ),
+                    html.Span(fmt(r[metric]), className="uw-num"),
+                    html.Div(
+                        [html.Span(onset if onset == "no onset" else f"onset {onset}"), *bed_effect_chip(r)],
+                        className="sc-res-onset",
+                    ),
+                ],
+                title=_hover(r, b),
+                className="sc-res-row",
+            )
+        )
+    return rows or not_available("Thermal resolutions")
+
+
 def _legend(fusion):
     items = [
         html.Span([html.Span("●", **{"aria-hidden": "true"}), "score · 95 % CI"]),
@@ -323,12 +362,28 @@ def layout(view=None, set=None, group=None, window=None, bed=None, plant=None, d
             head,
             dcc.Store(id="sc-url"),
             html.Div(id="sc-tiles", className="uw-tiles uw-lead"),
-            panel(
-                "Detection score",
-                graph("sc-figure", "Detection score per sensor setup, best at the top, with plant size alone"),
-                html.Div(id="sc-legend"),
-                hover=f"{SCORE_HOVER} {LOPO} Simple model (logistic) shown; boosted trees on hover and in the table.",
-                extra=[html.Span(id="sc-flags", className="dt-chips")],
+            html.Div(
+                [
+                    html.Main(
+                        panel(
+                            "Detection score",
+                            graph(
+                                "sc-figure", "Detection score per sensor setup, best at the top, with plant size alone"
+                            ),
+                            html.Div(id="sc-legend"),
+                            hover=f"{SCORE_HOVER} {LOPO} Simple model (logistic) shown; boosted trees on hover and in "
+                            "the table.",
+                            extra=[html.Span(id="sc-flags", className="dt-chips")],
+                        ),
+                        className="uw-main",
+                    ),
+                    html.Aside(
+                        panel("Thermal resolution", html.Div(id="sc-res", className="sc-res"), hover=RES_HOVER),
+                        id="sc-side",
+                        className="uw-side sc-side",
+                    ),
+                ],
+                className="uw-row",
             ),
             options,
             details("All setups", html.Div(id="sc-table"), id="sc-all"),
@@ -417,6 +472,21 @@ def _update(view, plant_set, group, metric):
         cols = {k: v for k, v in TABLE_COLUMNS.items() if k in g.columns and g[k].notna().any()}  # no empty column
         tbl = table(g.sort_values(metric, ascending=False), cols, id="sc-datatable")
     return tiles(bench, group, ps, metric), fig, flags, tbl, _legend(fusion), set_options
+
+
+@callback(
+    Output("sc-res", "children"),
+    Output("sc-side", "hidden"),
+    Input("sc-view", "value"),
+    Input("sc-set", "value"),
+    Input("sc-group", "value"),
+    Input("sc-metric", "value"),
+)
+def _resolution(view, plant_set, group, metric):
+    """The side panel: thermal alone at each resolution; the fusion view has no such setups, so it gives way."""
+    if view == "fusion":
+        return [], True
+    return resolution(load_benchmark(), group, plant_set, metric), False
 
 
 # the address bar follows the view and the options (replaceState: no reload, no new history entry)

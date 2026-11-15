@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from components import (
+    BASELINE_DAYS,
     RULE_SHORT,
     TREATMENT,
     C,
@@ -239,33 +240,43 @@ def layout(bed=None, plant=None, day=None, **_):
             dcc.Store(id="ir-url-done"),
             dcc.Download(id="ir-download"),
             html.Div(id="ir-tiles", className="uw-tiles uw-lead", **{"aria-label": "Water now and track record"}),
-            html.Main(
+            html.Div(
+                html.Div(id="ir-strip", className="ir-strip", role="group", **{"aria-label": "Day"}),
+                className="uw-scroll ir-strip-box",
+            ),
+            html.Div(
                 [
-                    panel(
-                        "All plants",
-                        html.Div(id="ir-plants", className="uw-plants ir-grid"),
-                        hover="Each plant's latest usable score against the threshold (the navy tick); the mark is its "
-                        "advice for the day, the plants to water first. Click a plant to see its scans below.",
-                        extra=[
-                            html.Div(id="ir-legend", className="uw-legend ir-counts"),
-                            html.Button(
-                                "CSV",
-                                id="ir-csv",
-                                className="uw-btn uw-btn-outline",
-                                title="Download the plants to water on this day",
-                                **{"aria-label": "Download the water-now list as CSV"},
-                            ),
-                        ],
+                    html.Main(
+                        panel(
+                            "All plants",
+                            html.Div(id="ir-plants", className="uw-plants ir-grid"),
+                            hover="Each plant's latest usable score against the threshold (the navy tick); the mark is its "
+                            "advice for the day, the plants to water first. Click a plant to see its scans.",
+                            extra=[
+                                html.Div(id="ir-legend", className="uw-legend ir-counts"),
+                                html.Button(
+                                    "CSV",
+                                    id="ir-csv",
+                                    className="uw-btn uw-btn-outline",
+                                    title="Download the plants to water on this day",
+                                    **{"aria-label": "Download the water-now list as CSV"},
+                                ),
+                            ],
+                        ),
+                        className="uw-main ir-main",
                     ),
-                    panel(
-                        "Plant",
-                        graph("ir-trace", "Alert score of the selected plant by day since irrigation off", 300),
-                        hover="Score at each usable flyover of the schedule; mark = that scan's status; "
-                        "dashed line = threshold",
-                        extra=[html.Div(id="ir-trace-head", className="ir-trace-head")],
+                    html.Aside(
+                        panel(
+                            "Plant",
+                            graph("ir-trace", "Alert score of the selected plant by day since irrigation off", 300),
+                            hover="Score at each usable flyover of the schedule; mark = that scan's status; "
+                            "dashed line = threshold",
+                            extra=[html.Div(id="ir-trace-head", className="ir-trace-head")],
+                        ),
+                        className="uw-side ir-side",
                     ),
                 ],
-                className="uw-main ir-main",
+                className="uw-row ir-row",
             ),
             next_steps(*next_of(), id="ir-more"),
         ]
@@ -276,12 +287,17 @@ def layout(bed=None, plant=None, day=None, **_):
     Output("ir-day", "data"),
     Input("ir-prev", "n_clicks"),
     Input("ir-next", "n_clicks"),
+    Input({"type": "ir-daycell", "day": ALL}, "n_clicks"),
     State("ir-day", "data"),
     State("ir-days", "data"),
     prevent_initial_call=True,
 )
-def step(_prev, _next, day, days):
-    """The previous or next day that has data, relative to the shown day; stays put at either end."""
+def step(_prev, _next, _cells, day, days):
+    """The day picked on the strip, or the previous or next day that has data; stays put at either end."""
+    if isinstance(ctx.triggered_id, dict):  # a cell of the day strip (a re-drawn strip comes back with no clicks)
+        if not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return ctx.triggered_id["day"]
     if ctx.triggered_id == "ir-prev":
         return max((d for d in days if d < day), default=day)
     return min((d for d in days if d > day), default=day)
@@ -300,6 +316,49 @@ def pick(clicks):
     if not trig:
         raise PreventUpdate
     return ctx.triggered_id["pid"]
+
+
+def day_strip(rule, schedule, day, days):
+    """Day strip (DESIGN 5): one cell per day with data, baseline mint, no-water sand, the shown day navy; over
+    each day a bar for the plants flagged irrigate that day, so the strip shows when the alerts arrive."""
+    ds = days_of(rule, schedule)
+    n = ds[ds.status == "irrigate"].groupby("day").size()
+    top = max(int(n.max()) if len(n) else 0, 1)
+    cells = []
+    for d in days:
+        name, when = day_label(d)
+        k = int(n.get(d, 0))
+        band = "uw-mint" if BASELINE_DAYS[0] < d < BASELINE_DAYS[1] else "uw-sand" if 0 <= d <= REWATER_DAY else ""
+        on = d == day
+        cells.append(
+            html.Button(
+                [
+                    html.Span(
+                        html.Span(style={"height": f"{100 * k / top:.0f}%"}) if k else None,
+                        className="ir-cell-bar",
+                        **{"aria-hidden": "true"},
+                    ),
+                    html.B(f"{d}".replace("-", "−")),
+                    html.Span(when, className="ir-cell-date"),
+                ],
+                id={"type": "ir-daycell", "day": d},
+                n_clicks=0,
+                title=f"{name} · {when}: {k} plants to water",
+                className=f"ir-cell {band} {'ir-cell-on' if on else ''}".strip(),
+                **{"aria-pressed": "true" if on else "false", "aria-label": f"{name}, {when}: {k} plants to water"},
+            )
+        )
+    return cells
+
+
+@callback(
+    Output("ir-strip", "children"),
+    Input("ir-rule", "value"),
+    Input("ir-day", "data"),
+    State("ir-days", "data"),
+)
+def update_strip(rule, day, days):
+    return day_strip(rule, recommended(rule), day, days)
 
 
 def plant_card(r, k, unit, schedule, d, when, selected, pos):
