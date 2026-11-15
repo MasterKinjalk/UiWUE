@@ -35,6 +35,7 @@ import argparse
 import copy
 import dataclasses
 import json
+import re
 import time
 import warnings
 from dataclasses import asdict, dataclass
@@ -773,6 +774,23 @@ def run_new(caches, folds: list[dict], model_name: str, device: str, n_boot=2000
     return tables, info, (rs, cv)
 
 
+def write_scores(scores: pd.DataFrame, out: Path, heldout: bool) -> Path:
+    """fusion_v2_scores_runs: the per-run scores of the development plants (out of fold, written by
+    `train`) and of the lock-box plants (mean of the 5 fold models, written by `predict --lockbox`),
+    told apart by `detect_fusion_v2_heldout`. Each call replaces its own kind of rows and keeps the other."""
+    path = Path(out) / "fusion_v2_scores_runs.parquet"
+    new = scores.rename(columns={k: re.sub(r"^detect_fusion_(ext_)?", "detect_fusion_v2_", k) for k in scores})
+    new["date"] = pd.to_datetime(new["date"]).dt.date
+    new["detect_fusion_v2_heldout"] = heldout
+    if path.exists():
+        old = pd.read_parquet(path)
+        if "detect_fusion_v2_heldout" not in old:  # a table from before the lock-box rows were kept
+            old["detect_fusion_v2_heldout"] = False
+        new = pd.concat([old[old["detect_fusion_v2_heldout"] != heldout], new], ignore_index=True)
+    new.sort_values(["bed", "plant", "date", "hour"], ignore_index=True).to_parquet(path, index=False)
+    return path
+
+
 def _subset(rs: RunSet, rows: np.ndarray) -> RunSet:
     from uiwue.fusion.predict import subset
 
@@ -1220,9 +1238,7 @@ def main(argv=None) -> None:
     scores = tables.pop("fusion_scores_runs")  # v1's table keeps v1's scores; v2 writes its own
     out = train.write(tables, name, a.out)
     if name == "fusion_v2":
-        scores = scores.rename(columns={k: k.replace("detect_fusion_", "detect_fusion_v2_") for k in scores})
-        scores["date"] = pd.to_datetime(scores["date"]).dt.date
-        scores.to_parquet(out / "fusion_v2_scores_runs.parquet", index=False)
+        write_scores(scores, out, heldout=False)
     train.save_oof(rs, named, a.runs_dir / name)
     info = dict(
         model=name, variant=a.variant, finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),
