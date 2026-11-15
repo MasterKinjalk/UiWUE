@@ -11,7 +11,10 @@ The code is in `src/uiwue/fusion/`:
 | `labels.py` | Deficit label, severity stage S0-S3 (clip plants), turgor deviation |
 | `fusion.py` | The fusion model: one token per sensor from [e(t), e(t) - e(baseline)], a [CLS] token, a 2-layer transformer, and heads for deficit, stage and turgor; modality dropout 0.3 |
 | `train.py` | 5 folds grouped by plant; stage 1 (frozen) and stages 2-3 (LoRA); evaluation on every sensor subset; results in `derived/detect/fusion_*`; fold checkpoints in `runs/fusion/<model>/` |
-| `predict.py` | External test: the 5 fold models (and placebo models) score plants outside training, averaged; `--oof` rescores the CV for plants without clips and plants with the size trait |
+| `predict.py` | External test: the 5 fold models (and placebo models) score plants outside training, averaged; `--oof` rescores the CV for plants without clips and plants with the size trait; `--lockbox` scores the v2 lock-box |
+| `v2.py` | Architecture v2 (section 8): change-from-baseline and control-referenced tokens, the hand-made thermal token, the ablation harness (`ablate`), the chosen design (`train`), the benchmark on the lock-box (`bench-lockbox`) |
+| `features.py` | The benchmark's thermal features for every plant (from folders or straight from the zips) and RGB green cover (`--rgb-size`) |
+| `lockbox.py` | The 45 lock-box plants, fixed before any v2 experiment |
 
 ## 1. Install
 
@@ -93,6 +96,9 @@ placebo-checked folds (plan section 5).
 | `fusion_cv_subsets_benchmark`, `_auc_by_day` | The CV's out-of-fold scores for `no_clip` plants and `with_size` plants (beside size only on the same plants) |
 | `fusion_external_benchmark`, `_auc_by_day`, `_hsi` | External test, same columns as the CV tables plus `plants` (`all`, `no_clip`, `with_size`) and `n_plants` |
 | `fusion_external_scores_runs` | `detect_fusion_ext_prob`, `_stage`, `_turgor` per run of the external plants (own names, so both scores tables join) |
+| `fusion_v2_ablation` | Section 8: every v2 variant, the v1 design, the benchmark and size on the same development plants, per sensor setup, group and plant subset, with the pre-cutoff canary days and the 2-Sep-baseline rows; one row per round |
+| `fusion_lockbox_benchmark`, `_auc_by_day` | Section 8: the lock-box scored once by v2, the v1 design and the benchmark, all trained on the development plants |
+| `fusion_v2_scores_runs` | `detect_fusion_v2_prob`, `_stage`, `_turgor` per run, out of fold, development plants |
 
 ## 5. Design choices to know
 

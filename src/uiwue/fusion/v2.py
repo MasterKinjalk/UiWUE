@@ -455,9 +455,9 @@ def make_batch(
     return dict(
         x=x,
         present=torch.from_numpy(np.stack(present, 1)).to(device),
-        y=torch.from_numpy(k[target].to_numpy(np.float32)).to(device),
+        y=torch.from_numpy(k[target].to_numpy(np.float32, copy=True)).to(device),
         stage=torch.from_numpy(pd.to_numeric(k["stage"]).fillna(-1).to_numpy(np.int64, copy=True)).to(device),
-        turgor=torch.from_numpy(k["turgor"].to_numpy(np.float32) / TURGOR_SCALE).to(device),
+        turgor=torch.from_numpy(k["turgor"].to_numpy(np.float32, copy=True) / TURGOR_SCALE).to(device),
         bed=torch.from_numpy((k["bed"] != "W1").to_numpy(np.float32)).to(device),
         pre=torch.from_numpy((k["date"] < pd.Timestamp(core.CUTOFF)).to_numpy()).to(device),
         late=torch.from_numpy(late_negative(k)).to(device),
@@ -1060,22 +1060,52 @@ def bench_lockbox(
 RGB_SIZE = V2_CACHE / "rgb_size.parquet"
 
 
-def size_rows(pids: set[str], n_boot=2000) -> list[dict]:
+def size_rows(pids: set[str], n_boot=2000, traits: pd.DataFrame | None = None, depth_plants="with_size") -> list[dict]:
     """Plant size alone (predict.size_baseline): depth_projected_area where Challenge 3 has it
-    (plants "with_size"), and RGB green cover (uiwue.fusion.features --rgb-size) for every plant
-    with RGB (plants "all"; the Master Plan's second size column)."""
+    (plants "with_size"; "all" once the table covers every plant), and RGB green cover
+    (uiwue.fusion.features --rgb-size) for every plant with RGB (plants "all"; the Master Plan's
+    second size column)."""
     from uiwue.fusion.predict import size_baseline
 
     out = []
-    traits = core.read_table("threed", "traits_runs")
+    traits = core.read_table("threed", "traits_runs") if traits is None else core.normalize_keys(traits)
     rows, _, have = size_baseline(traits, pids, n_boot=n_boot)
-    out += [dict(variant="size_only", plants="with_size", n_plants=len(have), **r) for r in rows]
+    out += [dict(variant="size_only", plants=depth_plants, n_plants=len(have), **r) for r in rows]
     if RGB_SIZE.exists():
         green = core.normalize_keys(pd.read_parquet(RGB_SIZE))
         green = green[green["rgb_qc_pass"].fillna(True).astype(bool)] if "rgb_qc_pass" in green else green
         rows, _, have = size_baseline(green[[*core.KEYS, "rgb_green_cover"]], pids, n_boot=n_boot)
         out += [dict(variant="size_only_green_cover", plants="all", n_plants=len(have), **r) for r in rows]
     return out
+
+
+def size_tables(traits_path: Path, features: Path, n_boot=2000, out_dir: Path | None = None) -> None:
+    """Size alone on the development plants (V2_CACHE/size_dev.parquet, appended to the ablation
+    table) and on the lock-box (rows of model size_only in fusion_lockbox_benchmark), from a depth
+    traits table that covers every plant. A baseline without a fitted model, so it adds no
+    look at the lock-box beyond its own size trait."""
+    from uiwue.fusion import predict as pr
+
+    traits = core.normalize_keys(pd.read_parquet(traits_path))
+    f = pd.read_parquet(features, columns=["bed", "plant"]).drop_duplicates()
+    pids = set(f["bed"] + "_" + f["plant"])
+    dev, lock = pids - set(lockbox.LOCKBOX), pids & set(lockbox.LOCKBOX)
+    rows = size_rows(dev, n_boot, traits, depth_plants="all")
+    pd.DataFrame(rows).to_parquet(V2_CACHE / "size_dev.parquet", index=False)
+    print(pd.DataFrame(rows)[["variant", "group", "n_plants", "early_auc", "early_ci_low", "early_ci_high",
+                              "onset_day", "placebo_auc"]].round(3).to_string(index=False))  # fmt: skip
+    clips = pr.clip_plants()
+    bench, curves = [], []
+    for plants, sub in (("all", lock), ("no_clip", lock - clips)):
+        r, c, have = pr.size_baseline(traits, sub, n_boot=n_boot)
+        bench += [x | dict(plants=plants, n_plants=len(have)) for x in r]
+        curves += [x.assign(plants=plants, n_plants=len(have)) for x in c]
+    tables = {"fusion_lockbox_benchmark": pd.DataFrame(bench), "fusion_lockbox_auc_by_day": pd.concat(curves)}
+    out = pr.write(tables, "size_only", out_dir)
+    print(
+        pd.DataFrame(bench)[["plants", "group", "n_plants", "early_auc", "onset_day"]].round(3).to_string(index=False)
+    )
+    print(f"-> {out}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1135,7 +1165,8 @@ def ablate(
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["ablate", "train", "bench-lockbox"])
+    ap.add_argument("command", choices=["ablate", "train", "bench-lockbox", "size"])
+    ap.add_argument("--size-traits", type=Path, default=None, help="size: a depth traits table (depth_projected_area)")
     ap.add_argument("--name", default="fusion_v2", help="train: model name (tables, runs/fusion/<name>)")
     ap.add_argument("--cache", type=Path, nargs="+", default=[CACHE])
     ap.add_argument("--features", type=Path, default=FEATURES)
@@ -1159,6 +1190,10 @@ def main(argv=None) -> None:
     if a.command == "bench-lockbox":
         bench_lockbox(a.features, a.n_boot, a.out, window)
         print(f"benchmark on the lock-box: {time.time() - t0:.0f} s")
+        return
+    if a.command == "size":
+        size_tables(a.size_traits, a.features, a.n_boot, a.out)
+        print(f"size baselines: {time.time() - t0:.0f} s")
         return
     rs = assemble(a.cache, a.features if a.features.exists() else None, baseline=window)
     if a.max_w1 is not None:
