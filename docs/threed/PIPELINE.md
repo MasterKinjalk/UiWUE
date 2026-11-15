@@ -76,12 +76,23 @@ Per run (`run.process_run`):
    `qc_no_pose` is set, the nominal 3 x 5 grid gives the frame offsets, the plant's median centre is
    used, and there is no colour (height-only vegetation rule).
 2. **Cloud** (`cloud.build_cloud`, mode `traits`):
-   - Enclosed invalid regions of up to 150 px are inpainted from their rim (`fill_small_holes`,
-     Telea); 5.9 % of plant points come from filled holes.
+   - Enclosed invalid regions of up to 150 px whose rim spans at most 25 mm are inpainted from
+     their rim (`fill_small_holes`, Telea); 1.1 % of plant points come from filled holes.
+     - The rim is the valid 8-neighbours of the hole (`cloud.rim_span`, max − min depth).
+     - Most small holes are dropouts at depth edges (leaf over soil, leaf over leaf), not
+       saturated leaf interiors. On frame 7 of 244 runs (12 and 15 h, not dark), the median
+       filled pixel lies in a hole whose rim spans 90 mm, and 88 % lie in holes above 30 mm.
+       Filling those bridges the edge with a steep fake surface.
+     - 25 mm covers the noise range of a flat rim (8-30 pixels at σ ≈ 4 mm span about
+       11-16 mm) plus a leaf tilted by about 45° (1.6 mm per pixel at 0.35 m). It keeps 9 % of
+       the pixels a fill without the limit would fill (19 % of the holes), and bounds the error
+       of every filled value.
+     - ExG does not separate the two kinds: on the canopy, the filled points of holes below
+       60 mm span are 56-62 % green at any span, against 57 % for all canopy points.
    - The inpainting runs on a uint16 copy in 0.1 mm units. With the locked OpenCV 5.0, Telea on
-     float32 returns values metres outside the rim. On uint16, 0.1-0.9 % of the filled pixels of
-     four checked frame-7 images lie more than 10 mm outside the valid range of their 7 x 7
-     window, and none more than 100 mm (float32: about 99 %).
+     float32 returns values metres outside the rim. On uint16 (without the span limit), 0.1-0.9 %
+     of the filled pixels of four checked frame-7 images lie more than 10 mm outside the valid
+     range of their 7 x 7 window, and none more than 100 mm (float32: about 99 %).
    - Masked 3 x 3 median. Pixels with fewer than 5 valid pixels in their window are dropped.
    - Valid depth is 0.20-0.80 m. Each pixel is unprojected along its own undistorted ray.
    - Colour comes from the raw RGB at the distorted projection of each point (shifted extrinsic,
@@ -96,8 +107,8 @@ Per run (`run.process_run`):
    - Typical sets are 4,7,10 (W1, camera about 0.46 m above the soil) and 0,1,3,4,6,7,9,10 (W2,
      about 0.50 m, wider view). The median is 6 frames per run. The set is in `frames_used`.
    - Cross-column frames are as consistent as same-column ones. The median frame-pair difference
-     of `height_p75` is 4.0 mm within the centre column and 4.2 mm between the centre and a side
-     column (3,032 runs). So all covered frames are used, not only the centre column.
+     of `height_p75` is 4.1 mm within the centre column and 4.2 mm between the centre and a side
+     column (3,007 runs). So all covered frames are used, not only the centre column.
 5. **Reference plane** (`ground.fit_reference`):
    - Non-ExG points within 5 cm of the centre (plan: 6 cm; pots are about 11 cm wide) are pooled
      from all used frames in frame-7 coordinates.
@@ -109,9 +120,9 @@ Per run (`run.process_run`):
    - Otherwise the plant's carried reference is used and `qc_ref_carried` is set. The carried
      reference is the median of the accepted fits on its first 7 dates (all hours, at least 3
      fits; `plant_refs.csv`).
-   - Results: 4,196 runs use their own fit and 1,774 the carried reference. In 09-01..09-14,
-     74 % of W1 runs and 47 % of W2 runs are carried (wilting W2 plants uncover the soil).
-   - Over a plant's own fits the soil level varies by 4.0 mm SD (median plant).
+   - Results: 4,179 runs use their own fit and 1,791 the carried reference. In 09-01..09-14,
+     73 % of W1 runs and 48 % of W2 runs are carried (wilting W2 plants uncover the soil).
+   - Over a plant's own fits the soil level varies by 3.9 mm SD (median plant).
 6. **Vegetation** (`segment.vegetation_mask`):
    - Normal light: ExG > 5 and height > 5 mm.
    - Dark frame (mean sampled RGB < 10, plan start value 40), or a point without colour:
@@ -199,16 +210,29 @@ and 171 mm in W2.
       cluster is the leaves connected to the centre, and neighbours' leaves over the pot are
       excluded or included depending on connectivity (`qc_overlap`, `cyl_*`).
     - W2_J5 leaves collapse onto the soil by 09-12.
-- Real numbers, 15 h runs that pass QC, bed medians of `height_p75`: W1 rises from 92 mm (09-01)
-  to 175 mm (09-14). W2 peaks at 120 mm (09-05) and falls to 69 mm (09-14). `projected_area` in W2
-  falls from 124 to 41 cm².
+- Real numbers, 15 h runs that pass QC, bed medians of `height_p75`: W1 rises from 93 mm (09-01)
+  to 174 mm (09-14). W2 peaks at 124 mm (09-07) and falls to 69 mm (09-14). `projected_area` in W2
+  falls from 123 to 39 cm².
+- Hole-fill variants on the same 5,970 runs (bed medians over all runs; E1 noise is the median
+  frame-to-frame MAD of `qc_pass` runs, `experiments.e1`):
+
+  | Variant | Plant points filled | W1 / W2 `leaf_area_est` | W1 / W2 `projected_area` | W1 / W2 `height_p95` | E1 noise `leaf_area_est` / `projected_area` / `height_p95` |
+  |---|---|---|---|---|---|
+  | float32 Telea (before) | 2.8 % | 151.7 / 80.6 cm² | 82.9 / 42.3 cm² | 121.1 / 85.9 mm | 5.48 cm² / 3.08 cm² / 2.65 mm |
+  | uint16, no span limit | 5.9 % | 161.8 / 90.2 cm² | 84.9 / 45.8 cm² | 122.8 / 85.2 mm | 5.53 / 2.97 / 2.70 |
+  | uint16, span ≤ 25 mm (used) | 1.1 % | 147.9 / 76.9 cm² | 81.1 / 40.4 cm² | 122.4 / 85.3 mm | 5.36 / 3.02 / 2.66 |
+  | no hole filling | 0 | 145.1 / 76.0 cm² | 79.7 / 40.1 cm² | 122.4 / 85.2 mm | 5.54 / 3.26 / 2.66 |
+
+  Against no filling, the median run changes by +0.8 % in `leaf_area_est` and +1.0 % in
+  `projected_area` with the span limit, and by +11.9 % and +7.9 % without it (runs that pass QC
+  in both). Heights change by less than 0.3 % in every variant.
 - Typical frame-to-frame spread (median MAD, 15 h runs that pass QC, 09-01..09-14; relative is
   the median MAD over the median trait):
 
   | Trait | Median MAD | Relative |
   |---|---|---|
-  | `height_p75` | 2.7 mm | 2.3 % |
-  | `projected_area` | 3.7 cm² | 3.6 % |
+  | `height_p75` | 2.8 mm | 2.4 % |
+  | `projected_area` | 3.9 cm² | 4.7 % |
   | `inclination_mean` | 1.1° | |
   | `droop_index` | 0.02 | |
 
@@ -218,33 +242,33 @@ and 171 mm in W2.
 - 79,667 frame rows, 5,970 cached clouds (1.2 GB).
 - One core takes 0.48 s per run (median), about 0.08 s per built frame. With 20 workers the
   batch takes about 3 minutes (0.03 s per run wall time).
-- Re-run after the hole-fill fix (uint16 inpainting, above) into `data/derived/threed_holefix/`.
-  The disk now holds 12 more plants (W3 and W1_B7, W1_F5, W1_N3): 8,562 runs of 40 plants, all
-  `ok`, 118,353 frame rows, 1.8 GB of clouds, about 8.5 minutes on 20 workers. The numbers in
-  this document are on the 5,970 runs of the 28 plants above.
-- Cached-cloud points more than 150 mm below the reference: 1,955 in 22 clouds, down from 35,794
-  in 4,677 clouds before the fix. The edge pots W2_A2, W2_A6 and W2_A8 have another 191,907 in
-  604 clouds: the floor beyond the bed edge, also present without any hole filling.
+- Re-run with the hole-fill changes (uint16 inpainting and the rim-span limit, above). The disk
+  now holds 12 more plants (W3 and W1_B7, W1_F5, W1_N3), so `data/derived/threed/` has 8,562 runs
+  of 40 plants, all `ok`. The previous outputs are kept in `data/derived/threed_float32_backup/`.
+  The numbers in this document are on the 5,970 runs of the 28 plants above.
+- Cached-cloud points more than 150 mm below the reference: 1,910 in 24 clouds (float32 Telea:
+  35,794 in 4,677; no hole filling: 1,972 in 21). The edge pots W2_A2, W2_A6 and W2_A8 have
+  another 182,469 in 606 clouds: the floor beyond the bed edge (179,878 without hole filling).
 
 QC rates per slot, all dates (n = 1438, 1137, 1120, 1177, 1098 for 06, 09, 12, 15, 18 h):
 
 | slot | no_plant | few_points | high_spread | overlap | not_centred | dark | ref_carried | no_pose | pass |
 |---|---|---|---|---|---|---|---|---|---|
-| 06 | 0.239 | 0.416 | 0.098 | 0.124 | 0.134 | 0.606 | 0.309 | 0.000 | 0.394 |
-| 09 | 0.080 | 0.324 | 0.113 | 0.158 | 0.126 | 0.102 | 0.274 | 0.025 | 0.444 |
-| 12 | 0.052 | 0.300 | 0.133 | 0.157 | 0.129 | 0.000 | 0.307 | 0.025 | 0.447 |
-| 15 | 0.047 | 0.295 | 0.118 | 0.164 | 0.127 | 0.058 | 0.319 | 0.014 | 0.462 |
-| 18 | 0.041 | 0.295 | 0.123 | 0.138 | 0.121 | 0.246 | 0.273 | 0.000 | 0.476 |
+| 06 | 0.261 | 0.426 | 0.097 | 0.117 | 0.124 | 0.607 | 0.323 | 0.000 | 0.396 |
+| 09 | 0.082 | 0.336 | 0.118 | 0.139 | 0.142 | 0.103 | 0.277 | 0.025 | 0.434 |
+| 12 | 0.054 | 0.311 | 0.127 | 0.139 | 0.124 | 0.000 | 0.304 | 0.025 | 0.448 |
+| 15 | 0.048 | 0.300 | 0.122 | 0.153 | 0.127 | 0.059 | 0.320 | 0.014 | 0.460 |
+| 18 | 0.044 | 0.311 | 0.117 | 0.123 | 0.124 | 0.246 | 0.268 | 0.000 | 0.478 |
 
 QC rates per slot, 2025-09-01..09-14:
 
 | slot | no_plant | few_points | high_spread | overlap | not_centred | dark | ref_carried | pass |
 |---|---|---|---|---|---|---|---|---|
-| 06 | 0.006 | 0.027 | 0.157 | 0.242 | 0.118 | 1.000 | 0.557 | 0.623 |
-| 09 | 0.005 | 0.033 | 0.202 | 0.278 | 0.069 | 0.194 | 0.566 | 0.564 |
-| 12 | 0.003 | 0.013 | 0.232 | 0.240 | 0.051 | 0.000 | 0.616 | 0.565 |
-| 15 | 0.004 | 0.022 | 0.181 | 0.240 | 0.035 | 0.055 | 0.610 | 0.601 |
-| 18 | 0.002 | 0.023 | 0.200 | 0.237 | 0.066 | 0.418 | 0.495 | 0.596 |
+| 06 | 0.006 | 0.046 | 0.153 | 0.236 | 0.120 | 1.000 | 0.582 | 0.629 |
+| 09 | 0.003 | 0.036 | 0.224 | 0.258 | 0.092 | 0.194 | 0.566 | 0.536 |
+| 12 | 0.003 | 0.019 | 0.253 | 0.211 | 0.061 | 0.000 | 0.619 | 0.563 |
+| 15 | 0.004 | 0.022 | 0.187 | 0.240 | 0.046 | 0.057 | 0.606 | 0.588 |
+| 18 | 0.002 | 0.033 | 0.195 | 0.202 | 0.066 | 0.413 | 0.479 | 0.610 |
 
 Most `few_points` and `no_plant` flags fall on seedlings: up to 2025-08-20, 96 % of runs have
 fewer than 300 plant points and 2 % pass. Every 06 h run in the treatment window is dark, so it is
@@ -304,7 +328,7 @@ not the rig.
 | 15 repeat views, median and MAD over 15, at least 8 ok | median and MAD over the frames that cover the plant cylinder (median 6), at least 2 ok | the frames are a 3 x 5 grid; most of them do not see the whole plant |
 | plant centre = image centre | frame-7 RGB optical axis on the soil, refined within 4 cm | the ToF centre lies at a pot corner (28 px off); the RGB axis lands on the pot centre |
 | sensor height 0.60 m | soil plane per run, or carried | the soil lies 0.45-0.52 m below the sensor |
-| no hole filling in `traits` mode | enclosed holes of up to 150 px are inpainted before the median | ToF saturates on leaf interiors; only the rims have depth |
+| no hole filling in `traits` mode | enclosed holes of up to 150 px whose rim spans at most 25 mm are inpainted before the median | ToF saturates on leaf interiors; only the rims have depth. Holes with a wider rim lie on depth edges and stay invalid |
 | soil window 6 cm, tilt < 10° | 5 cm, tilt ≤ 15°, near-horizontal RANSAC hypotheses, prior check of 20 mm | pots are about 11 cm wide; edge-row pots are tilted 9.5-13°; a sloping leaf otherwise beats a small soil patch |
 | carried reference = median of the plant's accepted runs | median of the accepted runs on the plant's first 7 dates, all hours (`plant_refs.csv`) | the reference must exist before the batch starts, so the batch stays resumable and parallel |
 | dark if brightness < 40 | < 10 | 40 flags about half of all 15 h frames; ExG works down to about 8 (`diagnostics/dark_sheet.jpg`) |

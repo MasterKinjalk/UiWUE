@@ -326,10 +326,11 @@ half resolution (960 × 540). Runs without pose files (17 runs on 29 Aug and 15 
 `qc_no_pose` and the nominal grid offsets.
 
 **Step 2. Point cloud** (`cloud.build_cloud`):
-- Enclosed invalid regions ≤ 150 px are inpainted from their rim (Telea [Telea2004]) on a
-  uint16 copy in 0.1 mm units (on float32, OpenCV 5.0 returns values metres outside the rim);
-  5.9 % of plant points come from filled holes. **Why:** bright young leaf interiors saturate the ToF;
-  only rims return depth.
+- Enclosed invalid regions ≤ 150 px whose rim (valid 8-neighbours) spans ≤ 25 mm are inpainted
+  from their rim (Telea [Telea2004]) on a uint16 copy in 0.1 mm units (on float32, OpenCV 5.0
+  returns values metres outside the rim); 1.1 % of plant points come from filled holes.
+  **Why:** bright young leaf interiors saturate the ToF; only rims return depth. Holes with a
+  wider rim are dropouts at depth edges and stay invalid.
 - Masked 3 × 3 median; pixels with < 5 valid neighbours (of 9) are dropped as speckle.
 - Valid depth 0.20–0.80 m; pixels > 112 px from the principal point are outside the valid view.
 - Each pixel is unprojected along its own undistorted ray (`calib.K_DEPTH`, distortion).
@@ -357,8 +358,8 @@ in W2, where the camera is higher).
 - Accept if ≥ 150 inliers per pooled frame, tilt ≤ 15°, and level at the centre within 20 mm
   of the carried reference. Else use the carried reference and set `qc_ref_carried`.
 - Carried reference = median of the plant's accepted planes on its first 7 dates (≥ 3 fits),
-  stored in `plant_refs.csv`. In the full batch 4,196 runs use their own fit and 1,774 the
-  carried one; soil level over a plant's own fits varies by 4.0 mm SD.
+  stored in `plant_refs.csv`. In the full batch 4,179 runs use their own fit and 1,791 the
+  carried one; soil level over a plant's own fits varies by 3.9 mm SD.
 - Plane `n·p + d = 0`; plane-local coordinates `(a, b, h)`: in-plane offsets from the centre and
   height above the soil.
 
