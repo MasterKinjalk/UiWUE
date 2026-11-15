@@ -87,7 +87,17 @@ The user acts on the Irrigation advisor:
 - **3D (depth).** [Kinjalk: traits, e.g. height and projected area, and how
   they are extracted]
 - **Hyperspectral.** [Sam: indices]
-- **RGB and detection.** [Jack: model and sensor benchmark]
+- **RGB and detection.** Daily AUC of deficit against control plants on each
+  plant's change from its own baseline, for every trait, with a 95 % interval
+  from resampling plants.
+  - **Robust onset:** the first two days whose lower bound clears both 0.70
+    and the largest AUC any trait reached on a watered day (24 Aug to 3 Sep).
+    The beds already differ on some watered days (sun, doors), so the plain
+    0.70 rule is not enough on its own.
+  - **Sensor benchmark:** logistic regression and boosted trees,
+    leave-one-plant-out, on every combination of sensors. Every combination
+    is scored on the same 18 plants (the W1 and W2 plants that have thermal,
+    depth and RGB), beside a plant-size-only model and a placebo run.
 - **Ground truth.** Leaf-clip turgor onset, written symptom dates, and leaf
   relative water content.
 - **Environment.**
@@ -125,14 +135,35 @@ The user acts on the Irrigation advisor:
   - On sunny flyovers the stress signal is about 2 °C larger than on cloudy
     ones.
 - **3D.** [Kinjalk: headline number]
-- **Early warning across sensors.** [Jack: days of warning per sensor, and the
-  cheapest set-up that comes close]
+- **Early warning across sensors** (robust onset, day 0 = 3 Sep):
+  - **Thermal first, and the only sensor in both stressed beds:** leaf minus
+    air temperature on **day 4** (W2 day 4, W3 day 3; day 3–5 over beds and
+    the 12 h and 15 h flyovers alone).
+  - **3D leaf area** on day 5 and **RGB greenness (NGRDI)** on day 6, W2
+    only. W3 has no depth or RGB table. Plant size alone: day 6, early AUC
+    0.51 (chance).
+  - **Against the leaf clip:** thermal leads the median clip-turgor onset by
+    1 day (18 imaged deficit clip plants; 4 days in W2, 2 in W3).
+  - **Written symptoms are too sparse to time against:** 8 of 26 imaged
+    stressed plants have a note, the first on day 3, most on day 9; notes are
+    upper bounds.
+- **One thermal camera is enough** (same 18 plants, days 1–4): thermal alone
+  scores AUC 1.00 (placebo 0.58); adding RGB gives 0.90; adding depth gives
+  0.95–0.96 but the beds then already separate before the cutoff (bed
+  effect). Plant size alone: 0.37.
+- **Recovery after re-watering** (median, 5 days on): leaf minus air
+  temperature recovers 87 % (26 plants), NGRDI 69 % (9), 3D projected leaf
+  area 12 % (9). Function recovers, structure does not.
 - **Hyperspectral.** [Sam: headline number]
 
 ### Limits, and what deployment would need
 
 - **One control bed.** Treatment and bed position are confounded. Before the
-  cutoff, the beds already differ slightly at 06 h and 09 h.
+  cutoff, the beds already differ slightly at 06 h and 09 h, and leaf
+  temperature separates them on 2 and 3 Sep (AUC 0.88) while every plant is
+  still watered. Intervals resample plants, but plants in one bed share each
+  day's weather, so an interval like [1.00, 1.00] means "the beds differ that
+  day", not certainty.
 - **One greenhouse, one variety, one season.** Thresholds must be re-set on
   site; the published field baseline does not transfer as is.
 - **Fixed watering schedule.** The results show *when* a rule would have

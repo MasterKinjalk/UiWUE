@@ -4,6 +4,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 import pytest
+from dash import html
 
 PAGES = Path(__file__).resolve().parents[2] / "app" / "pages"
 
@@ -37,19 +38,46 @@ def _text(component) -> str:
 
 def test_pages_render(results):
     ew = _load("early_warning")
-    assert "ew-curves" in _text(ew.layout())
-    curves, _ranking, _tbl, head = ew._update("all", ["thermal_leaf_air_dt", "depth_projected_area"])
-    assert isinstance(curves, go.Figure) and len(curves.data) >= 4
-    assert "Leaf - air temperature" in head
+    text = _text(ew.layout())
+    assert "ew-curves" in text and "ew-ranking" in text and "AUC rule" in text
+    for group in ("all", "W2", "W3"):
+        tiles, ranking, _flags, _rec, tbl = ew._update(group)
+        assert isinstance(ranking, go.Figure) and len(ranking.data) == 2
+        assert tiles and "day" in _text(html.Div(tiles))
+        if group == "all":
+            assert getattr(tbl, "export_format", None) == "csv"
+        for sig in ("thermal_leaf_air_dt", "depth_projected_area", "hsi_ndvi"):
+            curves, _chips, slots = ew._signal(group, sig)
+            assert isinstance(curves, go.Figure)
+    curves, chips, slots = ew._signal("all", "thermal_leaf_air_dt")
+    assert len(curves.data) >= 3 and len(slots) == 5
+    _, chips, _ = ew._signal("all", "rgb_bedfx")
+    assert "bed effect" in _text(html.Div(chips))
 
     sc = _load("sensor_comparison")
     assert "sc-figure" in _text(sc.layout())
-    fig, _tbl, head = sc._update("all", "early_auc")
-    assert isinstance(fig, go.Figure) and "Thermal" in head
+    for ps in ("common", "own"):
+        for group in ("all", "W2", "W3"):
+            for metric in ("early_auc", "full_auc"):
+                tiles, fig, _flags, _tbl, _chip = sc._update(ps, group, metric)
+                assert isinstance(fig, go.Figure)
+    tiles, *_ = sc._update("common", "all", "early_auc")
+    assert "Thermal only" in _text(html.Div(tiles))
 
     ml = _load("methods")
-    assert "Placebo first" in _text(ml.layout())
-    assert isinstance(ml._placebo("all"), go.Figure)
+    text = _text(ml.layout())
+    assert "placebo first" in text and "One control bed" in text
+    for group in ("all", "W2", "W3"):
+        assert isinstance(ml._placebo(group), go.Figure)
+
+
+def test_pages_register_a_question():
+    import dash
+
+    for name in ("early_warning", "sensor_comparison", "methods"):
+        mod = _load(name)
+        assert mod.QUESTION.endswith("?")
+    assert dash  # registration itself is exercised by the app smoke test
 
 
 def test_pages_without_results(tmp_path, monkeypatch):
@@ -58,4 +86,4 @@ def test_pages_without_results(tmp_path, monkeypatch):
     point_core_at(tmp_path, monkeypatch)
     for name in ("early_warning", "sensor_comparison", "methods"):
         text = _text(_load(name).layout())
-        assert "Not available" in text or "not available" in text
+        assert "uw-empty" in text and "no table yet" in text
