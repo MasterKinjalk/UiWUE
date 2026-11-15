@@ -101,10 +101,12 @@ class RunSet:
         return [v for s, v in self.emb if s == sensor]
 
 
-def baseline_of(keys: pd.DataFrame, emb: np.ndarray, has: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def baseline_of(
+    keys: pd.DataFrame, emb: np.ndarray, has: np.ndarray, window=core.BASELINE
+) -> tuple[np.ndarray, np.ndarray]:
     """Each run's baseline: mean embedding of the plant's runs in the baseline window at the
     same hour (any hour if none at that hour). Returns (base, ok)."""
-    lo, hi = (pd.Timestamp(d) for d in core.BASELINE)
+    lo, hi = (pd.Timestamp(d) for d in window)
     in_win = has & keys["date"].between(lo, hi).to_numpy()
     base, ok = np.zeros_like(emb), np.zeros(len(keys), bool)
     plant = (keys["bed"] + "_" + keys["plant"]).to_numpy()

@@ -378,8 +378,15 @@ def run(
     labels: pd.DataFrame | None = None,
     make_encoder=None,
     workers: int = 4,
+    features: Path | None = None,
+    only=None,
 ) -> tuple[dict[str, pd.DataFrame], dict]:
     folds = load_folds(run_dir)
+    if folds[0].get("design") == "v2":  # fusion v2 (uiwue.fusion.v2): its own inputs and references
+        from uiwue.fusion import v2
+
+        tables, info, _ = v2.run_new(caches, folds, model_name, device, n_boot, traits, labels, features, only)
+        return tables, info
     rs = train.assemble(caches, labels=labels)
     seen = seen_plants(folds)
     new = ~rs.keys["pid"].isin(seen).to_numpy()
@@ -419,6 +426,15 @@ def main(argv=None) -> None:
     ap.add_argument(
         "--oof", action="store_true", help="instead: score the CV's out-of-fold scores for no-clip and size plants"
     )
+    ap.add_argument(
+        "--features",
+        type=Path,
+        default=core.REPO / "cache" / "fusion_v2" / "thermal_features.parquet",
+        help="fusion v2 only: hand-made thermal features (uiwue.fusion.features)",
+    )
+    ap.add_argument(
+        "--lockbox", action="store_true", help="fusion v2: score only the lock-box plants, into fusion_lockbox_* tables"
+    )
     a = ap.parse_args(argv)
 
     t0 = time.time()
@@ -431,18 +447,23 @@ def main(argv=None) -> None:
         print(b[b["group"] == "all"][cols].to_string(index=False))
         print(f"{a.model}: out-of-fold subsets scored in {time.time() - t0:.0f} s -> {out}")
         return
+    if a.lockbox:
+        from uiwue.fusion.lockbox import LOCKBOX
     tables, info = run(
-        a.cache, a.runs_dir / a.model, a.model, a.device, a.n_boot, a.data_dir, traits, workers=a.workers
-    )
+        a.cache, a.runs_dir / a.model, a.model, a.device, a.n_boot, a.data_dir, traits, workers=a.workers,
+        features=a.features, only=LOCKBOX if a.lockbox else None,
+    )  # fmt: skip
+    if a.lockbox:  # same layout as the external test, own table names
+        tables = {k.replace("fusion_external_", "fusion_lockbox_"): v for k, v in tables.items()}
+        tables.pop("fusion_lockbox_scores_runs", None)
     out = write(tables, a.model, a.out)
     info |= dict(
         finished=pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), seconds=round(time.time() - t0, 1),
         caches=[str(c) for c in a.cache], size_traits=str(a.size_traits) if traits is not None else None,
     )  # fmt: skip
-    (out / f"fusion_external_{a.model.replace('+', '_')}_run_info.json").write_text(
-        json.dumps(info, indent=2, default=str)
-    )
-    b = tables["fusion_external_benchmark"]
+    prefix = "fusion_lockbox" if a.lockbox else "fusion_external"
+    (out / f"{prefix}_{a.model.replace('+', '_')}_run_info.json").write_text(json.dumps(info, indent=2, default=str))
+    b = tables[f"{prefix}_benchmark"]
     if b is not None:
         show = b[(b["group"] == "all")][["plants", "sensors", "early_auc", "early_ci_low", "onset_day", "placebo_auc"]]
         print(show.to_string(index=False))
