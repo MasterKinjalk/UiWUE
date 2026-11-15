@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Export</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+button,input{font-family:inherit}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="export" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Export</h1>
+<div style="flex: 1 1 0"></div>
+<a href="#" style="min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>CSV</a>
+<a href="#" style="min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: 8px; border: 1px solid #1c7293; color: #1c7293; font-weight: 700; text-decoration: none; box-sizing: border-box">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Methods .md</a>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<aside aria-label="Filters" style="flex: 1 1 300px; max-width: 360px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="padding: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #5e6b64">MODULE</legend>
+<div style="display: flex; flex-wrap: wrap; gap: 4px">
+<button type="button" aria-pressed="true" style="min-height: 40px; padding: 0 14px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">3D</button>
+<button type="button" aria-pressed="true" style="min-height: 40px; padding: 0 14px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">Thermal</button>
+<button type="button" aria-pressed="false" style="min-height: 40px; padding: 0 14px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">Env</button>
+<button type="button" aria-pressed="false" style="min-height: 40px; padding: 0 14px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">Truth</button>
+<button type="button" disabled style="min-height: 40px; padding: 0 14px; border: 2px dashed #cfe0d4; border-radius: 8px; background: #ffffff; color: #8a959c; font-weight: 700">RGB</button>
+<button type="button" disabled style="min-height: 40px; padding: 0 14px; border: 2px dashed #cfe0d4; border-radius: 8px; background: #ffffff; color: #8a959c; font-weight: 700">HSI</button>
+</div>
+</fieldset>
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="padding: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #5e6b64">BEDS</legend>
+<div style="display: flex; gap: 4px">
+<button type="button" aria-pressed="true" style="min-height: 40px; min-width: 56px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">W1</button>
+<button type="button" aria-pressed="true" style="min-height: 40px; min-width: 56px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">W2</button>
+<button type="button" aria-pressed="false" style="min-height: 40px; min-width: 56px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">W3</button>
+</div>
+</fieldset>
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="padding: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #5e6b64">HOURS</legend>
+<div style="display: flex; gap: 4px">
+<button type="button" aria-pressed="false" style="min-height: 40px; min-width: 48px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">06</button>
+<button type="button" aria-pressed="false" style="min-height: 40px; min-width: 48px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">09</button>
+<button type="button" aria-pressed="true" style="min-height: 40px; min-width: 48px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">12</button>
+<button type="button" aria-pressed="true" style="min-height: 40px; min-width: 48px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700">15</button>
+<button type="button" aria-pressed="false" style="min-height: 40px; min-width: 48px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-weight: 700">18</button>
+</div>
+</fieldset>
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px">
+<legend style="padding: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #5e6b64">DATES</legend>
+<div style="display: flex; align-items: center; gap: 6px">
+<label style="display: flex; flex-direction: column; font-size: 12px; color: #5e6b64">from<input type="date" value="2025-08-24" style="min-height: 40px; padding: 0 8px; border: 1px solid #8a959c; border-radius: 8px; font-size: 14px; color: #1e2a24"></label>
+<label style="display: flex; flex-direction: column; font-size: 12px; color: #5e6b64">to<input type="date" value="2025-09-22" style="min-height: 40px; padding: 0 8px; border: 1px solid #8a959c; border-radius: 8px; font-size: 14px; color: #1e2a24"></label>
+</div>
+</fieldset>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; align-items: center; gap: 10px; min-height: 32px"><input type="checkbox" checked style="width: 20px; height: 20px; accent-color: #1c7293">QC pass only</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 32px"><input type="checkbox" checked style="width: 20px; height: 20px; accent-color: #1c7293">MAD columns</label>
+</div>
+</aside>
+
+<main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div style="padding: 12px 16px; border-radius: 8px; background: #dceef2"><div style="font-size: 12px; color: #4a565d">rows</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">932</div></div>
+<div style="padding: 12px 16px; border-radius: 8px; background: #eef4ee"><div style="font-size: 12px; color: #4a565d">plants</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">28</div></div>
+<div style="padding: 12px 16px; border-radius: 8px; background: #eef4ee"><div style="font-size: 12px; color: #4a565d">days</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">27</div></div>
+</div>
+<div style="overflow-x: auto; border: 1px solid #cfe0d4; border-radius: 12px">
+<table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums">
+<thead>
+<tr style="background: #0b2e3f; color: #ffffff; text-align: left">
+<th scope="col" style="padding: 8px 12px; font-size: 13px">bed</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px">plant</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px">date</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px">hour</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px; text-align: right">depth_height_p75</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px; text-align: right">depth_projected_area</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px; text-align: right">depth_leaf_area_est</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px; text-align: right">depth_hull_volume</th>
+<th scope="col" style="padding: 8px 12px; font-size: 13px; text-align: right">thermal_leaf_ref_dt</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+<tr style="border-bottom: 1px solid #cfe0d4; background: {{r.bg}}">
+<td style="padding: 7px 12px">{{r.bed}}</td>
+<td style="padding: 7px 12px">{{r.plant}}</td>
+<td style="padding: 7px 12px">{{r.date}}</td>
+<td style="padding: 7px 12px">{{r.hour}}</td>
+<td style="padding: 7px 12px; text-align: right">{{r.h}}</td>
+<td style="padding: 7px 12px; text-align: right">{{r.a}}</td>
+<td style="padding: 7px 12px; text-align: right">{{r.l}}</td>
+<td style="padding: 7px 12px; text-align: right">{{r.v}}</td>
+<td style="padding: 7px 12px; text-align: right">{{r.t}}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="font-size: 13px; color: #5e6b64">first 250 rows shown · keys bed, plant, date, hour</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const R = [
+  ['W1','A2','2025-09-09',12,159.2,94.5,187.5,2071,-0.23],
+  ['W1','A2','2025-09-09',15,170.1,106.0,214.3,3274,-0.29],
+  ['W1','A8','2025-09-09',12,132.7,137.4,278.1,3208,0.18],
+  ['W1','A8','2025-09-09',15,134.6,150.4,272.9,3257,-0.03],
+  ['W1','B3','2025-09-09',12,169.2,151.8,318.1,4270,-0.24],
+  ['W1','B5','2025-09-09',12,146.3,126.9,288.2,3489,0.04],
+  ['W1','B5','2025-09-09',15,146.1,144.2,330.8,3706,-0.04],
+  ['W1','E4','2025-09-09',12,206.0,136.4,254.7,4283,-0.60],
+  ['W1','J5','2025-09-09',15,191.1,134.5,355.3,4290,-0.05],
+];
+return { rows: R.map(([bed, plant, date, hour, h, a, l, v, t], i) => ({ bed, plant, date, hour, h: h.toFixed(1), a: a.toFixed(1), l: l.toFixed(1), v: v.toLocaleString('en-US'), t: t.toFixed(2), bg: i % 2 ? '#f6f8f9' : '#ffffff' })) };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Daily rhythm</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+button{font-family:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid #0b2e3f;outline-offset:2px}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="rhythm" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Daily rhythm</h1>
+<div style="flex: 1 1 0"></div>
+<div role="group" aria-label="Score" style="display: flex; gap: 4px">
+<sc-for list="{{scores}}" as="s" hint-placeholder-count="2">
+<button type="button" aria-pressed="{{s.on}}" onClick="{{s.pick}}" title="{{s.tip}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{s.bd}}; border-radius: 8px; background: {{s.bg}}; color: {{s.fg}}; font-size: 15px; font-weight: 700; cursor: pointer">{{s.label}}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<main style="flex: 999 1 640px; min-width: 0; border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px; overflow-x: auto">
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 760px">
+<div style="display: flex; gap: 3px; align-items: flex-end">
+<div style="flex: 0 0 56px; font-size: 12px; color: #5e6b64">hour</div>
+<sc-for list="{{head}}" as="h" hint-placeholder-count="18">
+<div style="flex: 1 1 0; text-align: center; font-size: 13px; font-weight: {{h.fw}}; color: {{h.fg}}">{{h.d}}</div>
+</sc-for>
+<div style="flex: 0 0 76px; text-align: right; font-size: 12px; color: #5e6b64">separates</div>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+<div style="display: flex; gap: 3px; align-items: center">
+<div style="flex: 0 0 56px; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 700; color: #17362a">{{r.h}}</div>
+<sc-for list="{{r.cells}}" as="c" hint-placeholder-count="18">
+<div title="{{c.tip}}" style="flex: 1 1 0; height: 46px; box-sizing: border-box; border-radius: 4px; background: {{c.bg}}; border: {{c.bd}}; box-shadow: {{c.ring}}"></div>
+</sc-for>
+<div style="flex: 0 0 76px; text-align: right; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 700; color: {{r.fc}}">{{r.first}}</div>
+</div>
+</sc-for>
+<div style="display: flex; gap: 3px; padding-top: 4px">
+<div style="flex: 0 0 56px"></div>
+<div style="flex: 4 1 0; height: 6px; border-radius: 3px; background: #cfe3c9"></div>
+<div style="flex: 13 1 0; height: 6px; border-radius: 3px; background: #c98300"></div>
+<div style="flex: 1 1 0"></div>
+<div style="flex: 0 0 76px"></div>
+</div>
+<div style="display: flex; gap: 3px; font-size: 12px; color: #5e6b64">
+<div style="flex: 0 0 56px"></div>
+<div style="flex: 4 1 0">baseline</div>
+<div style="flex: 13 1 0">no water</div>
+<div style="flex: 1 1 0"></div>
+<div style="flex: 0 0 76px"></div>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-top: 14px; font-size: 13px">
+<span style="color: #5e6b64">AUC</span>
+<sc-for list="{{legend}}" as="g" hint-placeholder-count="6">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: {{g.bg}}; border: 1px solid #cfe0d4; box-sizing: border-box"></span>{{g.label}}</span>
+</sc-for>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; box-shadow: inset 0 0 0 2px #0b2e3f"></span>≥ 0.9 two days</span>
+</div>
+</main>
+
+<aside aria-label="Flyover plans" style="flex: 1 1 320px; max-width: 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{plans}}" as="p" hint-placeholder-count="3">
+<div style="padding: 14px 16px; border-radius: 12px; background: {{p.bg}}; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="font-weight: 700">{{p.rule}}</span>
+<sc-if value="{{p.best}}" hint-placeholder-val="{{false}}"><span style="padding: 0 8px; border-radius: 4px; background: #1c7293; color: #ffffff; font-size: 12px; font-weight: 700">best</span></sc-if>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div><div style="font-size: 12px; color: #4a565d">flyover</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 700; color: #17362a">{{p.when}}</div></div>
+<div><div style="font-size: 12px; color: #4a565d">W3 alert</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 700; color: #17362a">{{p.day}}</div></div>
+<div><div style="font-size: 12px; color: #4a565d">false</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 700; color: {{p.fc}}">{{p.false}}</div></div>
+</div>
+</div>
+</sc-for>
+<a href="Irrigation.dc.html" style="align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">Irrigation advisor</a>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+state = { score: 'ref' };
+
+renderVals() {
+const DATA = {
+  ref: {"6":[0.15,0.67,0.28,0.88,0.23,0.27,null,null,null,0.21,0.63,null,0.94,0.7,1.0,0.63,0.55,0.98],"9":[0.26,0.31,0.2,0.82,0.75,0.88,0.83,1.0,1.0,null,0.99,1.0,0.98,1.0,1.0,1.0,1.0,0.71],"12":[0.63,0.11,0.38,0.69,0.62,0.57,0.56,0.91,null,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.93],"15":[0.21,0.74,0.6,0.81,0.88,0.65,0.93,0.8,1.0,0.97,1.0,1.0,1.0,0.99,1.0,1.0,1.0,0.96],"18":[0.04,0.86,0.7,0.47,0.55,0.48,0.45,0.38,1.0,0.88,0.59,1.0,1.0,1.0,1.0,1.0,1.0,0.77]},
+  local: {"6":[0.34,0.38,0.4,0.83,0.27,0.45,null,null,null,0.14,0.65,null,0.86,0.59,1.0,0.77,0.57,1.0],"9":[0.56,0.34,0.62,0.46,0.55,0.9,0.9,0.98,0.98,null,0.99,1.0,1.0,1.0,1.0,1.0,1.0,0.98],"12":[0.45,0.21,0.53,0.77,0.9,0.65,0.43,0.92,null,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"15":[0.33,0.66,0.26,0.67,0.75,0.68,0.92,0.77,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.62],"18":[0.11,0.98,0.69,0.26,0.62,0.4,0.75,0.67,1.0,0.89,0.65,1.0,1.0,1.0,1.0,1.0,1.0,0.88]},
+};
+const key = this.state.score, M = DATA[key];
+const fill = (v) => v < 0.3 ? '#3f7f93' : v < 0.45 ? '#bfe0e8' : v <= 0.55 ? '#eef1f2' : v < 0.7 ? '#fbe3b3' : v < 0.9 ? '#c98300' : '#5a3e00';
+const btn = (on) => ({ bg: on ? '#1c7293' : '#f6f8f9', fg: on ? '#ffffff' : '#1e2a24', bd: on ? '#1c7293' : '#8a959c' });
+const rows = ['6', '9', '12', '15', '18'].map((h) => {
+  const a = M[h];
+  let first = null;
+  for (let i = 4; i < 17; i++) if (a[i] != null && a[i + 1] != null && a[i] >= 0.9 && a[i + 1] >= 0.9) { first = i; break; }
+  return {
+    h: h.padStart(2, '0'), first: first == null ? 'never' : 'day ' + (first - 4), fc: first == null ? '#5e6b64' : '#17362a',
+    cells: a.map((v, i) => ({ bg: v == null ? 'transparent' : fill(v), bd: v == null ? '2px dashed #cfe0d4' : '0', ring: first != null && (i === first || i === first + 1) ? 'inset 0 0 0 2px #0b2e3f' : 'none',
+      tip: h + ' h, day ' + (i - 4) + ': ' + (v == null ? 'no scans' : 'AUC ' + v.toFixed(2)) })),
+  };
+});
+const head = Array.from({ length: 18 }, (_, i) => ({ d: String(i - 4).replace('-', '−'), fw: i === 4 ? 700 : 400, fg: i === 4 ? '#17362a' : '#5e6b64' }));
+const legend = [['#3f7f93', '< 0.3'], ['#bfe0e8', '0.45'], ['#eef1f2', '0.5'], ['#fbe3b3', '0.55'], ['#c98300', '0.7'], ['#5a3e00', '≥ 0.9']].map(([bg, label]) => ({ bg, label }));
+return {
+  scores: [
+    { id: 'ref', label: 'vs control bed', tip: 'Leaf minus control-bed leaf, z against own baseline' },
+    { id: 'local', label: 'no control bed', tip: 'Leaf minus air above a healthy-plant VPD line, z against own baseline' },
+  ].map((s) => ({ ...s, on: s.id === key, ...btn(s.id === key), pick: () => this.setState({ score: s.id }) })),
+  rows, head, legend,
+  plans: [
+    { rule: 'vs control bed', when: '09 h', day: 'day 4', false: '0 / 9', fc: '#17362a', best: true, bg: '#dceef2' },
+    { rule: 'no control bed', when: 'all 5', day: 'day 4', false: '0 / 9', fc: '#17362a', best: false, bg: '#eef4ee' },
+    { rule: 'leaf − air', when: '18 h', day: 'day 6', false: '3 / 9', fc: '#5a3e00', best: false, bg: '#eef1f2' },
+  ],
+};
+}
+}
+</script>
+</body>
+</html>

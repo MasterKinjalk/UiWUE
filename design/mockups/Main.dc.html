@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bed map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+button{font-family:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid #0b2e3f;outline-offset:2px}
+</style>
+</helmet>
+<div id="top" style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+
+<dc-import name="Nav" current="map" hint-size="100%,64px"></dc-import>
+
+<div style="padding: 18px 0 14px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Bed map</h1>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; border-radius: 5px">
+
+<main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end">
+<div role="group" aria-label="Signal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<sc-for list="{{layers}}" as="l" hint-placeholder-count="3">
+<button type="button" aria-pressed="{{l.on}}" title="{{l.note}}" onClick="{{l.pick}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{l.bd}}; border-radius: 8px; background: {{l.bg}}; color: {{l.fg}}; font-size: 15px; font-weight: 700; cursor: pointer">{{l.label}}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline">
+<div style="font-size: 15px; font-weight: 700; color: #17362a">{{dayTitle}}</div>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #5e6b64"><span aria-hidden="true" style="width: 14px; height: 14px; background: #eef4ee; border: 1px solid #8a959c; border-radius: 3px"></span>baseline</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #5e6b64"><span aria-hidden="true" style="width: 14px; height: 14px; background: #fbf1de; border: 1px solid #c98300; border-radius: 3px"></span>no water</span>
+</div>
+<div style="overflow-x: auto">
+<div role="group" aria-label="Day" style="display: flex; gap: 3px; width: max-content; padding: 2px">
+<sc-for list="{{days}}" as="d" hint-placeholder-count="18">
+<button type="button" aria-pressed="{{d.on}}" aria-label="{{d.aria}}" onClick="{{d.pick}}" style="width: 46px; height: 48px; padding: 0; border: 1px solid {{d.bd}}; border-radius: 4px; background: {{d.bg}}; color: {{d.fg}}; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center">
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 17px; line-height: 20px; font-weight: 700">{{d.num}}</span>
+<span style="font-size: 11px; line-height: 13px">{{d.date}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div style="overflow-x: auto; border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px">
+<div style="display: flex; gap: 20px; width: max-content">
+<sc-for list="{{beds}}" as="bed" hint-placeholder-count="3">
+<section aria-label="{{bed.name}}" style="display: flex; flex-direction: column; gap: 8px; width: 328px">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 8px; background: {{bed.tint}}">
+<div style="display: flex; align-items: baseline; gap: 8px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; font-weight: 700; color: #17362a">{{bed.name}}</h2>
+<span style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: {{bed.accent}}">{{bed.treatment}}</span>
+</div>
+<div style="font-size: 13px; line-height: 18px; color: #1e2a24; min-height: 36px">{{bed.summary}}</div>
+</div>
+<div style="display: flex; padding-left: 24px">
+<sc-for list="{{cols}}" as="n" hint-placeholder-count="8">
+<div style="width: 38px; text-align: center; font-size: 12px; line-height: 16px; color: #5e6b64">{{n}}</div>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{bed.rows}}" as="row" hint-placeholder-count="18">
+<div style="display: flex; align-items: center">
+<div style="width: 24px; font-size: 12px; line-height: 16px; color: #5e6b64">{{row.letter}}</div>
+<sc-for list="{{row.cells}}" as="c" hint-placeholder-count="8">
+<div style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center">
+<sc-if value="{{c.spot}}" hint-placeholder-val="{{false}}">
+<span aria-hidden="true" style="width: 4px; height: 4px; border-radius: 999px; background: #cfe0d4"></span>
+</sc-if>
+<sc-if value="{{c.plant}}" hint-placeholder-val="{{false}}">
+<button type="button" aria-label="{{c.aria}}" aria-pressed="{{c.sel}}" onClick="{{c.pick}}" style="width: 38px; height: 38px; padding: 0; border: 0; border-radius: 6px; background: {{c.cellBg}}; outline: {{c.ring}}; outline-offset: -2px; display: flex; align-items: center; justify-content: center; cursor: pointer">
+<span aria-hidden="true" style="display: block; box-sizing: border-box; width: {{c.w}}; height: {{c.w}}; background: {{c.bg}}; border: {{c.bdr}}; border-radius: {{c.rad}}; transform: {{c.tf}}; clip-path: {{c.clip}}"></span>
+</button>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; font-size: 13px; line-height: 18px">
+<sc-for list="{{legend}}" as="g" hint-placeholder-count="5">
+<span style="display: inline-flex; align-items: center; gap: 8px">
+<span aria-hidden="true" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center"><span style="display: block; box-sizing: border-box; width: {{g.w}}; height: {{g.w}}; background: {{g.bg}}; border: {{g.bdr}}; border-radius: {{g.rad}}; transform: {{g.tf}}; clip-path: {{g.clip}}"></span></span>
+{{g.label}}
+</span>
+</sc-for>
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center"><span style="width: 4px; height: 4px; border-radius: 999px; background: #cfe0d4"></span></span>not imaged</span>
+<sc-if value="{{flag}}" hint-placeholder-val="{{true}}">
+<span title="{{caution}}" style="margin-left: auto; padding: 4px 10px; border-radius: 4px; background: #fbf1de; color: #5a3e00; font-weight: 700">{{flag}}</span>
+</sc-if>
+</div>
+</main>
+
+<aside id="plant" aria-label="Selected plant" style="flex: 1 1 320px; max-width: 420px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+
+<div style="padding: 16px; border-radius: 12px; background: {{p.tint}}; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 30px; line-height: 34px; font-weight: 700; color: #17362a">{{p.id}}</h2>
+<span style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: {{p.accent}}">{{p.treatment}}</span>
+<sc-if value="{{p.clip}}" hint-placeholder-val="{{true}}">
+<span style="font-size: 12px; line-height: 16px; padding: 2px 8px; border-radius: 4px; background: #ffffff; border: 1px solid #8a959c; color: #1e2a24">leaf clip</span>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; gap: 12px">
+<span aria-hidden="true" style="width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; background: #ffffff; border-radius: 8px"><span style="display: block; box-sizing: border-box; width: {{p.g.w}}; height: {{p.g.w}}; background: {{p.g.bg}}; border: {{p.g.bdr}}; border-radius: {{p.g.rad}}; transform: {{p.g.tf}}; clip-path: {{p.g.clip}}"></span></span>
+<div style="display: flex; flex-direction: column">
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; font-weight: 700; color: #17362a">{{p.status}}</span>
+<span style="font-size: 13px; line-height: 18px; color: #1e2a24">{{p.reason}}</span>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; border: 1px solid #cfe0d4; border-radius: 12px; padding: 4px 16px">
+<sc-for list="{{p.readouts}}" as="r" hint-placeholder-count="3">
+<div style="display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-bottom: 1px solid {{r.rule}}">
+<span title="{{r.how}}" style="flex: 1 1 auto; font-size: 15px; line-height: 20px; color: #1e2a24">{{r.label}}</span>
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 28px; font-weight: 700; color: #17362a; white-space: nowrap">{{r.value}}</span>
+<span style="font-size: 13px; line-height: 18px; color: #5e6b64; width: 34px">{{r.unit}}</span>
+</div>
+</sc-for>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px; border: 1px solid #cfe0d4; border-radius: 12px; padding: 14px 16px">
+<span style="font-size: 13px; line-height: 18px; color: #5e6b64">{{p.seriesTitle}}</span>
+<div role="img" aria-label="{{p.seriesAria}}" style="display: flex; gap: 3px; align-items: stretch">
+<sc-for list="{{p.bars}}" as="b" hint-placeholder-count="18">
+<div style="width: 15px; display: flex; flex-direction: column; background: {{b.band}}">
+<div style="height: 44px; display: flex; align-items: flex-end"><div style="width: 100%; height: {{b.up}}; background: {{b.bg}}"></div></div>
+<div style="height: 1px; background: #5e6b64"></div>
+<div style="height: 20px"><div style="width: 100%; height: {{b.down}}; background: {{b.bg}}"></div></div>
+<div style="height: 4px; background: {{b.mark}}"></div>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 12px; background: #eef1f2">
+<sc-for list="{{p.truth}}" as="t" hint-placeholder-count="3">
+<div style="display: flex; gap: 10px; font-size: 14px; line-height: 20px">
+<span style="flex: 0 0 84px; color: #4a565d">{{t.k}}</span>
+<span style="color: #1e2a24">{{t.v}}</span>
+</div>
+</sc-for>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<a href="#top" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">Plant profile</a>
+<a href="#top" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; border: 1px solid #1c7293; color: #1c7293; font-weight: 700; text-decoration: none; box-sizing: border-box">3D browser</a>
+<a href="#top" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; border: 1px solid #1c7293; color: #1c7293; font-weight: 700; text-decoration: none; box-sizing: border-box">Trait explorer</a>
+</div>
+</aside>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+state = { layer: 's', day: 8, pid: 'W2_H5' };
+
+renderVals() {
+const D = {"W1_A2":{"t":[0.7,0.1,-0.5,-0.1,-0.6,0.2,-0.2,-0.9,-1.5,0.0,-0.1,0.1,-0.2,0.7,-0.5,-0.9,-1.8,-0.1],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.3,null,0.8,1.3,-0.6,-0.4,-0.5,0.7,0.3,null,0.2,null,0.3,null,-0.2,1.0,null],"a":[-28,3,5,null,-2,null,-3,29,null,9,30,48,43,26,null,null,74,45]},"W1_A8":{"t":[0.8,-0.1,-0.2,0.1,-0.8,-0.1,0.8,1.1,0.1,0.4,-0.1,0.1,-0.0,0.5,-0.2,-0.2,-1.5,-0.3],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,0.3,null,-0.4,1.0,-0.1,-1.5,-1.0,-0.9,1.6,null,-1.2,null,-0.4,null,0.2,0.3,null],"a":[-16,7,15,null,null,null,-8,-7,9,18,55,31,23,23,18,17,9,15]},"W1_B3":{"t":[0.0,-0.1,-0.1,0.1,-0.6,-0.3,-0.5,-0.6,-1.2,0.5,0.2,0.2,0.3,0.2,-0.1,-0.4,-1.6,0.0],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.2,null,0.6,1.1,-0.6,-2.0,-0.6,-0.2,1.1,null,-0.9,null,0.1,null,-0.3,0.5,null],"a":[-17,-14,38,4,33,27,20,6,10,null,24,25,15,16,12,21,11,2]},"W1_B5":{"t":[0.0,-0.3,-0.3,0.1,-0.6,-0.4,-0.4,-0.1,-0.8,0.5,0.3,0.3,0.7,0.4,-0.2,-0.8,-1.6,0.0],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,0.0,null,0.2,0.9,-0.8,-1.4,-1.0,-0.7,1.0,null,-1.1,null,-0.7,null,-0.3,-0.3,null],"a":[null,-30,44,15,47,80,null,null,15,18,21,33,null,32,-21,null,13,-21]},"W1_E4":{"t":[0.3,-0.0,0.1,-0.2,0.3,-0.3,-0.9,-1.0,-2.0,0.2,-0.1,-0.0,-0.5,0.3,-0.1,-0.6,-0.7,0.0],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,0.3,null,-1.0,-0.8,-0.2,-1.2,-1.1,-2.6,-1.1,null,-0.3,null,-0.9,null,0.1,-0.7,null],"a":[null,null,-17,8,3,10,14,null,-29,null,19,6,null,null,-17,null,null,null]},"W1_F5":{"t":[-0.2,0.4,-0.3,0.2,-0.6,0.0,-0.8,-0.8,-1.1,-1.2,-0.1,-0.4,-0.5,0.1,-0.2,-0.1,-0.3,-0.7],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.1,null,-0.3,-0.5,1.0,-0.6,0.2,-0.3,-0.5,null,0.1,null,0.1,null,0.3,-0.4,null],"a":null},"W1_G6":{"t":[0.2,0.4,-0.1,-0.8,-0.9,-0.5,-1.3,0.1,-1.0,-1.4,-0.2,-0.4,-1.2,-1.7,-0.7,0.5,0.2,-0.8],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.0,null,0.0,-0.9,-0.8,0.2,0.4,0.8,-1.4,null,0.3,null,-0.5,null,1.0,-1.3,null],"a":[3,-4,null,-3,26,27,-2,8,17,22,null,null,26,17,27,25,null,26]},"W1_J5":{"t":[0.6,0.0,-0.4,-0.0,-1.0,-0.8,-0.8,-0.4,-1.0,-0.5,-0.5,-0.6,-1.3,-1.4,-0.3,-0.4,0.7,-0.4],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.2,null,-0.3,-0.7,-0.1,-0.0,-0.2,1.4,-0.9,null,0.3,null,0.9,null,0.2,-0.1,null],"a":[-5,null,16,-5,5,17,47,-12,34,null,28,12,9,8,7,26,33,26]},"W1_K6":{"t":[-0.6,-0.2,0.2,1.1,0.7,0.5,1.5,1.0,-0.0,0.3,0.2,0.4,-0.1,-0.9,0.3,-0.1,0.5,0.0],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.3,null,-0.2,-0.1,1.6,0.5,1.1,-0.7,-1.0,null,-0.2,null,-0.6,null,-0.5,-0.3,null],"a":[0,null,null,0,-10,-10,null,-30,-26,-18,-9,-7,-61,2,-25,-9,-20,-38]},"W1_N3":{"t":[-1.7,-0.0,0.7,-0.1,0.9,0.7,1.5,0.1,0.0,0.3,0.6,0.2,1.1,-0.1,0.2,-0.8,1.2,0.9],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.3,null,-0.2,0.5,0.9,0.8,0.5,-1.5,0.8,null,0.7,null,0.3,null,0.3,0.4,null],"a":null},"W1_Q6":{"t":[-0.8,-0.7,0.7,0.9,1.1,0.9,1.5,1.1,-0.2,-0.5,-0.2,-0.3,-0.2,-0.8,0.0,1.7,2.2,-0.1],"s":[null,0,null,0,0,0,1,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.2,null,1.2,-0.8,1.8,3.1,2.2,1.3,-1.8,null,1.5,null,1.5,null,1.8,1.3,null],"a":[null,null,-1,1,null,null,null,5,9,2,14,16,24,null,null,6,-18,null]},"W1_R1":{"t":[-0.9,0.0,-0.0,0.8,1.2,0.5,0.3,0.1,0.2,-0.7,-0.7,-0.7,0.2,-0.5,0.0,0.8,1.6,0.4],"s":[null,0,null,0,0,0,0,0,0,0,null,0,null,0,null,0,0,null],"z":[null,0.3,null,0.5,-0.6,0.3,0.7,2.5,1.8,0.3,null,0.3,null,1.5,null,0.3,0.8,null],"a":[-6,4,null,12,38,49,28,32,28,25,55,45,29,1,11,6,15,13]},"W1_R7":{"t":[-0.6,-0.6,0.2,1.3,1.5,1.4,1.7,1.6,-0.1,-0.1,-0.7,0.5,-0.4,0.2,0.4,2.8,3.4,0.5],"s":[null,0,null,0,0,0,1,0,0,0,null,0,null,0,null,0,0,null],"z":[null,-0.3,null,1.8,-0.4,1.3,3.5,2.7,0.8,-0.5,null,1.4,null,1.7,null,2.3,1.0,null],"a":[-4,-13,21,-18,-8,-58,14,null,null,-19,-13,-31,-14,-9,-16,null,null,null]},"W2_A2":{"t":[-1.2,0.1,-0.1,0.0,1.2,1.2,1.4,2.2,5.3,3.5,3.2,4.3,6.4,5.9,4.5,7.5,9.5,4.2],"s":[null,0,null,0,0,0,0,0,0,null,null,1,null,2,null,2,2,0],"z":[null,0.2,null,-0.4,-0.1,1.2,1.5,2.7,2.5,null,null,2.9,null,3.7,null,3.5,3.1,-1.8],"a":[0,null,null,null,35,23,null,null,-5,-67,-60,-62,-75,null,-81,-78,null,null]},"W2_A6":{"t":[-1.9,-0.4,0.0,1.2,0.9,1.8,2.1,3.7,7.2,4.0,3.9,5.2,6.0,7.4,5.1,8.5,9.9,3.6],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.0,null,0.6,0.1,1.1,2.7,3.8,3.8,null,null,4.5,null,5.9,null,4.5,5.1,-2.9],"a":[-10,5,null,null,null,null,null,33,null,-21,-61,null,-25,-87,null,null,null,null]},"W2_A8":{"t":[-1.5,-0.6,-0.1,1.8,1.3,1.9,2.5,3.9,7.3,3.6,3.4,5.1,6.5,9.0,5.8,13.8,13.9,4.3],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.3,null,1.8,0.4,1.0,3.6,5.5,6.2,null,null,6.4,null,8.8,null,5.9,6.0,-3.4],"a":[-20,-7,0,14,11,31,28,30,-19,-43,-44,-38,-72,-85,-85,-98,-96,-96]},"W2_B3":{"t":[-1.3,-0.3,-0.2,1.2,0.8,0.8,0.5,1.9,6.8,4.3,4.0,5.1,7.0,6.6,5.0,8.2,8.4,3.1],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.2,null,1.0,-0.6,0.8,0.3,3.3,3.3,null,null,3.6,null,4.7,null,3.9,3.8,-2.0],"a":[null,0,null,null,null,null,92,78,null,null,null,null,null,null,null,-46,null,null]},"W2_D3":{"t":[-1.7,-0.2,-0.5,2.4,1.3,0.8,1.4,1.6,5.9,3.7,3.5,4.8,7.0,6.4,4.6,8.4,8.9,2.9],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.1,null,0.2,-0.2,0.8,-0.2,3.0,3.0,null,null,4.7,null,6.1,null,4.0,5.8,1.4],"a":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},"W2_G2":{"t":[-1.2,0.4,-0.4,0.9,1.4,1.0,0.9,1.3,5.2,3.1,3.5,5.2,7.2,6.0,5.5,9.4,8.9,3.4],"s":[null,0,null,0,0,0,0,1,0,null,null,1,null,2,null,2,2,0],"z":[null,0.2,null,-0.3,-0.9,1.1,2.2,3.4,2.8,null,null,5.2,null,6.4,null,5.5,6.9,1.3],"a":[4,4,null,-1,-8,23,11,19,13,-14,-26,-5,6,-17,-37,-38,-48,-38]},"W2_G8":{"t":[-0.1,-0.2,-0.3,1.7,1.8,1.3,1.8,5.7,7.6,3.7,3.6,5.8,8.7,8.4,4.2,12.8,12.1,2.2],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.6,null,2.8,-0.3,1.9,6.1,6.2,7.4,null,null,7.7,null,8.9,null,5.4,8.1,0.0],"a":[-13,-15,22,12,-1,-18,4,-22,null,-52,-34,-64,-58,-45,-52,-53,-53,-38]},"W2_H5":{"t":[-1.1,-0.2,-0.1,1.4,1.2,1.4,1.5,1.8,4.7,2.8,3.4,4.3,7.9,6.1,4.0,9.1,9.5,1.7],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.6,null,1.2,0.1,2.1,3.0,3.5,3.7,null,null,4.8,null,6.4,null,5.7,7.0,1.1],"a":[-2,-11,25,null,31,22,18,37,-6,-17,-18,-9,-55,-38,-40,-68,-64,null]},"W2_I6":{"t":[-0.4,-0.2,-0.1,1.6,1.1,0.9,2.0,2.4,5.5,2.8,3.4,4.6,7.4,6.5,4.7,9.7,9.9,1.7],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.5,null,1.0,0.5,2.0,4.0,4.7,5.4,null,null,6.9,null,7.8,null,6.2,5.6,1.0],"a":[-37,0,37,null,-6,-1,11,null,-8,null,-13,-11,null,-33,-54,-64,-73,-50]},"W2_J5":{"t":[0.3,-0.0,0.0,1.1,1.1,0.2,1.6,1.3,5.8,3.3,3.5,5.9,8.8,6.5,4.9,9.8,8.9,1.6],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.7,null,1.1,0.2,1.5,3.7,4.8,5.3,null,null,5.6,null,7.7,null,6.1,7.8,1.2],"a":[-5,-1,40,null,null,null,40,34,58,22,31,null,-29,-33,-57,-44,null,-27]},"W2_K2":{"t":[0.1,0.0,-0.0,0.9,1.5,1.0,2.1,0.7,3.4,2.5,2.7,4.0,8.3,5.7,4.8,8.6,6.5,2.3],"s":[null,0,null,0,0,0,0,0,1,null,null,2,null,2,null,2,2,0],"z":[null,-0.2,null,0.4,0.4,2.0,2.4,2.5,4.1,null,null,4.6,null,7.3,null,6.2,6.5,1.4],"a":[null,null,0,null,null,null,null,null,-44,null,-28,-83,-92,-102,null,null,null,-92]},"W2_L7":{"t":[0.4,-0.3,0.3,1.5,1.9,1.5,4.9,4.2,4.9,3.3,3.3,4.3,9.0,5.7,4.4,10.8,9.2,1.5],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.6,null,2.1,1.3,2.4,7.1,6.1,7.6,null,null,7.6,null,8.6,null,7.1,7.4,0.7],"a":[-22,0,15,1,-17,-4,null,-7,-26,-28,-31,-31,-38,-37,-45,-50,-51,-64]},"W2_M2":{"t":[-0.7,-1.4,0.1,1.7,1.6,-0.2,2.3,0.2,2.4,2.4,2.4,2.8,7.8,5.7,4.8,8.0,8.3,1.5],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.6,null,1.1,-0.3,1.8,1.0,3.1,3.2,null,null,4.0,null,7.5,null,6.5,6.7,1.3],"a":[0,null,null,null,null,null,null,null,null,null,null,null,-16,-34,-39,null,null,null]},"W2_O6":{"t":[-1.2,-1.2,-0.2,2.7,0.8,1.2,2.5,1.3,4.9,4.0,4.3,5.1,8.0,6.7,5.7,9.8,9.5,1.1],"s":[null,0,null,0,0,0,1,2,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.8,null,1.4,-0.2,1.3,3.5,4.9,6.8,null,null,7.0,null,8.7,null,6.7,8.9,0.8],"a":[-30,null,0,1,-11,null,-19,-4,null,null,-26,null,null,-21,-44,-46,-43,-34]},"W2_Q6":{"t":[-2.0,-0.6,0.4,2.9,2.5,0.8,2.5,1.4,6.1,4.2,4.3,5.2,9.8,6.7,5.9,11.0,11.4,0.9],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.7,null,1.8,0.8,1.8,1.5,5.5,7.2,null,null,7.8,null,9.1,null,5.7,9.1,0.4],"a":[null,0,null,null,-11,46,-8,-5,null,-6,-15,-25,-17,-29,-21,-24,-14,-37]},"W2_R1":{"t":[-1.7,-0.0,0.7,1.0,3.1,0.7,2.6,1.2,6.4,4.8,4.1,5.5,10.2,5.9,7.5,11.1,8.3,1.3],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.2,null,0.6,1.9,2.5,2.1,4.9,6.8,null,null,5.3,null,8.5,null,7.1,7.3,0.6],"a":[-4,0,null,11,23,26,34,41,7,6,-7,-15,-21,-39,-61,-64,-70,-23]},"W2_R7":{"t":[-1.6,-1.1,0.3,2.3,2.3,-0.3,1.9,1.1,7.5,4.8,4.6,6.1,11.5,8.3,6.7,15.3,16.4,0.9],"s":[null,0,null,0,0,0,0,1,2,null,null,2,null,2,null,2,2,0],"z":[null,-0.5,null,2.6,2.3,1.7,1.2,6.4,9.8,null,null,9.2,null,11.6,null,6.6,10.7,0.0],"a":[-15,0,17,null,8,28,19,-13,-29,-17,-41,-55,-67,null,null,-77,-80,-30]},"W3_B3":{"t":[-1.5,-0.3,0.2,1.1,2.2,-0.5,1.3,2.4,5.9,5.0,4.2,5.9,9.1,6.6,8.3,10.7,9.7,2.1],"s":[null,0,null,0,0,0,0,1,2,null,null,2,0,1,2,2,2,null],"z":[null,-0.6,null,1.5,2.8,2.2,1.5,5.3,9.2,null,null,8.5,1.9,10.9,5.0,7.7,9.2,null],"a":null},"W3_B7":{"t":[-1.5,-0.4,0.5,2.2,2.0,-0.8,1.6,6.4,7.9,5.7,5.1,6.1,9.7,7.0,8.7,12.1,10.7,1.8],"s":[null,0,null,1,0,0,0,1,2,null,null,2,0,1,2,2,2,null],"z":[null,-0.9,null,3.2,2.8,1.6,1.2,6.7,11.7,null,null,12.4,1.3,12.4,4.3,7.5,9.1,null],"a":null},"W3_D3":{"t":[-0.9,-0.1,0.1,1.0,1.9,-0.9,0.9,1.7,5.7,4.7,3.2,5.7,9.0,6.9,8.0,10.8,9.3,1.7],"s":[null,0,null,0,0,0,0,1,2,null,null,2,0,1,2,2,2,null],"z":[null,-0.0,null,1.0,1.9,1.7,2.2,5.2,7.1,null,null,6.8,2.4,10.5,4.5,7.1,10.1,null],"a":null},"W3_G6":{"t":[-2.2,-0.5,-0.2,1.0,0.9,-1.8,0.8,0.6,5.0,4.0,3.1,5.3,9.3,8.4,9.0,8.3,8.2,0.5],"s":[null,0,null,0,1,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,-0.8,null,1.2,3.3,1.5,2.8,6.9,8.9,null,null,11.2,4.2,12.5,5.3,7.9,11.3,null],"a":null},"W3_I2":{"t":[-1.6,-1.0,-0.0,0.8,2.3,-0.6,1.4,2.1,5.5,5.0,4.5,6.0,10.5,9.4,10.8,10.2,10.5,1.8],"s":[null,0,null,0,1,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,-0.3,null,1.2,4.0,2.2,1.6,5.7,5.9,null,null,7.0,5.0,8.0,5.7,6.6,10.8,null],"a":null},"W3_K4":{"t":[-1.4,-0.6,0.4,-0.1,2.6,-0.9,1.7,1.5,5.8,5.6,4.9,6.7,10.6,10.6,10.8,7.5,10.8,2.1],"s":[null,0,null,0,0,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,0.3,null,0.9,1.5,2.5,0.5,5.4,8.6,null,null,9.9,6.8,8.5,6.4,7.1,11.5,null],"a":null},"W3_O6":{"t":[-2.1,-1.4,-0.4,0.7,1.6,-0.8,2.1,1.9,5.4,4.7,4.2,5.8,7.9,8.6,9.9,5.5,6.7,1.5],"s":[null,0,null,0,1,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,0.1,null,1.9,4.2,1.4,0.0,8.8,10.4,null,null,11.3,7.7,11.9,5.2,6.9,12.8,null],"a":null},"W3_Q2":{"t":[-0.9,-0.2,-0.6,1.0,3.0,0.5,3.2,1.8,8.6,5.3,5.3,6.5,9.7,10.4,12.4,7.4,8.1,2.5],"s":[null,0,null,0,1,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,0.5,null,1.0,5.7,1.4,0.4,8.6,9.7,null,null,9.7,8.9,12.4,6.0,7.4,13.1,null],"a":null},"W3_Q8":{"t":[-0.4,-0.7,-1.2,1.6,2.2,-0.0,2.5,4.9,8.2,4.3,4.8,6.5,9.0,10.7,12.2,5.6,6.8,1.0],"s":[null,0,null,1,2,0,0,1,2,null,null,2,2,2,2,2,2,null],"z":[null,-0.3,null,3.9,7.5,1.8,2.5,11.5,12.6,null,null,12.7,8.9,15.1,4.7,7.5,15.4,null],"a":null}};
+const TRUTH = {"W1_B3":[1],"W1_J5":[1],"W1_Q6":[1],"W2_A6":[1,8,7,"wilting, black bean aphid"],"W2_A8":[0,null,9,"aphids, wilting"],"W2_D3":[1,9],"W2_G8":[1,12],"W2_H5":[1,5],"W2_K2":[1,13],"W2_L7":[1,15],"W2_M2":[1,12],"W2_O6":[1,13],"W2_R7":[1,10],"W3_B3":[1,10],"W3_B7":[1,7,7,"wilting"],"W3_D3":[1,9],"W3_G6":[1,8],"W3_I2":[1,8,13,"some very dead leaves, strong browning/yellowing"],"W3_K4":[1,9,13,"some pretty dead leaves, browned and draped"],"W3_O6":[1,11,13,"yellowing"],"W3_Q2":[1,9,13,"browned/yellowed leaves"],"W3_Q8":[1,8,13,"very yellowed leaves, including one leaf sensor attached too"]};
+const C = { teal7: '#1c7293', teal6: '#3f7f93', teal3: '#9fd0db', teal2: '#bfe0e8', am2: '#fbe3b3', am7: '#c98300', am9: '#5a3e00', gray: '#eef1f2', g5: '#8a959c', navy: '#0b2e3f' };
+const K = 2.88;
+const { layer, day, pid } = this.state;
+const dateOf = (i) => (i < 2 ? (30 + i) + ' Aug' : (i - 1) + ' Sep');
+const sign = (v, dp) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(dp);
+
+const sq = (bg) => ({ w: '28px', bg, bdr: '1px solid ' + C.g5, rad: '4px', tf: 'none', clip: 'none' });
+const G = {
+  fine: { w: '20px', bg: C.teal2, bdr: '2px solid ' + C.teal7, rad: '999px', tf: 'none', clip: 'none' },
+  watch: { w: '24px', bg: C.am7, bdr: '0', rad: '0', tf: 'none', clip: 'polygon(50% 6%, 100% 94%, 0 94%)' },
+  irrigate: { w: '19px', bg: C.am9, bdr: '0', rad: '2px', tf: 'rotate(45deg)', clip: 'none' },
+  none: { w: '18px', bg: 'transparent', bdr: '2px dashed ' + C.g5, rad: '999px', tf: 'none', clip: 'none' },
+  notable: { w: '18px', bg: 'transparent', bdr: '2px dashed ' + C.g5, rad: '3px', tf: 'none', clip: 'none' },
+};
+const ST = ['fine', 'watch', 'irrigate'];
+const tBin = (v) => v < -1 ? C.teal3 : v <= 1 ? C.gray : v <= 4 ? C.am2 : v <= 8 ? C.am7 : C.am9;
+const aBin = (v) => v <= -50 ? C.am9 : v <= -20 ? C.am7 : v < -5 ? C.am2 : v <= 5 ? C.gray : v <= 25 ? C.teal3 : C.teal6;
+const glyph = (id, lay, i) => {
+  const d = D[id];
+  if (lay === 's') { const s = d.s[i]; return s == null ? G.none : G[ST[s]]; }
+  if (lay === 't') { const v = d.t[i]; return v == null ? G.none : sq(tBin(v)); }
+  if (d.a == null) return G.notable;
+  const v = d.a[i]; return v == null ? G.none : sq(aBin(v));
+};
+const word = (id, lay, i) => {
+  const d = D[id];
+  if (lay === 's') return d.s[i] == null ? 'no usable scan' : ST[d.s[i]];
+  if (lay === 't') return d.t[i] == null ? 'no usable scan' : sign(d.t[i], 1) + ' °C';
+  if (d.a == null) return 'no depth table';
+  return d.a[i] == null ? 'no usable scan' : sign(d.a[i], 0) + ' cm²';
+};
+
+const META = {
+  s: { label: 'Water status', sub: 'thermal score, 09 h', legend: 'STATUS', note: 'Thermal stress score against the control bed, one 09 h flyover. Irrigate = above the threshold (2.88) on two scans in a row. Checked on W3: 9 of 9 plants flagged by day 4, 0 false alerts.' },
+  t: { label: 'Leaf temperature', sub: 'vs control bed, °C', legend: 'CHANGE FROM OWN BASELINE', note: 'Leaf minus control-bed leaf temperature, as change from the plant’s own baseline. Daily value = median of the 12 h and 15 h runs that pass QC.' },
+  a: { label: 'Projected area', sub: 'depth camera, cm²', legend: 'CHANGE FROM OWN BASELINE', note: 'Projected leaf area from the depth camera, as change from the plant’s own baseline. Grey = within ±5 cm²; the noise floor (E1) is 3.1 cm².' },
+};
+const layers = ['s', 't', 'a'].map((id) => ({ ...META[id], on: layer === id, bg: layer === id ? C.teal7 : '#f6f8f9', fg: layer === id ? '#ffffff' : '#1e2a24', bd: layer === id ? C.teal7 : C.g5, pick: () => this.setState({ layer: id }) }));
+
+const days = Array.from({ length: 18 }, (_, i) => {
+  const n = i - 4, on = i === day, base = n < 0, dry = n >= 0 && n <= 12;
+  return { num: n < 0 ? '−' + (-n) : '' + n, date: dateOf(i), on, aria: 'Day ' + n + ', ' + dateOf(i),
+    bg: on ? C.navy : base ? '#eef4ee' : dry ? '#fbf1de' : '#f6f8f9', fg: on ? '#ffffff' : '#1e2a24', bd: on ? C.navy : base ? C.g5 : dry ? C.am7 : C.g5,
+    pick: () => this.setState({ day: i }) };
+});
+
+const LET = 'ABCDEFGHIJKLMNOPQR';
+const BEDS = [['W1', 'WATERED CONTROL', '#dceef2', C.teal7], ['W2', 'WATER DEFICIT', '#fbf1de', C.am9], ['W3', 'WATER DEFICIT', '#fbf1de', C.am9]];
+const median = (xs) => { const s = xs.slice().sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const beds = BEDS.map(([name, treatment, tint, accent]) => {
+  const ids = Object.keys(D).filter((k) => k.startsWith(name));
+  let summary;
+  if (layer === 's') {
+    const n = [0, 0, 0, 0]; ids.forEach((k) => { const s = D[k].s[day]; n[s == null ? 3 : s]++; });
+    summary = n[2] + ' irrigate · ' + n[1] + ' watch · ' + n[0] + ' fine';
+  } else {
+    const key = layer, unit = layer === 't' ? ' °C' : ' cm²', dp = layer === 't' ? 1 : 0;
+    const withTable = ids.filter((k) => D[k][key] != null), vals = withTable.map((k) => D[k][key][day]).filter((v) => v != null);
+    summary = !withTable.length ? 'no data' : !vals.length ? 'no scan' : 'median ' + sign(median(vals), dp) + unit;
+  }
+  const rows = LET.split('').map((letter, li) => ({ letter, cells: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+    const id = name + '_' + letter + n, valid = li % 2 === 0 ? n % 2 === 0 : n % 2 === 1, has = !!D[id];
+    if (!has) return { spot: valid, plant: false };
+    const sel = id === pid;
+    return { spot: false, plant: true, sel, ...glyph(id, layer, day), aria: id.replace('_', ' ') + ', ' + word(id, layer, day), cellBg: sel ? '#dceef2' : 'transparent', ring: sel ? '2px solid ' + C.navy : '0', pick: () => this.setState({ pid: id }) };
+  }) }));
+  return { name, treatment, tint, accent, summary, rows };
+});
+
+const legend = layer === 's'
+  ? [{ ...G.fine, label: 'fine' }, { ...G.watch, label: 'watch' }, { ...G.irrigate, label: 'irrigate' }, { ...G.none, label: 'no scan' }]
+  : layer === 't'
+  ? [{ ...sq(C.teal3), label: '< −1' }, { ...sq(C.gray), label: '±1' }, { ...sq(C.am2), label: '+4' }, { ...sq(C.am7), label: '+8' }, { ...sq(C.am9), label: '> +8 °C' }, { ...G.none, label: 'no scan' }]
+  : [{ ...sq(C.am9), label: '< −50' }, { ...sq(C.am7), label: '−20' }, { ...sq(C.am2), label: '−5' }, { ...sq(C.gray), label: '±5' }, { ...sq(C.teal3), label: '+25' }, { ...sq(C.teal6), label: '> +25 cm²' }, { ...G.none, label: 'no scan' }, { ...G.notable, label: 'no data' }];
+
+const d = D[pid], bedName = pid.slice(0, 2), ctl = bedName === 'W1';
+const s = d.s[day], z = d.z[day], t = d.t[day], a = d.a == null ? null : d.a[day];
+const tr = TRUTH[pid] || [0];
+const firstIrr = d.s.findIndex((v, i) => i >= 4 && v === 2);
+const dayN = (i) => 'day ' + (i - 4) + ' · ' + dateOf(i);
+const truth = [
+  { k: 'Flagged', v: firstIrr < 0 ? '–' : dayN(firstIrr) },
+  { k: 'Clip onset', v: tr[1] == null ? '–' : dayN(tr[1]) },
+  { k: 'Symptom', v: tr[2] == null ? '–' : dayN(tr[2]) },
+];
+if (firstIrr >= 0 && tr[2] != null) { const lead = tr[2] - firstIrr; truth.push({ k: 'Lead', v: sign(lead, 0) + ' d' }); }
+
+const series = layer === 's' ? d.z : layer === 't' ? d.t : d.a;
+const scale = layer === 'a' ? 100 : 16;
+const bars = Array.from({ length: 18 }, (_, i) => {
+  const v = series == null ? null : series[i], n = i - 4;
+  const bg = layer === 's' ? (d.s[i] === 2 ? C.am9 : d.s[i] === 1 ? C.am7 : C.teal7) : v == null ? C.g5 : v >= 0 ? (layer === 't' ? C.am7 : C.teal6) : (layer === 't' ? C.teal6 : C.am7);
+  const h = v == null ? 0 : Math.max(2, Math.min(44, Math.abs(v) / scale * 44));
+  return { up: v != null && v >= 0 ? h + 'px' : '0px', down: v != null && v < 0 ? Math.min(20, h) + 'px' : '0px', bg, band: n >= 0 && n <= 12 ? '#fbf1de' : '#f6f8f9', mark: i === day ? C.navy : 'transparent' };
+});
+const sTitle = { s: 'Thermal stress score (z)', t: 'Leaf temperature change (°C)', a: 'Projected area change (cm²)' }[layer];
+const p = {
+  id: pid.replace('_', ' '), treatment: ctl ? 'WATERED CONTROL' : 'WATER DEFICIT', accent: ctl ? C.teal7 : C.am9, tint: ctl ? '#dceef2' : '#fbf1de', clip: !!tr[0],
+  g: s == null ? G.none : G[ST[s]],
+  status: s == null ? 'No scan' : ['Fine', 'Watch', 'Irrigate'][s],
+  reason: s == null ? '' : sign(z, 1) + ' z · limit ' + K,
+  readouts: [
+    { label: 'Stress score', how: 'z against own baseline, 09 h', value: z == null ? '–' : sign(z, 1), unit: 'z', rule: '#cfe0d4' },
+    { label: 'Leaf temp', how: 'leaf minus control-bed leaf, change from baseline, 12 + 15 h', value: t == null ? '–' : sign(t, 1), unit: '°C', rule: '#cfe0d4' },
+    { label: 'Area', how: d.a == null ? 'no depth table for this plant yet' : 'projected area, change from baseline, 12 + 15 h', value: a == null ? '–' : sign(a, 0), unit: 'cm²', rule: 'transparent' },
+  ],
+  seriesTitle: sTitle, seriesAria: sTitle + ' for ' + pid.replace('_', ' ') + ', one bar per day, 30 Aug to 16 Sep',
+  seriesNote: series == null ? 'Depth traits are not available for this plant yet.' : 'Sand band = days without water. Navy tick = the day shown on the map. Gaps = no usable scan.',
+  bars, truth,
+};
+
+return {
+  layers, days, beds, legend, p, cols: [1, 2, 3, 4, 5, 6, 7, 8],
+  layerNote: META[layer].note, legendTitle: META[layer].legend,
+  dayTitle: 'Day ' + (day - 4) + ' · ' + dateOf(day),
+  flag: layer === 'a' ? 'W1 + W2 only' : layer === 's' ? 'bed effect' : '',
+  caution: layer === 'a' ? 'Depth traits cover W1 and W2 only. W3 and the plants W1 F5 and W1 N3 have no depth table yet, so they show as dashed squares.' : 'Before the cutoff, when every plant was watered, the beds already differ at 09 h (AUC 0.62). Part of the 09 h signal may be the bed, not stress. 15 h is cleaner (0.56).',
+  source: layer === 'a' ? 'Data: data/derived/threed/traits_runs.parquet · 28 plants in W1 and W2 · baseline 30 Aug to 2 Sep' : 'Data: derived/thermal/traits_runs + derived/diurnal/scores_runs · 5,402 scans · 39 plants · baseline 30 Aug to 2 Sep',
+};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nav</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<header style="box-sizing: border-box; width: 100%; min-height: 64px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 28px; border-bottom: 1px solid #cfe0d4; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif">
+<a href="Home.dc.html" style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 21px; color: #17362a; text-decoration: none; padding: 12px 0">UiWUE</a>
+<nav aria-label="Pages" style="display: flex; flex-wrap: wrap; gap: 0 18px; font-size: 14px">
+<sc-for list="{{items}}" as="it" hint-placeholder-count="8">
+<a href="{{it.href}}" aria-current="{{it.cur}}" style="padding: 20px 0 17px; color: {{it.fg}}; font-weight: {{it.fw}}; text-decoration: none; border-bottom: 3px solid {{it.line}}">{{it.label}}</a>
+</sc-for>
+</nav>
+</header>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"current":{"editor":"enum","options":["home","warning","sensors","rhythm","irrigation","map","profile","3d","traits","export","methods"],"default":"home"},"$preview":{"width":1440,"height":64}}'>
+class Component extends DCLogic {
+renderVals() {
+const cur = this.props.current ?? 'home';
+const pages = [
+  ['home', 'Home', 'Home.dc.html'],
+  ['warning', 'Early warning', 'EarlyWarning.dc.html'],
+  ['sensors', 'Sensors', 'Sensors.dc.html'],
+  ['rhythm', 'Daily rhythm', 'Rhythm.dc.html'],
+  ['irrigation', 'Irrigation', 'Irrigation.dc.html'],
+  ['map', 'Bed map', 'Main.dc.html'],
+  ['profile', 'Plant profile', 'Profile.dc.html'],
+  ['3d', '3D browser', 'Browser3D.dc.html'],
+  ['traits', 'Trait explorer', 'Traits.dc.html'],
+  ['export', 'Export', 'Export.dc.html'],
+  ['methods', 'Methods', 'Methods.dc.html'],
+];
+return { items: pages.map(([id, label, href]) => ({ label, href, cur: id === cur ? 'page' : undefined, fg: id === cur ? '#17362a' : '#5e6b64', fw: id === cur ? 700 : 400, line: id === cur ? '#1c7293' : 'transparent' })) };
+}
+}
+</script>
+</body>
+</html>

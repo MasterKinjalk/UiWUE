@@ -1,0 +1,166 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Artboard-ae6x.dc.html": {
+      "h": 600,
+      "handmade": true,
+      "page": "page-nyh8ma",
+      "title": "Artboard 1",
+      "w": 800,
+      "x": 0,
+      "y": 0
+    },
+    "Main.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "is_interactive": true,
+      "title": "Bed map (working page)",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "System.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "title": "Map kit: colours, marks, parts",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Nav.dc.html": {
+      "h": 64,
+      "title": "Nav (shared)",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "Home.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "title": "Home",
+      "w": 1440,
+      "x": 0,
+      "y": 1200
+    },
+    "Browser3D.dc.html": {
+      "expand": "fill",
+      "h": 1180,
+      "is_interactive": true,
+      "title": "3D browser",
+      "w": 1440,
+      "x": 1520,
+      "y": 1200
+    },
+    "Traits.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "is_interactive": true,
+      "title": "Trait explorer",
+      "w": 1440,
+      "x": 3040,
+      "y": 1200
+    },
+    "EarlyWarning.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "title": "Early warning",
+      "w": 1440,
+      "x": 0,
+      "y": 2500
+    },
+    "Rhythm.dc.html": {
+      "expand": "fill",
+      "h": 860,
+      "is_interactive": true,
+      "title": "Daily rhythm",
+      "w": 1440,
+      "x": 1520,
+      "y": 2500
+    },
+    "Profile.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "title": "Plant profile",
+      "w": 1440,
+      "x": 3040,
+      "y": 2500
+    },
+    "Export.dc.html": {
+      "expand": "fill",
+      "h": 860,
+      "title": "Export",
+      "w": 1440,
+      "x": 0,
+      "y": 3520
+    },
+    "Irrigation.dc.html": {
+      "expand": "fill",
+      "h": 860,
+      "title": "Irrigation advisor",
+      "w": 1440,
+      "x": 1520,
+      "y": 3520
+    },
+    "Sensors.dc.html": {
+      "expand": "fill",
+      "h": 860,
+      "title": "Sensor comparison",
+      "w": 1440,
+      "x": 3040,
+      "y": 3520
+    },
+    "Methods.dc.html": {
+      "expand": "fill",
+      "h": 860,
+      "title": "Methods & limits",
+      "w": 1440,
+      "x": 0,
+      "y": 4500
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-14T20:05:00Z",
+    "v": 1
+  },
+  "designSystems": [
+    {
+      "artifact": "https://claude.ai/artifact/NPkHaCQQDS3GFh4z83eFFE",
+      "copiedAt": "2026-11-14T20:05:00Z",
+      "namespace": "seminar",
+      "title": "Seminar",
+      "version": "1794705293-302c"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {},
+  "order": [
+    "Main.dc.html",
+    "System.dc.html",
+    "Nav.dc.html",
+    "Home.dc.html",
+    "Browser3D.dc.html",
+    "Traits.dc.html",
+    "EarlyWarning.dc.html",
+    "Rhythm.dc.html",
+    "Profile.dc.html",
+    "Export.dc.html",
+    "Irrigation.dc.html",
+    "Sensors.dc.html",
+    "Methods.dc.html",
+    "Artboard-ae6x.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Page 1"
+    },
+    {
+      "id": "page-nyh8ma",
+      "name": "Page 2"
+    }
+  ],
+  "title": "Field Map UI"
+}

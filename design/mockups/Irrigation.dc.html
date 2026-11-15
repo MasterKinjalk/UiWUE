@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Irrigation advisor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+select{font-family:inherit}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="irrigation" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Irrigation advisor</h1>
+<div style="flex: 1 1 0"></div>
+<label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #5e6b64">Rule
+<select style="min-height: 44px; padding: 0 12px; border: 1px solid #8a959c; border-radius: 8px; background: #ffffff; color: #17362a; font-size: 15px; font-weight: 700">
+<option>vs control bed · 09 h</option><option>no control bed · all 5</option><option>leaf − air · 18 h</option>
+</select>
+</label>
+<div style="display: inline-flex; align-items: center; gap: 4px">
+<a href="#" aria-label="Previous day" style="width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #8a959c; border-radius: 8px; color: #1e2a24; box-sizing: border-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></a>
+<span style="min-height: 44px; padding: 0 16px; border-radius: 8px; background: #0b2e3f; color: #ffffff; display: inline-flex; align-items: center; gap: 8px; font-weight: 700"><span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 19px">Day 4</span><span style="font-weight: 400; font-size: 13px">7 Sep</span></span>
+<a href="#" aria-label="Next day" style="width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #8a959c; border-radius: 8px; color: #1e2a24; box-sizing: border-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div style="padding: 12px 16px; border-radius: 8px; background: #fbf1de; display: flex; align-items: center; gap: 14px"><span aria-hidden="true" style="width: 19px; height: 19px; background: #5a3e00; border-radius: 2px; transform: rotate(45deg); margin: 0 4px"></span><div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 700; color: #17362a">23</div><div style="font-size: 13px; color: #5a3e00">irrigate</div></div></div>
+<div style="padding: 12px 16px; border-radius: 8px; background: #fbf1de; display: flex; align-items: center; gap: 14px"><span aria-hidden="true" style="width: 24px; height: 24px; background: #c98300; clip-path: polygon(50% 6%, 100% 94%, 0 94%)"></span><div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 700; color: #17362a">1</div><div style="font-size: 13px; color: #5a3e00">watch</div></div></div>
+<div style="padding: 12px 16px; border-radius: 8px; background: #dceef2; display: flex; align-items: center; gap: 14px"><span aria-hidden="true" style="width: 20px; height: 20px; background: #bfe0e8; border: 2px solid #1c7293; border-radius: 999px; box-sizing: border-box"></span><div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 36px; font-weight: 700; color: #17362a">15</div><div style="font-size: 13px; color: #1c7293">fine</div></div></div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px">
+<sc-for list="{{plants}}" as="p" hint-placeholder-count="24">
+<a href="Profile.dc.html" title="{{p.tip}}" style="min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 8px; border: 1px solid #cfe0d4; color: #1e2a24; text-decoration: none">
+<span aria-hidden="true" style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center"><span style="display: block; width: {{p.g.w}}; height: {{p.g.w}}; background: {{p.g.bg}}; border-radius: {{p.g.rad}}; transform: {{p.g.tf}}; clip-path: {{p.g.clip}}"></span></span>
+<span style="font-weight: 700; width: 64px">{{p.id}}</span>
+<span style="flex: 1 1 auto; height: 8px; border-radius: 4px; background: #eef1f2; position: relative; overflow: hidden"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{p.bar}}; background: {{p.g.bg}}"></span><span style="position: absolute; left: 22.2%; top: 0; bottom: 0; width: 2px; background: #0b2e3f"></span></span>
+<span style="font-variant-numeric: tabular-nums; font-weight: 700; width: 40px; text-align: right">{{p.z}}</span>
+</a>
+</sc-for>
+</div>
+<div style="display: flex; gap: 16px; font-size: 13px; color: #5e6b64">
+<span>z at 09 h</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 2px; height: 12px; background: #0b2e3f"></span>threshold 2.88</span>
+</div>
+</main>
+
+<aside aria-label="Track record" style="flex: 1 1 300px; max-width: 380px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 14px 16px; border-radius: 12px; background: #eef4ee; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #2e6b4f">W3 CHECK · NOT TUNED</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div><div style="font-size: 12px; color: #4a565d">flagged</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">9 / 9</div></div>
+<div><div style="font-size: 12px; color: #4a565d">median day</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">4</div></div>
+<div><div style="font-size: 12px; color: #4a565d">false · controls</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">0 / 9</div></div>
+<div><div style="font-size: 12px; color: #4a565d">false · before cutoff</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">0 / 18</div></div>
+</div>
+</div>
+<div style="padding: 14px 16px; border-radius: 12px; background: #eef1f2; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #2c3a41">W2 TUNING</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<div><div style="font-size: 12px; color: #4a565d">flagged</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 28px; font-weight: 700; color: #17362a">17 / 17</div></div>
+<div><div style="font-size: 12px; color: #4a565d">median · latest</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 28px; font-weight: 700; color: #17362a">4 · 9</div></div>
+</div>
+</div>
+<span title="Before the cutoff the beds already differ at 09 h (AUC 0.62); part of the 09 h signal may be the bed" style="align-self: flex-start; padding: 4px 10px; border-radius: 4px; background: #fbf1de; color: #5a3e00; font-size: 13px; font-weight: 700">bed effect at 09 h</span>
+<a href="Main.dc.html" style="align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">Bed map</a>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const L = [['W3 Q8',12.6,2],['W3 B7',11.7,2],['W3 O6',10.4,2],['W2 R7',9.8,2],['W3 Q2',9.7,2],['W3 B3',9.2,2],['W3 G6',8.9,2],['W3 K4',8.6,2],['W2 L7',7.6,2],['W2 G8',7.4,2],['W2 Q6',7.2,2],['W3 D3',7.1,2],['W2 O6',6.8,2],['W2 R1',6.8,2],['W2 A8',6.2,2],['W3 I2',5.9,2],['W2 I6',5.4,2],['W2 J5',5.3,2],['W2 A6',3.8,2],['W2 H5',3.7,2],['W2 B3',3.3,2],['W2 M2',3.2,2],['W2 D3',3.0,2],['W2 K2',4.1,1]];
+const G = {
+  2: { w: '17px', bg: '#5a3e00', rad: '2px', tf: 'rotate(45deg)', clip: 'none' },
+  1: { w: '22px', bg: '#c98300', rad: '0', tf: 'none', clip: 'polygon(50% 6%, 100% 94%, 0 94%)' },
+};
+return { plants: L.map(([id, z, s]) => ({ id, z: '+' + z.toFixed(1), g: G[s], bar: Math.min(100, z / 13 * 100).toFixed(1) + '%', tip: id + ': ' + (s === 2 ? 'above 2.88 on two scans in a row' : 'above 2.88 once') })) };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sensor comparison</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="sensors" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Sensor comparison</h1>
+<span title="Deficit (W2 + W3) vs control (W1). Same AUC onset rule as Early warning." style="padding: 2px 8px; border-radius: 4px; border: 1px solid #8a959c; font-size: 12px; color: #4a565d">AUC rule</span>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding-bottom: 20px">
+<div style="padding: 14px 16px; border-radius: 8px; background: #dceef2"><div style="font-size: 12px; color: #4a565d">Cheapest close setup</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 38px; font-weight: 700; color: #17362a">Thermal 80 × 60</div><div style="font-size: 12px; color: #4a565d">onset day 2 · same as full</div></div>
+<div style="padding: 14px 16px; border-radius: 8px; background: #eef4ee"><div style="font-size: 12px; color: #4a565d">Best 3D trait</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 38px; font-weight: 700; color: #17362a">Leaf area</div><div style="font-size: 12px; color: #4a565d">onset day 5</div></div>
+<div style="padding: 14px 16px; border-radius: 8px; border: 2px dashed #cfe0d4"><div style="font-size: 12px; color: #5e6b64">Combined sensors</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 32px; line-height: 38px; font-weight: 700; color: #8a959c">not run</div><div style="font-size: 12px; color: #5e6b64">detect table pending</div></div>
+</div>
+
+<div style="overflow-x: auto; border: 1px solid #cfe0d4; border-radius: 12px">
+<table style="width: 100%; min-width: 860px; border-collapse: collapse; font-size: 15px; line-height: 20px">
+<thead>
+<tr style="background: #0b2e3f; color: #ffffff; text-align: left">
+<th scope="col" style="padding: 10px 14px; font-size: 13px">Setup</th>
+<th scope="col" style="padding: 10px 14px; font-size: 13px">Image</th>
+<th scope="col" style="padding: 10px 8px; font-size: 13px; text-align: center; width: 80px">AUC d2</th>
+<th scope="col" style="padding: 10px 8px; font-size: 13px; text-align: center; width: 80px">d4</th>
+<th scope="col" style="padding: 10px 8px; font-size: 13px; text-align: center; width: 80px">d6</th>
+<th scope="col" style="padding: 10px 14px; font-size: 13px; width: 38%">Onset day</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+<tr style="border-bottom: 1px solid #cfe0d4; background: {{r.rowBg}}">
+<th scope="row" style="padding: 8px 14px; text-align: left; display: flex; align-items: center; gap: 10px">
+<span style="flex: 0 0 30px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: #4a565d">{{r.src}}</span>
+<span style="font-weight: 700; color: {{r.fc}}">{{r.label}}</span>
+<sc-if value="{{r.size}}" hint-placeholder-val="{{false}}"><span title="Size-only baseline (rule 6.7.3)" style="padding: 0 6px; border-radius: 4px; border: 1px solid #8a959c; font-size: 11px; color: #4a565d">size</span></sc-if>
+</th>
+<td style="padding: 8px 14px; color: #4a565d; font-variant-numeric: tabular-nums">{{r.px}}</td>
+<sc-for list="{{r.cells}}" as="c" hint-placeholder-count="3">
+<td style="padding: 4px"><div style="height: 34px; border-radius: 4px; background: {{c.bg}}; border: {{c.bd}}; box-sizing: border-box; color: {{c.fg}}; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: center">{{c.v}}</div></td>
+</sc-for>
+<td style="padding: 8px 14px">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="flex: 1 1 auto; height: 14px; border-radius: 4px; background: #f6f8f9; position: relative">
+<sc-if value="{{r.has}}" hint-placeholder-val="{{true}}"><div style="position: absolute; left: 0; top: 0; bottom: 0; width: {{r.bar}}; border-radius: 4px; background: {{r.barC}}"></div></sc-if>
+<sc-if value="{{r.none}}" hint-placeholder-val="{{false}}"><div style="position: absolute; inset: 0; border: 2px dashed #cfe0d4; border-radius: 4px"></div></sc-if>
+</div>
+<span style="width: 44px; text-align: right; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 700; color: {{r.fc}}">{{r.onset}}</span>
+</div>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding-top: 12px; font-size: 13px">
+<span style="color: #5e6b64">AUC</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #eef1f2; border: 1px solid #cfe0d4; box-sizing: border-box"></span>&lt; 0.6</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #bfe0e8"></span>0.6</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #3f7f93"></span>0.8</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #0b2e3f"></span>≥ 0.95</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; border: 2px dashed #cfe0d4; box-sizing: border-box"></span>no data</span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const R = [
+  ['IR', 'Thermal', 'full', [0.89, 1.0, 1.0], 2],
+  ['IR', 'Thermal', '160 × 120', [0.89, 1.0, 1.0], 2],
+  ['IR', 'Thermal', '80 × 60', [0.89, 1.0, 1.0], 2, false, true],
+  ['3D', 'Leaf area', 'depth', [0.40, 0.67, 0.96], 5],
+  ['3D', 'Projected area', 'depth', [0.43, 0.71, 0.94], 6, true],
+  ['3D', 'Height p75', 'depth', [0.36, 0.40, 0.68], 9],
+  ['RGB', 'Greenness', 'frame 7', null, null],
+  ['HSI', 'PRI · WBI', 'cube', null, null],
+  ['IR+3D', 'Combined', '–', null, null],
+];
+const fill = (v) => v < 0.6 ? ['#eef1f2', '#1e2a24'] : v < 0.8 ? ['#bfe0e8', '#0b2e3f'] : v < 0.95 ? ['#3f7f93', '#ffffff'] : ['#0b2e3f', '#ffffff'];
+const rows = R.map(([src, label, px, auc, onset, size, best]) => ({
+  src, label, px, size: !!size, has: onset != null, none: onset == null,
+  onset: onset == null ? '–' : String(onset), bar: onset == null ? '0%' : (onset / 12 * 100).toFixed(1) + '%',
+  barC: src === 'IR' ? '#1c7293' : '#2e6b4f', fc: onset == null ? '#8a959c' : '#17362a', rowBg: best ? '#eef4ee' : '#ffffff',
+  cells: auc == null ? [0, 1, 2].map(() => ({ v: '', bg: 'transparent', bd: '2px dashed #cfe0d4', fg: '#8a959c' }))
+    : auc.map((v) => { const [bg, fg] = fill(v); return { v: v.toFixed(2), bg, bd: v < 0.6 ? '1px solid #cfe0d4' : '0', fg }; }),
+}));
+return { rows };
+}
+}
+</script>
+</body>
+</html>

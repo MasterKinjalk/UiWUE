@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trait explorer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+button{font-family:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid #0b2e3f;outline-offset:2px}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="traits" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Trait explorer</h1>
+<div style="flex: 1 1 0"></div>
+<div role="group" aria-label="Group by" style="display: flex; gap: 4px">
+<button type="button" aria-pressed="true" style="min-height: 44px; padding: 0 16px; border: 1px solid #0b2e3f; border-radius: 8px; background: #0b2e3f; color: #ffffff; font-size: 15px; font-weight: 700">Treatment</button>
+<button type="button" aria-pressed="false" style="min-height: 44px; padding: 0 16px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-size: 15px; font-weight: 700">Bed</button>
+<button type="button" aria-pressed="false" style="min-height: 44px; padding: 0 16px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-size: 15px; font-weight: 700">Plants</button>
+</div>
+</div>
+
+<div role="group" aria-label="Trait" style="display: flex; flex-wrap: wrap; gap: 4px 4px; align-items: center; padding-bottom: 16px">
+<sc-for list="{{chips}}" as="c" hint-placeholder-count="7">
+<sc-if value="{{c.gap}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="width: 1px; height: 28px; background: #cfe0d4; margin: 0 8px"></span></sc-if>
+<button type="button" aria-pressed="{{c.on}}" onClick="{{c.pick}}" style="min-height: 44px; padding: 0 14px; border: 1px solid {{c.bd}}; border-radius: 8px; background: {{c.bg}}; color: {{c.fg}}; font-size: 15px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px">
+<span style="font-size: 11px; letter-spacing: 0.12em; opacity: 0.8">{{c.src}}</span>{{c.label}}
+</button>
+</sc-for>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<main style="flex: 999 1 640px; min-width: 0; border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px 20px 12px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; font-size: 13px">
+<span style="font-weight: 700; font-size: 15px">{{label}}</span>
+<span style="color: #5e6b64">{{unitLabel}}</span>
+<div style="flex: 1 1 0"></div>
+<span title="{{nC}}" style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 18px; height: 3px; background: #1c7293"></span>Control</span>
+<span title="{{nD}}" style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 18px; height: 3px; background: #c98300"></span>Deficit</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #5e6b64"><span aria-hidden="true" style="width: 18px; height: 10px; background: #e3e9e6"></span>± 1 SD</span>
+</div>
+<div style="position: relative; height: 330px">
+<svg viewBox="0 0 1000 300" preserveAspectRatio="none" role="img" aria-label="{{aria}}" style="position: absolute; left: 0; top: 0; width: 100%; height: 300px; overflow: visible">
+<rect x="{{bx0}}" y="10" width="{{bw0}}" height="280" fill="#eef4ee"></rect>
+<rect x="{{bx1}}" y="10" width="{{bw1}}" height="280" fill="#fbf1de"></rect>
+<path d="{{grid}}" stroke="#cfe0d4" stroke-width="1" vector-effect="non-scaling-stroke" fill="none"></path>
+<path d="{{zero}}" stroke="#5e6b64" stroke-width="1" vector-effect="non-scaling-stroke" fill="none"></path>
+<path d="{{bandC}}" fill="#1c7293" fill-opacity="0.14" stroke="none"></path>
+<path d="{{bandD}}" fill="#c98300" fill-opacity="0.18" stroke="none"></path>
+<path d="{{onsetLine}}" stroke="#0b2e3f" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" fill="none"></path>
+<path d="{{lineC}}" stroke="#1c7293" stroke-width="2.5" vector-effect="non-scaling-stroke" fill="none"></path>
+<path d="{{lineD}}" stroke="#c98300" stroke-width="2.5" vector-effect="non-scaling-stroke" fill="none"></path>
+</svg>
+<sc-for list="{{ticks}}" as="t" hint-placeholder-count="5">
+<span style="position: absolute; left: 0; top: {{t.top}}; font-size: 12px; line-height: 12px; color: #5e6b64; transform: translateY(-50%)">{{t.label}}</span>
+</sc-for>
+<sc-for list="{{xlabels}}" as="t" hint-placeholder-count="5">
+<span style="position: absolute; left: {{t.left}}; top: 306px; font-size: 12px; color: #5e6b64; transform: translateX(-50%)">{{t.label}}</span>
+</sc-for>
+<sc-if value="{{hasOnset}}" hint-placeholder-val="{{true}}">
+<span style="position: absolute; left: {{onsetLeft}}; top: 0; padding: 1px 6px; border-radius: 4px; background: #0b2e3f; color: #ffffff; font-size: 12px; font-weight: 700; transform: translate(-50%, -4px); white-space: nowrap">onset</span>
+</sc-if>
+</div>
+<div style="display: flex; gap: 16px; font-size: 13px; color: #5e6b64">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 12px; height: 12px; background: #eef4ee; border: 1px solid #8a959c; border-radius: 3px"></span>baseline</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 12px; height: 12px; background: #fbf1de; border: 1px solid #c98300; border-radius: 3px"></span>no water</span>
+<span>day since irrigation off</span>
+</div>
+</main>
+
+<aside aria-label="Result" style="flex: 1 1 300px; max-width: 380px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{stats}}" as="s" hint-placeholder-count="4">
+<div title="{{s.tip}}" style="padding: 12px 14px; border-radius: 8px; background: {{s.bg}}; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 12px; line-height: 16px; color: #4a565d">{{s.k}}</span>
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 28px; line-height: 32px; font-weight: 700; color: #17362a">{{s.v}}</span>
+<span style="font-size: 12px; line-height: 16px; color: #5e6b64">{{s.u}}</span>
+</div>
+</sc-for>
+</div>
+<sc-if value="{{reliable}}" hint-placeholder-val="{{true}}">
+<span style="align-self: flex-start; padding: 4px 10px; border-radius: 4px; background: #ffffff; border: 1px solid #1c7293; color: #1c7293; font-size: 13px; font-weight: 700">reliable · SNR ≥ 3</span>
+</sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<a href="Export.dc.html" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">Export</a>
+<a href="EarlyWarning.dc.html" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; border: 1px solid #1c7293; color: #1c7293; font-weight: 700; text-decoration: none; box-sizing: border-box">Early warning</a>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+state = { trait: 'projected_area' };
+
+renderVals() {
+const E = {"height_p75":{"label":"Height p75","unit":"%","control":{"mean":[-7.2,-1.4,4.6,8.9,27.4,41.2,40.7,43.7,41.3,57.7,64.6,62.0,73.3,74.0,77.5,77.8,80.5,88.5],"sd":[9.9,9.9,10.9,12.9,13.3,22.2,21.9,31.8,28.9,29.1,24.1,32.3,35.7,9.9,18.6,25.7,37.5,25.4]},"deficit":{"mean":[-4.6,-0.4,13.9,8.9,23.9,47.5,58.2,55.3,49.5,39.6,47.6,32.8,25.2,23.8,2.7,5.4,-18.0,37.1],"sd":[5.6,3.7,28.9,12.4,26.0,36.6,42.3,32.5,41.0,47.3,36.9,33.4,32.7,35.1,26.0,42.3,32.0,48.0]},"n":[11,16]},"projected_area":{"label":"Projected area","unit":"%","control":{"mean":[-10.0,-6.3,15.8,0.3,13.4,16.9,12.4,7.1,7.0,8.1,23.1,18.8,14.3,13.4,-0.0,11.7,20.1,11.7],"sd":[13.6,13.1,18.8,10.5,20.1,41.8,16.9,21.6,17.7,17.2,24.6,27.8,29.7,16.1,17.8,11.3,40.4,27.1]},"deficit":{"mean":[-12.4,-2.0,17.3,6.0,3.8,21.2,24.0,22.3,-3.1,-22.1,-27.0,-36.0,-41.1,-46.3,-53.7,-60.6,-61.6,-50.2],"sd":[13.3,6.0,14.9,6.2,21.0,29.3,44.0,38.8,30.0,25.3,24.2,23.0,23.6,20.0,13.8,13.7,16.7,20.1]},"n":[11,16]},"leaf_area_est":{"label":"Leaf area","unit":"%","control":{"mean":[-8.8,-6.5,13.6,2.3,26.4,33.2,32.4,29.2,32.9,44.4,62.2,60.8,57.3,58.1,42.9,56.6,71.1,55.1],"sd":[11.4,12.4,18.8,6.1,22.5,43.7,21.0,33.7,24.9,17.3,28.2,44.7,39.2,25.9,18.9,18.2,51.8,32.9]},"deficit":{"mean":[-12.0,-3.4,18.1,12.0,16.5,40.4,53.8,55.0,22.4,-5.5,-5.8,-16.8,-17.4,-32.7,-39.2,-45.7,-51.3,-38.0],"sd":[10.8,5.7,18.5,6.9,20.4,31.9,63.5,51.9,31.9,28.0,29.0,27.4,29.7,24.9,21.4,18.5,23.9,25.0]},"n":[11,16]},"hull_volume":{"label":"Hull volume","unit":"%","control":{"mean":[-13.0,-4.5,11.2,3.4,35.4,46.5,51.5,49.2,39.8,66.5,82.8,89.3,80.8,90.5,61.0,70.1,99.4,86.7],"sd":[16.2,15.7,17.9,13.0,29.4,49.0,23.7,43.6,35.5,32.0,39.3,61.8,67.7,36.5,32.7,34.1,77.3,58.9]},"deficit":{"mean":[-11.8,-0.8,17.0,15.8,26.0,65.2,66.1,72.9,48.8,14.5,15.6,-10.4,-17.7,-32.3,-37.7,-43.9,-50.5,-26.4],"sd":[8.3,8.1,29.0,8.0,38.2,47.7,62.0,56.9,45.2,46.5,42.7,37.6,31.6,29.7,25.6,33.5,37.7,47.7]},"n":[11,16]},"thermal_leaf_ref_dt":{"label":"Leaf − control leaf","unit":"°C","control":{"mean":[-0.2,-0.1,0.0,0.3,0.1,0.1,0.2,0.1,-0.7,-0.2,-0.1,-0.0,-0.2,-0.2,-0.1,0.1,0.2,-0.0],"sd":[0.7,0.3,0.4,0.6,0.9,0.6,1.1,0.9,0.7,0.6,0.4,0.4,0.7,0.8,0.3,1.1,1.6,0.5]},"deficit":{"mean":[-1.1,-0.4,-0.1,1.4,1.7,0.4,1.9,2.3,6.0,4.0,3.9,5.3,8.5,7.4,6.9,9.6,9.6,2.0],"sd":[0.7,0.5,0.4,0.7,0.7,1.0,0.9,1.6,1.4,0.9,0.7,0.9,1.4,1.6,2.6,2.3,2.1,1.0]},"n":[13,26]},"thermal_leaf_air_dt":{"label":"Leaf − air","unit":"°C","control":{"mean":[-0.4,0.1,0.7,-1.5,-0.7,-0.7,-0.7,-1.3,-1.8,-0.5,0.6,-0.2,-0.4,0.7,0.2,2.3,1.9,0.1],"sd":[0.4,0.4,0.4,0.7,0.8,0.6,0.9,0.7,0.7,0.6,0.5,0.5,0.7,0.7,0.7,0.8,1.1,0.6]},"deficit":{"mean":[-0.7,0.1,0.5,-0.4,0.6,-0.2,0.6,0.9,3.9,4.4,4.5,5.7,8.2,8.7,7.9,11.3,11.8,2.2],"sd":[0.7,0.4,0.4,0.7,0.7,0.7,0.9,1.7,1.6,1.4,1.0,1.3,1.4,1.8,2.6,2.0,2.1,1.0]},"n":[13,26]},"diurnal_score_ref":{"label":"Thermal score","unit":"z","control":{"mean":[-0.1,-0.1,-0.0,0.1,-0.1,0.1,0.1,0.0,-0.5,-0.2,-0.1,-0.1,-0.2,-0.3,-0.2,0.0,0.0,-0.2],"sd":[0.4,0.4,0.3,0.3,0.4,0.3,0.6,0.4,0.4,0.4,0.5,0.3,0.5,1.0,0.3,0.6,0.8,0.4]},"deficit":{"mean":[-0.5,-0.8,0.1,0.8,0.8,0.2,1.1,1.4,3.0,4.4,2.3,3.2,5.4,4.9,4.2,6.0,5.2,1.3],"sd":[0.5,1.0,0.3,0.5,0.4,0.8,1.2,1.0,0.7,1.2,0.6,0.5,1.0,0.9,1.4,1.7,1.2,1.1]},"n":[13,26]}};
+const R = {
+  height_p75: { onset: 9, snr: '46.8', noise: '2.1 mm', slope: '−6.6', ci: '−8.3 to −4.8', src: 'DEPTH' },
+  projected_area: { onset: 6, snr: '31.4', noise: '3.1 cm²', slope: '−5.8', ci: '−7.1 to −4.4', src: 'DEPTH' },
+  leaf_area_est: { onset: 5, snr: '45.6', noise: '5.5 cm²', slope: '−9.2', ci: '−10.9 to −7.6', src: 'DEPTH' },
+  hull_volume: { onset: 6, snr: '70.5', noise: '43 cm³', slope: '−12.7', ci: '−15.0 to −10.4', src: 'DEPTH' },
+  thermal_leaf_ref_dt: { onset: 2, src: 'THERMAL' },
+  thermal_leaf_air_dt: { onset: 3, src: 'THERMAL' },
+  diurnal_score_ref: { onset: 3, src: 'THERMAL' },
+};
+const key = this.state.trait, t = E[key], r = R[key];
+const btn = (on) => ({ bg: on ? '#1c7293' : '#f6f8f9', fg: on ? '#ffffff' : '#1e2a24', bd: on ? '#1c7293' : '#8a959c' });
+const chips = Object.keys(E).map((k, i) => ({ label: E[k].label, src: R[k].src === 'DEPTH' ? '3D' : 'IR', on: k === key, ...btn(k === key), gap: i === 4, pick: () => this.setState({ trait: k }) }));
+
+const X = (i) => 30 + i * (940 / 17);
+const C = t.control, D = t.deficit;
+let lo = Infinity, hi = -Infinity;
+[C, D].forEach((g) => g.mean.forEach((m, i) => { lo = Math.min(lo, m - g.sd[i]); hi = Math.max(hi, m + g.sd[i]); }));
+lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+const raw = (hi - lo) / 5, step = [0.5, 1, 2, 5, 10, 20, 25, 50, 100].find((s) => s >= raw) || 100;
+lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+const Y = (v) => 280 - ((v - lo) / (hi - lo)) * 260;
+const path = (arr) => arr.map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1)).join(' ');
+const band = (g) => path(g.mean.map((m, i) => m + g.sd[i])) + ' ' + g.mean.map((m, i) => 'L' + X(17 - i).toFixed(1) + ' ' + Y(g.mean[17 - i] - g.sd[17 - i]).toFixed(1)).join(' ') + ' Z';
+const ticks = [];
+for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(2));
+const grid = ticks.map((v) => 'M30 ' + Y(v).toFixed(1) + ' H970').join(' ');
+const sgn = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+const ox = X(r.onset + 4);
+const unitLabel = t.unit === '%' ? '% change from own baseline' : t.unit + ' change from own baseline';
+
+return {
+  chips, label: t.label, unitLabel,
+  nC: 'n = ' + t.n[0] + ' plants', nD: 'n = ' + t.n[1] + ' plants',
+  aria: t.label + ', control and deficit mean ± SD, 30 Aug to 16 Sep',
+  bx0: (X(0) - 25).toFixed(1), bw0: (X(3.5) - X(0) + 25).toFixed(1), bx1: X(3.5).toFixed(1), bw1: (X(16.77) - X(3.5)).toFixed(1),
+  grid, zero: 'M30 ' + Y(0).toFixed(1) + ' H970',
+  bandC: band(C), bandD: band(D), lineC: path(C.mean), lineD: path(D.mean),
+  onsetLine: 'M' + ox.toFixed(1) + ' 10 V290', hasOnset: true, onsetLeft: (ox / 10).toFixed(2) + '%',
+  ticks: ticks.map((v) => ({ label: sgn(v), top: Y(v).toFixed(1) + 'px' })),
+  xlabels: [0, 4, 8, 12, 16].map((i) => ({ label: sgn(i - 4), left: (X(i) / 10).toFixed(2) + '%' })),
+  stats: [
+    { k: 'Onset', v: 'day ' + r.onset, u: 'AUC lower bound > 0.70', tip: 'First day the 95% bootstrap lower bound of the deficit vs control AUC is above 0.70, that day and the next', bg: '#dceef2' },
+    { k: 'Slope', v: r.slope || '–', u: r.ci ? '% / day · ' + r.ci : 'not computed', tip: 'E3: deficit minus control, % of baseline per day, 95% CI', bg: '#eef4ee' },
+    { k: 'SNR', v: r.snr || '–', u: r.snr ? 'signal / noise' : 'not computed', tip: 'E1: control vs deficit gap on 14 Sep over the run noise', bg: '#eef4ee' },
+    { k: 'Noise', v: r.noise ? r.noise.split(' ')[0] : '–', u: r.noise ? r.noise.split(' ')[1] + ' · run MAD' : 'not computed', tip: 'E1: median spread over frames within one run', bg: '#eef1f2' },
+  ],
+  reliable: !!r.snr,
+};
+}
+}
+</script>
+</body>
+</html>

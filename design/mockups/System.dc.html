@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Map kit</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 32px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px; display: flex; flex-direction: column; gap: 32px">
+
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Map kit</h1>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; color: #17362a">Colour</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px">
+
+<div style="padding: 16px; border-radius: 8px; background: #eef4ee; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: #2e6b4f">TREATMENT</div>
+<div style="display: flex; gap: 8px">
+<div style="flex: 1 1 0; padding: 10px 12px; border-radius: 8px; background: #dceef2; font-weight: 700; color: #1c7293">Control</div>
+<div style="flex: 1 1 0; padding: 10px 12px; border-radius: 8px; background: #fbf1de; font-weight: 700; color: #5a3e00">Deficit</div>
+</div>
+</div>
+
+<div style="padding: 16px; border-radius: 8px; background: #eef4ee; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: #2e6b4f">VALUE</div>
+<div style="display: flex; gap: 3px">
+<div style="flex: 1 1 0; height: 34px; background: #3f7f93; border-radius: 4px"></div>
+<div style="flex: 1 1 0; height: 34px; background: #9fd0db; border-radius: 4px"></div>
+<div style="flex: 1 1 0; height: 34px; background: #eef1f2; border: 1px solid #8a959c; border-radius: 4px; box-sizing: border-box"></div>
+<div style="flex: 1 1 0; height: 34px; background: #fbe3b3; border-radius: 4px"></div>
+<div style="flex: 1 1 0; height: 34px; background: #c98300; border-radius: 4px"></div>
+<div style="flex: 1 1 0; height: 34px; background: #5a3e00; border-radius: 4px"></div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 13px"><span>healthier</span><span>baseline</span><span>stressed</span></div>
+</div>
+
+<div style="padding: 16px; border-radius: 8px; background: #eef4ee; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: #2e6b4f">SELECTED · BASELINE · NO WATER</div>
+<div style="display: flex; gap: 8px; align-items: center">
+<div style="width: 46px; height: 48px; border-radius: 4px; background: #0b2e3f; color: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center"><span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 17px; line-height: 20px; font-weight: 700">4</span><span style="font-size: 11px; line-height: 13px">7 Sep</span></div>
+<div style="width: 46px; height: 48px; border-radius: 4px; background: #eef4ee; border: 1px solid #8a959c; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center"><span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 17px; line-height: 20px; font-weight: 700">−2</span><span style="font-size: 11px; line-height: 13px">1 Sep</span></div>
+<div style="width: 46px; height: 48px; border-radius: 4px; background: #fbf1de; border: 1px solid #c98300; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center"><span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 17px; line-height: 20px; font-weight: 700">6</span><span style="font-size: 11px; line-height: 13px">9 Sep</span></div>
+</div>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; color: #17362a">Marks</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px">
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="box-sizing: border-box; width: 20px; height: 20px; background: #bfe0e8; border: 2px solid #1c7293; border-radius: 999px"></span></span><span style="font-weight: 700">Fine</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="width: 24px; height: 24px; background: #c98300; clip-path: polygon(50% 6%, 100% 94%, 0 94%)"></span></span><span style="font-weight: 700">Watch</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="width: 19px; height: 19px; background: #5a3e00; border-radius: 2px; transform: rotate(45deg)"></span></span><span style="font-weight: 700">Irrigate</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="box-sizing: border-box; width: 28px; height: 28px; background: #c98300; border: 1px solid #8a959c; border-radius: 4px"></span></span><span style="font-weight: 700">Value</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="box-sizing: border-box; width: 18px; height: 18px; border: 2px dashed #8a959c; border-radius: 999px"></span></span><span style="font-weight: 700">No scan</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="box-sizing: border-box; width: 18px; height: 18px; border: 2px dashed #8a959c; border-radius: 3px"></span></span><span style="font-weight: 700">No data</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center"><span style="width: 4px; height: 4px; background: #cfe0d4; border-radius: 999px"></span></span><span style="font-weight: 700">Not imaged</span></div>
+<div style="border: 1px solid #cfe0d4; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 38px; height: 38px; border-radius: 6px; background: #dceef2; outline: 2px solid #0b2e3f; outline-offset: -2px; display: flex; align-items: center; justify-content: center"><span style="width: 19px; height: 19px; background: #5a3e00; border-radius: 2px; transform: rotate(45deg)"></span></span><span style="font-weight: 700">Selected</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; color: #17362a">Type</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: baseline">
+<div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Bed map</div><div style="font-size: 12px; color: #5e6b64">serif 30</div></div>
+<div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 24px; line-height: 28px; color: #17362a">+3.7</div><div style="font-size: 12px; color: #5e6b64">serif 24</div></div>
+<div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 21px; line-height: 26px; color: #17362a">W2</div><div style="font-size: 12px; color: #5e6b64">serif 21</div></div>
+<div><div style="font-size: 15px; line-height: 21px">Leaf temp</div><div style="font-size: 12px; color: #5e6b64">sans 15</div></div>
+<div><div style="font-size: 13px; line-height: 18px; color: #5e6b64">no scan</div><div style="font-size: 12px; color: #5e6b64">sans 13</div></div>
+<div><div style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: #5a3e00">WATER DEFICIT</div><div style="font-size: 12px; color: #5e6b64">caps 11</div></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; color: #17362a">Parts</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px">
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start">
+<button type="button" aria-pressed="true" style="min-height: 44px; padding: 0 16px; border: 1px solid #1c7293; border-radius: 8px; background: #1c7293; color: #ffffff; font-family: inherit; font-size: 15px; font-weight: 700">Water status</button>
+<button type="button" aria-pressed="false" style="min-height: 44px; padding: 0 16px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-family: inherit; font-size: 15px; font-weight: 700">Leaf temperature</button>
+</div>
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px">
+<div style="padding: 8px 12px; border-radius: 8px; background: #fbf1de">
+<div style="display: flex; align-items: baseline; gap: 8px"><span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 26px; font-weight: 700; color: #17362a">W2</span><span style="font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.18em; color: #5a3e00">WATER DEFICIT</span></div>
+<div style="font-size: 13px; line-height: 18px">14 irrigate · 1 watch · 2 fine</div>
+</div>
+</div>
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 6px 16px">
+<div style="display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-bottom: 1px solid #cfe0d4">
+<span style="flex: 1 1 auto">Leaf temp</span>
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 28px; font-weight: 700; color: #17362a">+4.7</span>
+<span style="font-size: 13px; color: #5e6b64; width: 34px">°C</span>
+</div>
+<div style="display: flex; align-items: baseline; gap: 10px; padding: 10px 0">
+<span style="flex: 1 1 auto">Area</span>
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 28px; font-weight: 700; color: #17362a">–</span>
+<span style="font-size: 13px; color: #5e6b64; width: 34px">cm²</span>
+</div>
+</div>
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px">
+<div style="padding: 12px 14px; border-radius: 8px; background: #eef1f2; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 20px">
+<div style="display: flex; gap: 10px"><span style="flex: 0 0 84px; color: #4a565d">Clip onset</span><span>day 1 · 4 Sep</span></div>
+<div style="display: flex; gap: 10px"><span style="flex: 0 0 84px; color: #4a565d">Symptom</span><span>–</span></div>
+</div>
+</div>
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start">
+<a href="#" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; background: #1c7293; color: #ffffff; font-weight: 700; text-decoration: none">Plant profile</a>
+<a href="#" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 8px; border: 1px solid #1c7293; color: #1c7293; font-weight: 700; text-decoration: none; box-sizing: border-box">3D browser</a>
+</div>
+
+<div style="border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start">
+<span style="padding: 4px 10px; border-radius: 4px; background: #fbf1de; color: #5a3e00; font-size: 13px; font-weight: 700">bed effect</span>
+<span style="padding: 2px 8px; border-radius: 4px; background: #ffffff; border: 1px solid #8a959c; font-size: 12px">leaf clip</span>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

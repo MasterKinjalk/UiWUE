@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Early warning</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1c7293}a:hover{color:#0b2e3f}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="box-sizing: border-box; max-width: 1440px; margin: 0 auto; padding: 0 32px 40px; background: #ffffff; color: #1e2a24; font-family: Calibri, 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 21px">
+<dc-import name="Nav" current="warning" hint-size="100%,64px"></dc-import>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 18px 0 16px">
+<h1 style="margin: 0; font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 30px; line-height: 36px; color: #17362a">Early warning</h1>
+<span title="Onset = first day the 95% bootstrap lower bound of the deficit vs control AUC is above 0.70, that day and the next. Daily value = median of 12 h and 15 h runs passing QC, minus the plant's own 30 Aug – 2 Sep median." style="padding: 2px 8px; border-radius: 4px; border: 1px solid #8a959c; font-size: 12px; color: #4a565d">AUC rule</span>
+<div style="flex: 1 1 0"></div>
+<div role="group" aria-label="Deficit beds" style="display: flex; gap: 4px">
+<button type="button" aria-pressed="true" style="min-height: 44px; padding: 0 16px; border: 1px solid #0b2e3f; border-radius: 8px; background: #0b2e3f; color: #ffffff; font-size: 15px; font-weight: 700">W2 + W3</button>
+<button type="button" aria-pressed="false" style="min-height: 44px; padding: 0 16px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-size: 15px; font-weight: 700">W2</button>
+<button type="button" aria-pressed="false" style="min-height: 44px; padding: 0 16px; border: 1px solid #8a959c; border-radius: 8px; background: #f6f8f9; color: #1e2a24; font-size: 15px; font-weight: 700">W3</button>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding-bottom: 20px">
+<div style="padding: 14px 16px; border-radius: 8px; background: #dceef2"><div style="font-size: 12px; color: #4a565d">First signal · thermal</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 37px; line-height: 42px; font-weight: 700; color: #17362a">day 2</div></div>
+<div style="padding: 14px 16px; border-radius: 8px; background: #eef4ee"><div style="font-size: 12px; color: #4a565d">First signal · 3D</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 37px; line-height: 42px; font-weight: 700; color: #17362a">day 5</div></div>
+<div style="padding: 14px 16px; border-radius: 8px; background: #fbf1de"><div style="font-size: 12px; color: #5a3e00">Written symptoms</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 37px; line-height: 42px; font-weight: 700; color: #17362a">day 3–9</div></div>
+<div style="padding: 14px 16px; border-radius: 8px; background: #eef1f2"><div style="font-size: 12px; color: #4a565d">Lead, thermal vs most notes</div><div style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-size: 37px; line-height: 42px; font-weight: 700; color: #17362a">7 d</div></div>
+</div>
+
+<div style="overflow-x: auto; border: 1px solid #cfe0d4; border-radius: 12px; padding: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 900px">
+<div style="display: flex; align-items: flex-end; gap: 4px">
+<div style="flex: 0 0 230px"></div>
+<sc-for list="{{head}}" as="h" hint-placeholder-count="13">
+<div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px">
+<span style="font-size: 11px; line-height: 14px; font-weight: 700; color: #5a3e00; min-height: 14px">{{h.note}}</span>
+<span style="font-family: Cambria, 'Source Serif 4', Georgia, serif; font-weight: 700; color: #17362a">{{h.d}}</span>
+</div>
+</sc-for>
+<div style="flex: 0 0 72px; text-align: right; font-size: 12px; color: #5e6b64" title="AUC over 24–29 Aug, before the cutoff. Near 0.5 = beds did not differ">Placebo</div>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+<div style="display: flex; align-items: center; gap: 4px">
+<div style="flex: 0 0 230px; display: flex; align-items: center; gap: 8px">
+<span style="flex: 0 0 26px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: #4a565d">{{r.src}}</span>
+<span style="font-weight: 700">{{r.label}}</span>
+<sc-if value="{{r.size}}" hint-placeholder-val="{{false}}"><span title="Size-only baseline (rule 6.7.3)" style="padding: 0 6px; border-radius: 4px; border: 1px solid #8a959c; font-size: 11px; color: #4a565d">size</span></sc-if>
+</div>
+<sc-for list="{{r.cells}}" as="c" hint-placeholder-count="13">
+<div title="{{c.tip}}" style="flex: 1 1 0; height: 34px; box-sizing: border-box; border-radius: 4px; background: {{c.bg}}; border: {{c.bd}}; box-shadow: {{c.col}}; display: flex; align-items: center; justify-content: center">
+<sc-if value="{{c.onset}}" hint-placeholder-val="{{false}}"><span aria-label="onset" style="width: 12px; height: 12px; border-radius: 999px; background: #ffffff; border: 3px solid #c98300"></span></sc-if>
+</div>
+</sc-for>
+<div style="flex: 0 0 72px; text-align: right; font-variant-numeric: tabular-nums; color: #4a565d">{{r.placebo}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding-top: 12px; font-size: 13px">
+<span style="color: #5e6b64">AUC lower bound</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #eef1f2; border: 1px solid #cfe0d4; box-sizing: border-box"></span>&lt; 0.5</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #bfe0e8"></span>0.5</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #3f7f93"></span>0.7</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; background: #0b2e3f"></span>≥ 0.9</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 999px; background: #ffffff; border: 3px solid #c98300"></span>onset</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 22px; height: 16px; border-radius: 3px; border: 2px dashed #8a959c; box-sizing: border-box"></span>no data</span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const R = [
+  ['IR', 'Leaf − control leaf', 2, 0.45, [0.81,0.42,0.78,0.85,1,1,1,1,1,1,1,1,1]],
+  ['IR', 'Leaf − air', 3, 0.55, [0.73,0.51,0.66,0.84,1,1,1,1,1,1,1,1,1]],
+  ['IR', 'Thermal score', 3, 0.44, [0.85,0.41,0.64,0.9,1,1,1,1,1,1,1,1,1]],
+  ['3D', 'Leaf area', 5, 0.44, [0.34,0.14,0.16,0.08,0.39,0.85,0.87,0.8,0.79,1,1,1,0.95]],
+  ['3D', 'Projected area', 6, 0.47, [0.38,0.16,0.17,0.18,0.48,0.6,0.81,0.82,0.81,1,1,1,1], true],
+  ['3D', 'Hull volume', 6, 0.40, [0.32,0.17,0.16,0.15,0.18,0.62,0.73,0.82,0.79,1,1,0.93,0.93]],
+  ['3D', 'Height p75', 9, 0.34, [0.33,0.26,0.14,0.17,0.13,0.43,0.45,0.54,0.65,0.92,1,0.77,0.89]],
+  ['RGB', 'Greenness', null, null, null],
+  ['HSI', 'PRI · WBI', null, null, null],
+];
+const fill = (v) => v < 0.5 ? '#eef1f2' : v < 0.7 ? '#bfe0e8' : v < 0.9 ? '#3f7f93' : '#0b2e3f';
+const mark = (d) => d === 3 || d === 9 ? 'inset 0 0 0 2px #c98300' : 'none';
+const rows = R.map(([src, label, onset, placebo, lb, size]) => ({
+  src, label, size: !!size, placebo: placebo == null ? '–' : placebo.toFixed(2),
+  cells: Array.from({ length: 13 }, (_, d) => lb == null
+    ? { bg: 'transparent', bd: '2px dashed #cfe0d4', col: 'none', onset: false, tip: label + ': no table yet' }
+    : { bg: fill(lb[d]), bd: lb[d] < 0.5 ? '1px solid #cfe0d4' : '0', col: mark(d), onset: d === onset, tip: label + ', day ' + d + ': lower bound ' + lb[d].toFixed(2) }),
+}));
+const head = Array.from({ length: 13 }, (_, d) => ({ d: String(d), note: d === 3 ? 'first note' : d === 9 ? 'most notes' : '' }));
+return { rows, head };
+}
+}
+</script>
+</body>
+</html>
