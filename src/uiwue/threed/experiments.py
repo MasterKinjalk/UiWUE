@@ -424,17 +424,20 @@ def e3(
     symptoms: pd.DataFrame | None,
     beds: tuple[str, ...] = ("W1", "W2"),
     slots: tuple[int, ...] = (15,),
+    mode: str = "pct",
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Trend (LMM on % change from baseline), daily onset (Mann-Whitney, Holm over days, two
     consecutive days) and lead time against the first written symptom.
 
     ``slots`` = (15,) is the plan. A sensitivity run with the daytime slots (9, 12, 15, 18)
     normalises every run by the plant's baseline over the same slots and tests the plant's daily
-    mean; it keeps plants whose 15 h baseline runs failed QC.
+    mean; it keeps plants whose 15 h baseline runs failed QC. ``mode`` is the baseline change
+    (``stats.baseline_normalise``): "pct" for the 3D traits, "diff" for temperatures and indices
+    that cross zero.
     Returns (onset table, daily tests, normalised table for the figures)."""
     p = passing(runs)
     p = _in(p[p["slot"].isin(slots) & p["bed"].isin(beds)], (E3_WINDOW[0], E3_PLOT_END))
-    norm = stats.baseline_normalise(p, traits, mode="pct")
+    norm = stats.baseline_normalise(p, traits, mode=mode)
     norm["day"] = norm["days_since_cutoff"].astype(float)
     fit_rows = _in(norm, E3_WINDOW)
     test_rows = _in(norm, schema.TREATMENT_WINDOW)
@@ -465,7 +468,7 @@ def e3(
                 "symptom_date": sym_date,
                 "symptom_source": sym_src,
                 "control_slope": tr["ref_slope"],
-                "unit": "% of baseline per day",
+                "unit": "% of baseline per day" if mode == "pct" else "change from baseline per day",
                 "n_control": _n_plants(fit_rows, t, "control"),
                 "n_deficit": _n_plants(fit_rows, t, "deficit"),
                 "n_days_tested": m,
@@ -499,6 +502,79 @@ def e3(
     ]
     daily_df = pd.concat(daily_all, ignore_index=True)[daily_cols] if daily_all else pd.DataFrame(columns=daily_cols)
     return out.reset_index(drop=True), daily_df, norm
+
+
+# ---------------------------------------------------------------- E3 step 3b: lead time against teammates
+TEAM_SIGNALS = (  # (module, column, QC column, baseline change)
+    ("thermal", "thermal_leaf_air_dt", "thermal_qc_pass", "diff"),
+    ("thermal", "thermal_leaf_ref_dt", "thermal_qc_pass", "diff"),
+    ("thermal", "thermal_leaf_t", "thermal_qc_pass", "diff"),
+    ("rgb", "rgb_ngrdi", "rgb_qc_pass", "diff"),
+    ("rgb", "rgb_green_cover", "rgb_qc_pass", "pct"),
+)
+
+
+def team_runs(table: pd.DataFrame, column: str, qc_column: str) -> pd.DataFrame:
+    """One signal of a teammate's trait table (team contract: bed, plant, date, scheduled hour)
+    in the shape ``e3`` reads. Runs without the QC column count as passing when the value exists."""
+    keep = ["bed", "plant", "date", "hour", column] + ([qc_column] if qc_column in table else [])
+    d = table[keep].copy()
+    d["date"] = stats.ensure_dates(d["date"])
+    d["bed"] = d["bed"].astype(str)
+    d["plant"] = d["plant"].astype(str)
+    d["slot"] = d["hour"].astype(int)
+    d["treatment"] = d["bed"].map(schema.BED_TREATMENT)
+    d["plant_id"] = d["bed"] + "_" + d["plant"]
+    d["days_since_cutoff"] = [schema.days_since_cutoff(x) for x in d["date"]]
+    d["qc_pass"] = d[qc_column].fillna(False).astype(bool) if qc_column in d else d[column].notna()
+    return d
+
+
+def e3_team(
+    runs: pd.DataFrame,
+    traits: list[str],
+    symptoms: pd.DataFrame | None,
+    tables: dict[str, pd.DataFrame | None],
+    beds: tuple[str, ...] = ("W1", "W2"),
+) -> pd.DataFrame:
+    """Plan E3 step 3b: the onset of each teammate signal (``TEAM_SIGNALS``) and of every 3D trait
+    on the same plants (those with a baseline for the teammate signal), by the same rule (15 h,
+    change from the plant's baseline, Mann-Whitney per day, Holm, two consecutive days).
+
+    ``depth_minus_team_days`` < 0 means the 3D trait detects earlier."""
+    rows = []
+    for module, col, qc, mode in TEAM_SIGNALS:
+        table = tables.get(module)
+        if table is None or col not in table:
+            continue
+        tr = team_runs(table, col, qc)
+        tr = tr[tr["bed"].isin(beds)]
+        team_onset, _, norm = e3(tr, [col], symptoms, beds=beds, mode=mode)
+        plants = set(norm.loc[norm["baseline_n"] > 0, "plant_id"])
+        if not plants or team_onset.empty:
+            continue
+        depth_onset, _, _ = e3(runs[runs["plant_id"].isin(plants)], traits, symptoms, beds=beds)
+        t0 = team_onset.iloc[0]
+        for r in depth_onset.itertuples():
+            rows.append(
+                {
+                    "team_signal": col,
+                    "team_module": module,
+                    "team_onset_day": t0["onset_day"],
+                    "team_onset_day_unadjusted": t0["onset_day_unadjusted"],
+                    "team_n_control": t0["n_control"],
+                    "team_n_deficit": t0["n_deficit"],
+                    "trait": r.trait,
+                    "onset_day": r.onset_day,
+                    "onset_day_unadjusted": r.onset_day_unadjusted,
+                    "depth_minus_team_days": r.onset_day - t0["onset_day"],
+                    "depth_minus_team_days_unadjusted": r.onset_day_unadjusted - t0["onset_day_unadjusted"],
+                    "n_control": r.n_control,
+                    "n_deficit": r.n_deficit,
+                    "n_shared_plants": len(plants),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------- E4 daily rhythm
@@ -1301,6 +1377,35 @@ def main(argv: list[str] | None = None) -> int:
             _write_extra(oc, out, "e3_onset_cyl.csv", source)
             _write_extra(dc, out, "e3_daily_tests_cyl.csv", source)
             sections.append(("E3 secondary: cyl_* traits, 15 h", _md_table(oc, onset_cols)))
+        if not a.synthetic:  # teammates' tables are real data; never mix them into a synthetic run
+            from uiwue import core
+
+            tables = {m: core.read_table(m, "traits_runs") for m in ("thermal", "rgb")}
+            lead = e3_team(runs, traits, symptoms, tables, beds=tuple(a.beds))
+            if lead.empty:
+                sections.append(("E3 step 3b: lead time against teammates", "_skipped: no teammate tables_\n"))
+            else:
+                _write_extra(lead, out, "e3_team_leads.csv", source)
+                sections.append(
+                    (
+                        "E3 step 3b: lead time against teammates (same plants, same rule; < 0 = 3D earlier)",
+                        _md_table(
+                            lead,
+                            [
+                                "team_signal",
+                                "team_onset_day",
+                                "team_onset_day_unadjusted",
+                                "trait",
+                                "onset_day",
+                                "onset_day_unadjusted",
+                                "depth_minus_team_days",
+                                "n_control",
+                                "n_deficit",
+                                "n_shared_plants",
+                            ],
+                        ),
+                    )
+                )
     if "E4" in a.exp:
         _log("E4 daily rhythm")
         air = envdata.load_air() if envdata.AIR_READINGS.exists() else None

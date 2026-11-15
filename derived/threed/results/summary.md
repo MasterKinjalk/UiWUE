@@ -1,6 +1,6 @@
 # 3D experiments summary (real data)
 
-Generated 2026-11-15 06:59 UTC by `python -m uiwue.threed.experiments`.
+Generated 2026-11-15 07:36 UTC by `python -m uiwue.threed.experiments`.
 
 
 ## Input
@@ -133,6 +133,72 @@ Symptom reference: 2025-09-08 (BBCH sheet: W2_A8 'aphids, wilting' (1 of 49 defi
 | 3 | cyl_height_p95 | 5 | 5 | -5.4 | -6.03 | -4.78 | 2.09e-64 | 57 | 49 |
 | 4 | cyl_height_p75 | 7 | 7 | -5.67 | -6.35 | -4.99 | 3.02e-60 | 57 | 49 |
 | 5 | cyl_height_p50 | 7 | 7 | -6.44 | -7.24 | -5.65 | 1.46e-56 | 57 | 49 |
+
+
+## E3 step 3b: lead time against teammates (same plants, same rule; < 0 = 3D earlier)
+
+| team_signal | team_onset_day | team_onset_day_unadjusted | trait | onset_day | onset_day_unadjusted | depth_minus_team_days | n_control | n_deficit | n_shared_plants |
+|---|---|---|---|---|---|---|---|---|---|
+| thermal_leaf_air_dt | 4 | 4 | n_points | 5 | 4 | 1 | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | leaf_area_est | 5 | 5 | 1 | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | hull_volume | 7 | 7 | 3 | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | compactness | 10 | 7 | 6 | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | projected_area |  | 5 |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | canopy_radius |  | 6 |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | height_p50 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | height_p95 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | height_p75 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | inclination_mean |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | inclination_sd |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_air_dt | 4 | 4 | droop_index |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | n_points | 5 | 4 | 5 | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | leaf_area_est | 5 | 5 | 5 | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | hull_volume | 7 | 7 | 7 | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | compactness | 10 | 7 | 10 | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | projected_area |  | 5 |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | canopy_radius |  | 6 |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | height_p50 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | height_p95 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | height_p75 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | inclination_mean |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | inclination_sd |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_ref_dt | 0 | 0 | droop_index |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | n_points | 5 | 4 | -1 | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | leaf_area_est | 5 | 5 | -1 | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | hull_volume | 7 | 7 | 1 | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | compactness | 10 | 7 | 4 | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | projected_area |  | 5 |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | canopy_radius |  | 6 |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | height_p50 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | height_p95 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | height_p75 |  | 7 |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | inclination_mean |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | inclination_sd |  |  |  | 12 | 9 | 30 |
+| thermal_leaf_t | 6 | 0 | droop_index |  |  |  | 12 | 9 | 30 |
+| rgb_ngrdi | 7 | 7 | height_p50 |  | 8 |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | height_p95 |  | 8 |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | hull_volume |  | 8 |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | height_p75 |  | 8 |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | n_points |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | leaf_area_est |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | projected_area |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | inclination_mean |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | compactness |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | inclination_sd |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | canopy_radius |  |  |  | 8 | 4 | 18 |
+| rgb_ngrdi | 7 | 7 | droop_index |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | height_p50 |  | 8 |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | height_p95 |  | 8 |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | hull_volume |  | 8 |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | height_p75 |  | 8 |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | n_points |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | leaf_area_est |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | projected_area |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | inclination_mean |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | compactness |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | inclination_sd |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | canopy_radius |  |  |  | 8 | 4 | 18 |
+| rgb_green_cover | 7 | 7 | droop_index |  |  |  | 8 | 4 | 18 |
 
 
 ## E4 daily rhythm
