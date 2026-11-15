@@ -1,0 +1,30 @@
+/* Daily rhythm (rx-) and Irrigation advisor (ir-) pages. Token variables only (design/tokens.css); the shared
+   parts (stat tile, next steps, buttons, chips) are in uiwue.css. Dash loads this file on every page, so every
+   rule is scoped to a page class. */
+
+.rx-chips, .ir-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+.rx-below { padding-top: var(--uw-space-5); }
+/* the flyover table needs a little more room than a side panel's 400 px */
+.uw-side.rx-side { flex: 1 1 440px; max-width: 480px; }
+.rx-side .uw-table td { white-space: nowrap; }
+.rx-ramp { display: inline-flex; }
+.rx-ramp .rx-ramp-cell { border-radius: 0; border-right-width: 0; }
+.rx-ramp .rx-ramp-cell:first-child { border-radius: var(--uw-radius-sm) 0 0 var(--uw-radius-sm); }
+.rx-ramp .rx-ramp-cell:last-child { border-radius: 0 var(--uw-radius-sm) var(--uw-radius-sm) 0; border-right-width: 1px; }
+
+/* Irrigation advisor: the answer in tiles, then every plant against the threshold, then the selected plant */
+.uw-main.ir-main { flex-basis: 100%; }
+.uw-legend.ir-counts { padding-top: 0; margin-left: auto; }
+.ir-counts b { font-family: var(--uw-font-display); color: var(--uw-ink-display); font-size: 17px; }
+.ir-tick { width: 2px; height: 14px; background: var(--uw-navy); }
+.ir-trace-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--uw-space-2) var(--uw-space-3); flex: 1 1 auto; }
+.ir-trace-head .uw-mark { align-self: center; }
+
+@media (max-width: 700px) {
+  /* 39 plants: two short cards a row (mark, ID, value), the bar gives way */
+  .uw-plants.ir-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ir-grid .uw-bar { display: none; }
+  .ir-grid .uw-plant { padding: 0 8px; gap: 6px; }
+  .ir-grid .uw-plant .uw-num { min-width: 0; margin-left: auto; }
+  .uw-legend.ir-counts { margin-left: 0; }
+}

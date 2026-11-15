@@ -1,31 +1,31 @@
-"""Plant profile: one plant across every sensor over time, with links to the 3D canopy page, the bed map and its rows.
+"""Plant profile: one plant's story across sensors. Is it stressed, since when, how badly, did it recover?
 
-Deep link: ``/plant-profile?bed=W2&plant=R7`` (optional ``&trait=<column>`` for the detailed chart). Bed and
-plant use the identifiers of the tables (bed W1/W2/W3, plant = grid position such as R7). An unknown bed
-or plant falls back to the default plant.
+Top to bottom: four stat tiles (peak stress, first sign, leaf area at the trough, after re-watering), one focal
+timeline (any trait, the plant against its bed and the control bed), then one small chart per sensor; a sensor's
+title puts it in the timeline.
+
+Deep link: ``/plant-profile?bed=W2&plant=R7`` (optional ``&trait=<column>`` for the timeline and ``&day=<n>``, carried
+on to the 3D canopy and Bed map links). Bed and plant use the identifiers of the tables (bed W1/W2/W3, plant = grid
+position such as R7). An unknown bed or plant falls back to the default plant.
 """
 
 import dash
 import pandas as pd
 import profile_views as pv
-from components import C, chip, header, placebo_chip, readout, select, size_chip
-from dash import Input, Output, State, callback, dcc, html, no_update
+from components import C, chip, header, next_links, next_steps, select, size_chip, stat
+from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
-from uiwue.core import TRUTH_CLIP_ONSET, TRUTH_FIRST_SYMPTOM
+from uiwue.core import TRUTH_CLIP_ONSET, TRUTH_FIRST_SYMPTOM, read_table
 
-dash.register_page(
-    __name__,
-    path="/plant-profile",
-    name="Plant profile",
-    order=20,
-    description="What do the sensors say about this one plant, and when did it start to show stress?",
-)
+QUESTION = "Is this plant stressed, since when, how badly, and did it recover?"
+dash.register_page(__name__, path="/plant-profile", name="Plant profile", order=20, description=QUESTION)
 
 DEFAULT_BED, DEFAULT_PLANT, DEFAULT_TRAIT = "W2", "R7", "thermal_leaf_ref_dt"
-QUESTION = "What do the sensors say about this one plant, and when did it start to show stress?"
 # min(…, 100%): with less than 320 px of room the one column shrinks to fit instead of pushing the page sideways
 GRID = {"display": "grid", "gridTemplateColumns": "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", "gap": "12px"}
 LEAF_AREA = "depth_leaf_area_est"  # the 3D trait that leads on the 3D canopy page
+FUSION_V2 = "detect_fusion_v2_prob"
+TROUGH_TEXT, REWATERED_TEXT = pv.span_text(*pv.TROUGH), pv.span_text(*pv.REWATERED)
 
 
 def resolve(df, bed, plant):
@@ -54,255 +54,233 @@ def treatment_chip(bed):
     )
 
 
-def link(text, href, primary=False, hover=None):
-    style = {} if primary else {"border": f"1px solid {C['teal-700']}", "color": C["teal-700"]}
-    return dcc.Link(
-        text, href=href, title=hover, className="uw-btn uw-btn-primary" if primary else "uw-btn", style=style
-    )
+def fusion_chip(column):
+    """'bed effect' chip on the fusion v2 score, from derived/detect/fusion_benchmark (thermal, all deficit plants):
+    its placebo bed model tells the beds apart before irrigation off."""
+    if column != FUSION_V2:
+        return []
+    b = read_table("detect", "fusion_benchmark")
+    if b is None:
+        return []
+    r = b[(b.model == "fusion_v2") & (b.sensors == "thermal") & (b.group == "all") & b.bed_effect.astype(bool)]
+    if r.empty:
+        return []
+    r = r.iloc[0]
+    return [
+        chip(
+            "bed effect",
+            f"A model on the same thermal inputs tells the beds apart on watered days 24–29 Aug (score "
+            f"{r.placebo_auc:.2f}). Read the level after day 2, not the first rise.",
+            anchor="bed-effect",
+        )
+    ]
 
 
-def sensor_panel(df, bed, plant, tag, column, label):
+def chips_of(column):
+    return [*pv.bed_effect_chip(column), *fusion_chip(column)]
+
+
+def sensor_card(df, bed, plant, tag, column, label, day=None):
+    """One sensor's small chart with its trough number (days 10–12); the title puts the trait in the timeline."""
     state, why = pv.sensor_state(df, bed, plant, column)
+    if state != "ok" and column == FUSION_V2 and column in df:
+        state = "notable"
+        why = f"Fusion v2: no out-of-fold score for {bed} {plant} (a held-out lock-box plant, or no thermal runs)"
     if state != "ok":
-        return pv.empty_panel(tag, label, state, why)
-    fig = pv.small_multiple(df, bed, plant, column)
+        return missing(tag, label, state, why)
+    fig = pv.small_multiple(df, bed, plant, column, day=day)
     if fig is None:  # runs, but no daily change to draw: never an empty chart
-        return pv.empty_panel(tag, label, "noscan", pv.no_chart_reason(column))
-    value, day = pv.headline(df, bed, plant, column)
-    unit = pv.change_unit(column)
-    raw = pv.mode_of(column) == "raw"
-    digits = 0 if unit == "%" else 2
-    if value is None:
-        shown = "–"
-    else:
-        shown = f"{value:.0%}" if column == pv.STRESS else pv.fmt(value, "", digits, not raw)
-    when = f"{pv.day_text(day)}: last day without water with a value" if day is not None else "no value on days 0–12"
+        return missing(tag, label, "noscan", pv.no_chart_reason(column))
+    value, n = pv.window_mean(df, bed, plant, column, pv.TROUGH)
+    shown, unit = pv.value_text(column, value)
+    when = f"Mean of days 10–12, the last dry days ({n} with a value)" if n else "No value on days 10–12"
     return html.Section(
         [
             html.Div(
                 [
-                    html.Span(tag, className="uw-kicker", style={"color": C["slate-600"], "width": "44px"}),
-                    html.B(label, title=pv.method_hover(column), style={"flex": "1 1 auto"}),
-                    *placebo_chip(column),
-                    html.Span(
-                        [shown, html.Small("" if column == pv.STRESS or value is None else unit)],
-                        className="uw-readout",
-                        title=when,
+                    html.Span(tag, className="uw-kicker pl-tag"),
+                    html.Button(
+                        label,
+                        id={"type": "pp-pick", "col": column},
+                        className="pl-pick",
+                        title=pv.method_hover(column),
                     ),
+                    *chips_of(column),
+                    html.Span([shown, html.Small(unit)], className="uw-readout pl-value", title=when),
                 ],
-                style={"display": "flex", "alignItems": "baseline", "gap": "8px", "flexWrap": "wrap"},
+                className="pl-card-head",
             ),
-            pv.graph_box(fig, f"{label}, {bed} {plant}, change from baseline by day, against the control bed", 190),
+            pv.graph_box(fig, f"{label}, {bed} {plant}, change from baseline by day, against the control bed", 150),
         ],
-        className="uw-panel",
-        style={"padding": "12px 14px"},
+        className="uw-panel pl-card",
         **{"aria-label": label},
     )
 
 
-def multiples(df, bed, plant):
-    panels = [sensor_panel(df, bed, plant, tag, col, label) for tag, col, label in pv.HEADLINES]
-    if not any(c.startswith("hsi_") for c in df.columns):
-        panels.append(
-            pv.empty_panel("HSI", "Spectrum", "notable", "hyperspectral camera: no table in derived/spectral/ yet")
-        )
-    ok = [p for p in panels if p.className == "uw-panel"]
-    empty = [p for p in panels if p.className != "uw-panel"]
-    return [html.Div(ok, style=GRID), html.Div(empty, style=GRID | {"paddingTop": "12px"})]
-
-
-def event(label, when, hover=None, muted=False):
-    return html.Div(
-        [
-            html.Span(label, style={"flex": "1 1 auto"}),
-            html.B(
-                when,
-                className="uw-section",
-                style={"fontSize": "17px", "color": C["ink-muted"] if muted else C["ink-display"]},
-            ),
-        ],
-        title=hover,
-        style={
-            "display": "flex",
-            "gap": "10px",
-            "alignItems": "baseline",
-            "padding": "8px 0",
-            "borderBottom": f"1px solid {C['rule']}",
-        },
+def missing(tag, label, kind, hover):
+    """A sensor without a chart for this plant: its mark and kind of nothing, one line (DESIGN 3)."""
+    return html.Span(
+        [pv.empty_mark(kind), html.B(label), html.Span(pv.EMPTY_TEXT[kind])],
+        className="pl-missing-item",
+        title=f"{tag}: {hover}" if tag else hover,
+        **{"aria-label": f"{label}: {pv.EMPTY_TEXT[kind]}"},
     )
+
+
+def multiples(df, bed, plant, day=None):
+    panels = [sensor_card(df, bed, plant, tag, col, label, day) for tag, col, label in pv.HEADLINES]
+    if not any(c.startswith("hsi_") for c in df.columns):
+        panels.append(missing("HSI", "Spectrum", "notable", "hyperspectral camera: no table in derived/spectral/ yet"))
+    ok = [p for p in panels if isinstance(p, html.Section)]
+    empty = [p for p in panels if not isinstance(p, html.Section)]
+    return [html.Div(ok, style=GRID), html.Div(empty, className="pl-missing")]
 
 
 def when(d):
-    """'Day 4 · 7 Sep' for a date in the tables, '–' when missing."""
+    """Days since irrigation off for a date in the tables, or None when missing."""
     if d is None or (not isinstance(d, str) and pd.isna(d)):
-        return "–"
-    return pv.day_text((pd.Timestamp(d) - pd.Timestamp(pv.CUTOFF)).days)
+        return None
+    return (pd.Timestamp(d) - pd.Timestamp(pv.CUTOFF)).days
 
 
-def leaf_area_card(df, bed, plant, tint):
-    """3D leaf area against the plant's own baseline at the end of the no-water window and after re-watering.
-
-    A plain readout, not a status: the −20 % structure rule (``threed_canopy.structure_status``) also flags
-    control plants, so its verdict goes on hover with that caveat and no fine / watch / irrigate mark is drawn.
-    """
-    state, why = pv.sensor_state(df, bed, plant, LEAF_AREA)
-    s = pv.structure_summary(bed, plant) if state == "ok" else None
-    if s is None:
-        kind = "notable" if state == "ok" else state
-        if state == "ok" and bed not in pv.THREED_BEDS:  # imaged, but its bed is not in the bed numbers
-            why = (
-                f"3D canopy readout: {' and '.join(pv.THREED_BEDS)} only, so none for {bed} {plant} (W3 is never "
-                "pooled with them); the 3D canopy page shows this plant on its own"
-            )
-        return pv.empty_panel("3D", "Leaf area", kind, why or f"depth camera: {bed} {plant} is not in derived/threed/")
-    cells, windows = [], []
-    for label, w in (("end, no water", s["end"]), ("after re-watering", s["after"])):
-        lo, hi = w["days"]
-        windows.append(f"{lo}–{hi} ({w['n']} usable)")
-        when = html.Div(pv.span_text(lo, hi), className="uw-readout-label")
-        if w["value"] is None:
-            reason = "no baseline: no QC-pass daytime run on days −4 to −1" if not s["has_baseline"] else ""
-            reason = reason or f"no QC-pass daytime run on days {lo}–{hi}"
-            cells.append(html.Div([readout(label, "–"), when], title=reason))
-        else:
-            cells.append(html.Div([readout(label, pv.fmt(w["value"], "", 0), "%"), when]))
-    bar, first = pv.fmt(s["threshold"], "%", 0), s["first_below"]
-    if not s["has_baseline"]:
-        rule = ""
-    elif first is None:
-        rule = f" Never below {bar} on two usable days in a row while unwatered."
-    else:
-        rule = f" Below {bar} on two usable days in a row from {pv.day_text(first)}."
-    alarms, n_control = s["alarms"]
-    if rule and alarms:
-        rule += f" That rule also flags {alarms} of {n_control} control plants, so it is not used as an alert."
-    how = (
-        "Leaf area (tilt-corrected), depth camera: % change from the plant's own baseline (median of its daily "
-        "values on days −4 to −1); daily value = mean of its QC-pass runs at 9–18 h; mean over days "
-        f"{' and '.join(windows)}.{rule} Source: derived/threed/traits_runs"
-    )
-    return html.Section(
-        [
-            html.Div(
-                [
-                    html.Span("Leaf area", className="uw-kicker"),
-                    html.Span(
-                        [*placebo_chip(LEAF_AREA), html.Span("3D", className="uw-kicker")],
-                        style={"display": "flex", "alignItems": "center", "gap": "8px"},
-                    ),
-                ],
-                style={"display": "flex", "justifyContent": "space-between", "gap": "8px", "flexWrap": "wrap"},
-            ),
-            html.Div(cells, className="uw-readouts"),
-        ],
-        className=f"uw-card {tint}",
-        title=how,
-        **{"aria-label": "Leaf area, 3D, change from baseline"},
-    )
-
-
-def side(df, bed, plant):
-    row = pv.plant_row(bed, plant)
-    s = pv.stress_summary(df, bed, plant)
-    tint = "uw-sky" if bed == "W1" else "uw-sand"
-    if s is None:
-        stress = pv.empty_panel("MODEL", "Stress probability", "notable", "detection model: no score for this plant")
-    else:
-        (pk, pk_day), (now, now_day) = s["peak"], s["now"]
-        after = now_day > pv.END_DAY
-        how = (
-            "Stress probability of the detection model (derived/detect/scores_runs), daily median of the 12 h and "
-            "15 h runs; peak over day 0–12, the days without water"
-        )
-        stress = html.Div(
-            [
-                html.Div(
-                    [html.Span("Stress probability", className="uw-kicker"), size_chip()],
-                    style={"display": "flex", "justifyContent": "space-between", "gap": "8px", "flexWrap": "wrap"},
-                ),
-                html.Div(
-                    [
-                        html.Div(
-                            [
-                                readout("peak, no water", "–" if pk is None else f"{pk:.0%}"),
-                                html.Div("–" if pk_day is None else pv.day_text(pk_day), className="uw-readout-label"),
-                            ],
-                        ),
-                        html.Div(
-                            [
-                                readout("after re-watering" if after else "latest", f"{now:.0%}"),
-                                html.Div(pv.day_text(now_day), className="uw-readout-label"),
-                            ],
-                        ),
-                    ],
-                    className="uw-readouts",
-                ),
-            ],
-            className=f"uw-card {tint}",
-            title=how,
-        )
-    rwc_value, rwc_hover = pv.rwc_state(bed, plant)
-    clip = row is not None and bool(row.truth_has_clip)
-    note = row.truth_first_symptom_note if row is not None and isinstance(row.truth_first_symptom_note, str) else ""
-    events = [
-        event("Irrigation off", pv.day_text(0), "W2 and W3: last watering 3 Sep 11:00"),
-        event(
-            "Clip shift onset",
-            when(row[TRUTH_CLIP_ONSET]) if clip else "–",
-            "leaf-clip turgor shift onset (derived/truth/plants)" if clip else "no leaf clip on this plant",
-            muted=not clip,
-        ),
-        event(
-            "First symptom",
-            when(row[TRUTH_FIRST_SYMPTOM]) if row is not None else "–",
-            note or "first written stress symptom (derived/truth/plants)",
-            muted=row is None or pd.isna(row[TRUTH_FIRST_SYMPTOM]),
-        ),
-        event(
-            "Stress peak",
-            "–" if s is None or s["peak"][1] is None else pv.day_text(s["peak"][1]),
-            "day of the highest daily stress probability while unwatered",
-            muted=s is None,
-        ),
-        event("Re-watered", pv.day_text(pv.END_DAY), "W2 and W3 re-watered 15 Sep 18:35, after the 18 h run"),
-        event("RWC", rwc_value, rwc_hover, muted=rwc_value == "–"),
-    ]
-    runs = len(pv.plant_rows(df, bed, plant))
-    return [
-        stress,
-        leaf_area_card(df, bed, plant, tint),
-        html.Section(events, className="uw-panel", style={"padding": "4px 16px"}, **{"aria-label": "Events"}),
-        html.Div(readout("runs", f"{runs}", "in the tables"), title="runs of this plant in the merged run table"),
-    ]
-
-
-def actions(df, bed, plant):
+def signs(row):
+    """[(day, short label, hover)] of the plant's own ground-truth onsets: leaf-clip shift and first written symptom."""
+    if row is None:
+        return []
     out = []
-    if pv.has_depth(df, bed, plant):
-        out.append(
-            link(
-                "3D canopy",
-                pv.threed_href(bed, plant),
-                primary=True,
-                hover="this plant's point clouds, leaf area, height and volume against its own baseline",
-            )
+    clip = when(row[TRUTH_CLIP_ONSET]) if bool(row.truth_has_clip) else None
+    if clip is not None:
+        out.append((clip, "leaf clip", "Leaf-clip turgor shift onset (derived/truth/plants)"))
+    symptom = when(row[TRUTH_FIRST_SYMPTOM])
+    if symptom is not None:
+        note = row.truth_first_symptom_note if isinstance(row.truth_first_symptom_note, str) else ""
+        out.append((symptom, "symptom", f"First written symptom{': ' + note if note else ''} (derived/truth/plants)"))
+    return sorted(out)
+
+
+def leaf_area_hover(bed, plant, n_trough, n_after):
+    """Method of the leaf-area numbers, and the −20 % rule's caveat for W1 and W2 plants (it also flags controls)."""
+    how = (
+        f"3D leaf area against the plant's own baseline: mean of days 10–12 ({n_trough} usable), as on 3D canopy; "
+        f"re-watered: days 15–16 ({n_after} usable)."
+    )
+    s = pv.structure_summary(bed, plant)
+    if s is None or not s["has_baseline"]:
+        return how
+    bar, first = pv.fmt(s["threshold"], "%", 0), s["first_below"]
+    rule = f"Below {bar} two days running from day {first}" if first is not None else f"Never below {bar}"
+    alarms, n_control = s["alarms"]
+    if alarms:
+        rule += f"; that rule also flags {alarms} of {n_control} controls, so not an alert"
+    return f"{how} {rule}."
+
+
+def tiles(df, bed, plant):
+    """The answer in four numbers: how high stress got, the first sign, leaf area at the trough, after re-watering."""
+    tint = "sky" if bed == "W1" else "sand"
+    s = pv.stress_summary(df, bed, plant)
+    if s is None or s["peak"][0] is None:
+        peak = stat("Peak stress", "–", tint=tint, hover="detection model: no score for this plant")
+    else:
+        (pk, pk_day), _ = s["peak"], s["now"]
+        peak = stat(
+            "Peak stress",
+            f"{pk * 100:.0f}",
+            "%",
+            tint,
+            "Highest daily stress probability while dry (days 0–12), detection model. Source: detect/scores_runs",
+            sub=pv.day_text(pk_day).replace("Day", "day"),
+            chips=[size_chip()],
         )
-    out.append(link("Bed map", f"/bed-map?bed={bed}&plant={plant}"))
+
+    row = pv.plant_row(bed, plant)
+    found = signs(row)
+    if found:
+        day, label, _ = found[0]
+        first = stat(
+            "First sign",
+            f"day {day}".replace("-", "−"),
+            pv.day_text(day).split(" · ")[1],
+            tint,
+            " · ".join(f"{h}: {pv.day_text(d)}" for d, _, h in found),
+            sub=label,
+        )
+    else:
+        clip = row is not None and bool(row.truth_has_clip)
+        first = stat(
+            "First sign",
+            "–",
+            tint=tint,
+            hover=("leaf clip: no turgor shift" if clip else "no leaf clip on this plant")
+            + "; no written symptom (derived/truth/plants)",
+        )
+
+    state, why = pv.sensor_state(df, bed, plant, LEAF_AREA)
+    trough, n_t = pv.window_mean(df, bed, plant, LEAF_AREA, pv.TROUGH) if state == "ok" else (None, 0)
+    after, n_a = pv.window_mean(df, bed, plant, LEAF_AREA, pv.REWATERED) if state == "ok" else (None, 0)
+    hover = leaf_area_hover(bed, plant, n_t, n_a) if state == "ok" else why
+    if state == "ok" and trough is None:
+        hover = f"No leaf-area change on {TROUGH_TEXT}: no baseline, or no QC-pass daytime run. {hover}"
+    leaf = stat(
+        "Leaf area, trough",
+        *pv.value_text(LEAF_AREA, trough),
+        tint,
+        hover,
+        sub=f"{TROUGH_TEXT.split(' · ')[0].lower()} · vs baseline",
+        chips=pv.bed_effect_chip(LEAF_AREA),
+    )
+
+    stress_after, _ = pv.window_mean(df, bed, plant, pv.STRESS, pv.REWATERED) if pv.STRESS in df else (None, 0)
+    p_val, p_unit = pv.value_text(pv.STRESS, stress_after)
+    l_val, l_unit = pv.value_text(LEAF_AREA, after)
+    rewatered = stat(
+        "After re-watering",
+        None,
+        tint=tint,
+        hover="Mean of days 15–16, after re-watering: stress probability, and leaf area against the plant's own "
+        "baseline (3D canopy reads the bed against each plant's peak instead)",
+        sub=f"{REWATERED_TEXT.split(' · ')[0].lower()} · vs baseline",
+        pairs=[(p_val, f"{p_unit} stress".strip()), (l_val, f"{l_unit} leaf area".strip())],
+    )
+    out = [peak, first, leaf, rewatered]
+    rwc, rwc_hover = pv.rwc_state(bed, plant)
+    if rwc != "–":  # the RWC leaves come from plants that were not imaged, so this is rare
+        out.append(stat("Leaf water", rwc.removesuffix(" %"), "%", tint, rwc_hover, sub="RWC"))
     return out
 
 
+def actions(df, bed, plant, day=None):
+    """The next steps, at the page's foot: this plant in 3D (when it has a 3D table), then which sensor warns first;
+    without 3D, this plant in its bed first."""
+    early = (
+        "Early warning",
+        pv.page_href("/early-warning", bed, plant, day),
+        "which sensor warns first, and by how many days",
+    )
+    if pv.has_depth(df, bed, plant):
+        return next_links(
+            (
+                "3D canopy",
+                pv.threed_href(bed, plant, day),
+                "this plant's point clouds, leaf area, height and volume against its own baseline",
+            ),
+            early,
+        )
+    return next_links(("Bed map", pv.bedmap_href(bed, plant, day), "this plant in its bed"), early)
+
+
 # ------------------------------------------------------------------ page
-def layout(bed=None, plant=None, trait=None, **_):
+def layout(bed=None, plant=None, trait=None, day=None, **_):
     df = pv.traits()
-    head_q = QUESTION
     if df is None:
         return html.Div(
             [
-                header("Plant profile", head_q),
+                header("Plant profile", QUESTION),
                 pv.empty_panel("", "Run traits", "notable", "no traits_runs table in derived/ yet"),
             ]
         )
     bed, plant = resolve(df, bed, plant)
+    day = pv.day_arg(day)
     options = pv.trait_choices(df)
     values = {o["value"] for o in options}
     trait = trait if trait in values else DEFAULT_TRAIT if DEFAULT_TRAIT in values else options[0]["value"]
@@ -310,56 +288,58 @@ def layout(bed=None, plant=None, trait=None, **_):
     nav = lambda target, sym, name: html.A(  # a real link with an aria-label (dcc.Link takes none)
         sym,
         id=f"pp-{name}",
-        href=pv.profile_href(*target),
+        href=pv.profile_href(*target, day),
         className="uw-icon-btn",
         title=f"{name} plant",
         **{"aria-label": f"{name} plant"},
     )
     head = header(
         "Plant profile",
-        head_q,
+        QUESTION,
+        html.Div(id="pp-chips", style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
         select("pp-bed", {b: b for b in pv.BEDS}, bed, "Bed"),
         select("pp-plant", {o["value"]: o["label"] for o in pv.plant_options(df, bed)}, plant, "Plant"),
         html.Div([nav(prev_, "‹", "previous"), nav(next_, "›", "next")], className="uw-stepper"),
-        html.Div(id="pp-chips", style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
-        html.Div(id="pp-actions", style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
-        html.Button(
-            "Download CSV",
-            id="pp-csv",
-            className="uw-btn",
-            title="every run row of this plant, all columns with a value",
-            style={"border": f"1px solid {C['teal-700']}", "color": C["teal-700"], "background": C["surface"]},
-        ),
     )
-    detail = html.Section(
+    focal = html.Section(
         [
             html.Div(
                 [
-                    html.H2("One trait"),
                     html.Div(
                         dcc.Dropdown(options, trait, id="pp-trait", clearable=False, searchable=True),
-                        style={"minWidth": "min(280px, 100%)", "flex": "1 1 280px"},
-                        title="trait for the detailed chart",
+                        className="pl-trait",
+                        title="trait in the timeline",
                     ),
-                    html.Div(id="pp-detail-chips"),
+                    html.Div(id="pp-detail-chips", className="pl-chips"),
+                    html.Div(className="uw-spacer"),
+                    html.Button(
+                        "CSV",
+                        id="pp-csv",
+                        className="uw-btn uw-btn-outline",
+                        title="Download every run row of this plant, all columns with a value",
+                    ),
                 ],
                 className="uw-panel-head",
             ),
             html.Div(id="pp-detail"),
         ],
         className="uw-panel",
+        **{"aria-label": "Timeline"},
+    )
+    by_sensor = html.Section(
+        [html.Div(html.H2("By sensor"), className="uw-panel-head pl-section-head"), html.Div(id="pp-multiples")],
+        **{"aria-label": "By sensor"},
     )
     return html.Div(
         [
             head,
+            dcc.Store(id="pp-day", data=day),
             dcc.Download(id="pp-download"),
             html.Div(
-                [
-                    html.Main([html.Div(id="pp-multiples"), detail], className="uw-main"),
-                    html.Aside(id="pp-side", className="uw-side", **{"aria-label": "Plant summary"}),
-                ],
-                className="uw-row",
+                [html.Div(id="pp-tiles", className="uw-tiles pl-tiles"), focal, by_sensor],
+                className="pl-stack",
             ),
+            next_steps(id="pp-actions"),
         ]
     )
 
@@ -382,31 +362,45 @@ def pick_bed(bed, plant):
 
 @callback(
     Output("pp-chips", "children"),
+    Output("pp-tiles", "children"),
     Output("pp-actions", "children"),
     Output("pp-multiples", "children"),
-    Output("pp-side", "children"),
     Output("pp-previous", "href"),
     Output("pp-next", "href"),
     Input("pp-bed", "value"),
     Input("pp-plant", "value"),
+    State("pp-day", "data"),
 )
-def show_plant(bed, plant):
+def show_plant(bed, plant, day=None):
     df = pv.traits()
     if df is None or plant is None or plant not in {o["value"] for o in pv.plant_options(df, bed)}:
         return (no_update,) * 6
     row = pv.plant_row(bed, plant)
     chips = [treatment_chip(bed)]
     if row is not None and bool(row.truth_has_clip):
-        chips.append(chip("leaf clip", "this plant carries a leaf-clip turgor sensor", "rule"))
+        chips.append(chip("leaf clip", "this plant carries a leaf-clip turgor sensor (★ in the picker)", "rule"))
     prev_, next_ = pv.neighbours(df, bed, plant)
     return (
         chips,
-        actions(df, bed, plant),
-        multiples(df, bed, plant),
-        side(df, bed, plant),
-        pv.profile_href(*prev_),
-        pv.profile_href(*next_),
+        tiles(df, bed, plant),
+        actions(df, bed, plant, day),
+        multiples(df, bed, plant, day),
+        pv.profile_href(*prev_, day),
+        pv.profile_href(*next_, day),
     )
+
+
+@callback(
+    Output("pp-trait", "value"),
+    Input({"type": "pp-pick", "col": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def pick_trait(clicks):
+    """A sensor's title puts its trait in the timeline (a re-drawn grid fires this with no click: ignored)."""
+    hit = ctx.triggered_id
+    if not hit or not any(clicks or []) or not (ctx.triggered and ctx.triggered[0]["value"]):
+        return no_update
+    return hit["col"]
 
 
 @callback(
@@ -415,18 +409,21 @@ def show_plant(bed, plant):
     Input("pp-bed", "value"),
     Input("pp-plant", "value"),
     Input("pp-trait", "value"),
+    State("pp-day", "data"),
 )
-def show_detail(bed, plant, trait):
+def show_detail(bed, plant, trait, day=None):
     df = pv.traits()
     if df is None or plant is None or trait is None:
         return no_update, no_update
     state, why = pv.sensor_state(df, bed, plant, trait)
-    chips = [*placebo_chip(trait), chip("method", pv.method_hover(trait), "rule")]
+    chips = [*chips_of(trait), chip("method", pv.method_hover(trait), "rule", "own-baseline")]
     if state != "ok":
         return pv.empty_panel(pv.source_of(trait)[0], pv.label_text(trait), state, why), chips
-    fig = pv.detail_figure(df, bed, plant, trait)
+    events = [(d, label) for d, label, _ in signs(pv.plant_row(bed, plant))]
+    fig = pv.detail_figure(df, bed, plant, trait, events=events)
     if fig is None:
         return pv.empty_panel(pv.source_of(trait)[0], pv.label_text(trait), "noscan", pv.no_chart_reason(trait)), chips
+    pv.mark_day(fig, day)
     aria = f"{pv.label_text(trait)}, {bed} {plant} against the control bed and its own bed, day −10 to 19"
     return pv.graph_box(fig, aria, 340), chips
 

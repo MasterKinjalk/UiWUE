@@ -154,6 +154,26 @@ def test_phone_width_stacks_side_panels_and_reflows_long_readout_grids():
     assert decl(".uw-readouts .uw-section", PHONE_MEDIA).get("white-space") == "normal"  # wraps in its cell
 
 
+def test_home_coverage_tracks_and_axis_line_up_on_a_phone():
+    """A long module name ("Environment Yuming") widened its name column and pushed its track right of the others,
+    and "15 Sep" ran into "22 Sep": the name column is fixed (the name wraps, the owner gives way) and the axis keeps
+    the three event dates."""
+    assert decl(".uw-cover-name", PHONE_MEDIA) == {"flex-basis": "120px", "min-width": "0"}
+    assert decl(".uw-cover-name > span:not(.uw-dot)", PHONE_MEDIA) == {"display": "none"}  # the owner, not the dot
+    for end in ("first-child", "last-child"):
+        assert decl(f".uw-cover-axis > span:{end}", PHONE_MEDIA) == {"display": "none"}
+
+
+def test_dash_components_draw_with_the_tokens_and_no_shadow():
+    """Dash 4 draws its slider, dropdown and tooltip with --Dash-* colours, a purple accent (#7f4bc4) by default:
+    the slider on Bed map and Export was purple. They read the tokens instead, and cast no shadow (DESIGN 2.2)."""
+    d = decl("html:root")
+    assert d["--Dash-Fill-Interactive-Strong"] == "var(--uw-teal-700)"
+    assert all(v.startswith("var(--uw-") for k, v in d.items() if not k.startswith("--Dash-Shading"))
+    assert d["--Dash-Shading-Strong"] == d["--Dash-Shading-Weak"] == "transparent"
+    assert "#7f4bc4" not in CSS.lower()
+
+
 def test_no_shared_style_forces_a_box_wider_than_a_phone():
     wide = [
         (m, s, p, v)
@@ -179,12 +199,12 @@ PAGES = textwrap.dedent(
         out[f"plant_profile.show_plant {bed} {plant}"] = pp.show_plant(bed, plant)
         out[f"bed_map.show_side {bed} {plant}"] = bm.show_side({"bed": bed, "plant": plant}, "thermal_leaf_ref_dt", 15, 9)
     out["plant_profile.show_detail"] = pp.show_detail("W2", "R7", "thermal_leaf_ref_dt")
-    out["bed_map.show_map"] = bm.show_map("thermal_leaf_ref_dt", 15, 9, False, {"bed": "W2", "plant": "R7"})[3:]
+    out["bed_map.show_map"] = bm.show_map("thermal_leaf_ref_dt", 15, 9, {"bed": "W2", "plant": "R7"})[3:]
     out["daily_rhythm.update_separability"] = dr.update_separability("diurnal_score_ref")
     out["daily_rhythm.update_schedules"] = dr.update_schedules("control_ref")
     rule = ir.best_rule(ir.schedules_table()) or "control_ref"
     out["irrigation.update"] = ir.update(rule, ir.latest_day(rule, ir.recommended(rule)), None)[:5]
-    out["export.preview"] = ex.preview("traits", ["W1", "W2", "W3"], "all", ["thermal_", "depth_"], [-10, 19])
+    out["export.preview"] = ex.preview("traits", ["W1", "W2", "W3"], ["thermal_", "depth_"], [-10, 19])
     out["profile_views.preview_table"] = ex.pv.preview_table(ex.pv.traits())
     print("JSON " + json.dumps(out, cls=PlotlyJSONEncoder))
     """
@@ -227,6 +247,19 @@ def test_wide_grids_and_tables_sit_in_their_own_scroll_box(pages):
                 found[kind] += 1
                 assert any(scrolls(a) for a in above), f"{name}: {kind} outside a scroll box"
     assert found["bed grid"] == 3 and found["heatmap"] and found["table"] >= 3, found
+
+
+def test_charts_too_wide_for_a_phone_scroll_in_their_own_box(pages):
+    """Daily rhythm's five day-profile facets ran their labels into each other at phone width: the chart keeps a
+    minimum width and scrolls inside its panel instead. (Sensor comparison's setups now run down the page, one row
+    each, so that chart fits a phone without a scroll box.)"""
+    want = {"dr-profile": "daily_rhythm.layout"}
+    for gid, name in want.items():
+        hit = [(n, above) for n, above in nodes(pages[name]) if n["props"].get("id") == gid]
+        assert len(hit) == 1, gid
+        graph, above = hit[0]
+        assert float(graph["props"]["style"]["minWidth"].removesuffix("px")) > PHONE, gid
+        assert any(scrolls(a) for a in above), f"{gid} outside a scroll box"
 
 
 def test_plant_profile_header_and_grid_wrap_on_a_phone(pages):

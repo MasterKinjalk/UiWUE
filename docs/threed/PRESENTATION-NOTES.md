@@ -26,15 +26,20 @@ these live from `derived/threed/traits_runs.parquet` (`app/threed_canopy.py`, `h
 
 - **Two axes, two meanings.** Height is the reversible axis (turgor: it returns with water, to
   above its peak). Leaf area is the lasting-damage axis (still about half gone days later).
-- **The same split shows on Early warning's recovery panel**, from independent tables: function
-  recovers (leaf minus air temperature 89 %, NGRDI 69 %), structure does not (leaf area 22 %).
+- **The same split shows on Early warning's recovery panel**, from independent tables (W2):
+  function recovers (leaf minus air temperature 89 %, NGRDI 69 %), leaf area does not (32 %), and
+  height overshoots (215 %: the plants stand up and keep growing).
 - **Not every plant sags.** 13 of 68 deficit plants lose 6 % of height or less (11 of them grow);
   32 lose more than 40 %; the range is −70 % to +44 %, median −35.7 %. But 64 of 68 lose at least
   a third of their leaf area. Leaf area is the consistent signal; height is the dramatic one.
 - **A per-plant rule that now has a fair test.** Leaf area below −20 % of the plant's own baseline
   on two days fires for 63 of 72 deficit plants (87.5 %, median first day 9) and 2 of 72 controls.
-- **Timing (from the earlier 28-plant detection tables, to be refreshed).** Robust onsets: thermal
-  day 4, 3D leaf area day 5, RGB day 6, 3D height day 9. 3D is about a day behind thermal.
+- **Timing (detection re-run on the 216-plant table, 15 Nov).** Robust onsets, W2 against W1:
+  thermal day 4 (single slots 4–7; 17 + 13 plants), 3D leaf area day 5 (5–6; 62 + 64), RGB day 6
+  (6–10; 9 + 9), size alone day 6, 3D volume day 7 and height day 8 (both with a bed effect). 3D
+  is still about a day behind thermal. Was (28 plants): thermal 4, leaf area 5, RGB 6, volume 6,
+  height 9. Pooled with W3, leaf area moves to day 4, level with thermal, but 63 of the 72 W3
+  plants also lost a leaf to sampling: Early warning marks those 3D results `W3 sampled`.
 
 ### How the numbers moved from 28 to 216 plants
 
@@ -87,8 +92,10 @@ A lesson worth a sentence: the old "reliable" badge compared the signal to withi
   the bed-level numbers.
 - Detached points at the crop wall (a neighbour's leaf) are hidden in the picture in 3.6 % of
   scans; the trait table is untouched and the hover says how many points are not drawn.
-- The onset days still come from the 28-plant detection tables; the page marks them `older table`
-  until `python -m uiwue.detect.run` is re-run.
+- The onsets were recomputed on the 216-plant table (`python -m uiwue.detect.run`, finished 15 Nov
+  07:56 UTC), so the page's `older table` chip is gone. They rest on 62 deficit and 64 control
+  plants: a plant counts on a day when it has a QC-pass 12 h or 15 h run and a baseline at that
+  slot, fewer than the 72 + 72 behind the tiles.
 - The −20 % rule's threshold was first proposed on the 28-plant table, then tested on 216.
 
 ## What was wrong with the old 3D pages
@@ -107,26 +114,37 @@ A lesson worth a sentence: the old "reliable" badge compared the signal to withi
 
 One page, `3D canopy`, replacing the three old ones (old links still land on it):
 
-- four live headline tiles: height lost, leaf area lost, after re-watering, onset against thermal
+- four live headline tiles, the app's one stat tile: height lost, leaf area lost, after re-watering
+  (against each plant's peak: height comes back, leaf area does not), first seen against thermal with
+  the `Size only · day 6` chip beside it
 - **then and now**: the same plant on a baseline day and a chosen day, plant points only, coloured
   by height, on a soil disc with a scale bar; one shared camera, so rotating one turns the other
-- a plant card with the drawn scan's own change from baseline, and a side-view silhouette (then as
-  an outline, now filled), where wilting reads best
+- a plant card with the drawn scan's own change from baseline (the plant's ID links to its profile),
+  and a side-view silhouette (then as an outline, now filled), where wilting reads best
 - a day strip: baseline, no-water window, re-watering, the selected day in navy
 - collapse and recovery: each bed's median and middle half, every plant a clickable dot
-- deficit minus control with a confidence band, and an onset strip against thermal and RGB
+- deficit minus control with a confidence band (the onset strip that sat under it is gone: the
+  first-seen tile holds the onset and every other one is on its hover; Early warning ranks them)
+- one `bed effect` chip in the header, since all three traits are flagged, instead of one per chart;
+  every caveat chip links to its entry on Methods & limits
+- next steps at the foot, Early warning and the plant's profile, both carrying the plant and day
 - the opening plant is chosen by a rule (a typical deficit responder whose picture and numbers
   agree), currently W2 O8: leaf area −67 %, height −50 %, volume −80 % on day 12
 
 Rendering choice: points won over a triangulated surface (it tore layered canopies into shards)
 and a height-map surface (it invented walls between leaves). Light ground only.
 
-How 3D joins the rest of the app: a "3D canopy" tile on Home; a leaf-area card and a link on Plant
-profile; a link on Bed map; a "3D canopy · plant-days" table on Export; thermal first, 3D next on
-Early warning.
+How 3D joins the rest of the app: the page sits under "See" in the grouped nav (See, Detect, Act,
+Data; one menu button on a phone); on Home, the "3D sees stress" and "Leaf area lost" finding tiles
+link to it and a "3D canopy" page tile sits in the See group; Plant profile's leaf-area tiles and its
+first next step; Bed map's next step for the selected plant; a "3D canopy · plant-days" table on
+Export; thermal first, 3D next on Early warning, whose "Loss regained" panel reads the same
+re-watering against each plant's own baseline (leaf area 32 %, height 215 % of the loss regained).
 
-Verification: full test suite 252 passed, 3 skipped (optional libraries missing); 18 of 18
-scripted browser interactions pass; no page scrolls sideways at phone width.
+Verification (15 Nov, after the detection re-run): full test suite 290 passed, 5 skipped (4 of them
+for torchgeo and rasterio, not installed here); no page scrolls sideways at an exact 390 px viewport (headless Edge with
+DevTools device metrics: a plain `--window-size=390` shot is drawn at Edge's 518 px minimum and
+cut off). Before the rebuild, 18 of 18 scripted browser interactions passed.
 
 Screenshots for slides are in `docs/threed/screenshots/`: `before-browser.png`,
 `before-compare.png` (the old pages), `after-desktop.png`, `after-phone.png` (the new page, default
@@ -135,9 +153,17 @@ plant), `after-control-plant.png` (W1 J1), `after-non-responder.png` (W2 Q4) and
 
 ## Open items
 
-- Re-run the detection tables on the 216-plant table (`python -m uiwue.detect.run`) so the onset
-  days and Sensor comparison match the rest.
-- `docs/HOW_IT_WORKS.pdf` is older than its Markdown (WeasyPrint is not installed here).
-- Plant profile's 3D charts still use a different day aggregate from `/threed`.
+Done on 15 Nov: the detection tables were re-run on the 216-plant table (onsets above; Sensor
+comparison, same 9 + 9 plants: thermal alone 0.96, best combination depth + thermal 1.00, size
+alone 0.35, cheapest close still thermal alone; before: 1.00, RGB + depth + thermal 0.96 with a
+bed effect, 0.37). Plant profile's 3D charts now read the page's plant-day values (W1 J5 leaf
+area on day 12 read +70 % there, +108 % here; both now +108 %). `docs/HOW_IT_WORKS.pdf` is
+rebuilt from its Markdown with headless Edge (`scripts/build_how_it_works_pdf.py`). The bed
+checks on this page read the W2 rows of the placebo, and leaf area, flagged by the E2 growth
+check, now carries its chip on its charts too.
+
+- `uiwue.detect` pools W3 into its "all" deficit group (W2 + W3) for 3D too. Early warning and
+  Sensor comparison now open on W2 against W1 and mark the pooled groups (`W3 sampled`, with the
+  W2-only onset on hover); a W2-only 3D group in the detect run would still be cleaner.
 - Proposals not built: cloud colour = height lost on the stress ramp; a separate colour identity
   for sensors (thermal currently shares teal with control on Early warning).

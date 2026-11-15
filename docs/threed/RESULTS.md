@@ -22,9 +22,9 @@ run.
 | Check | Result |
 |---|---|
 | E0a paper parity | **PASS.** Control +4.30 mm/day (paper +4.30), interaction −13.08 mm/day (paper −13.08); difference 0.02 %. |
-| E0b QC agreement (8 Tier-2 plants, 1,680 runs) | `qc_dark`: precision 0.97, recall 0.79 (meets 0.7). `qc_not_centred`: precision 0.37, recall 0.11 (fails). `qc_no_plant`: not testable (1 labelled run). |
+| E0b QC agreement (8 Tier-2 plants, 1,680 runs) | `qc_dark`: precision 0.97, recall 0.79 (meets 0.7). `qc_not_centred`: precision 0.36, recall 0.11 (fails). `qc_no_plant`: not testable (1 labelled run). |
 | E1 reliable traits (SNR ≥ 3) | **All 12.** `inclination_sd` now passes (SNR 3.6; 2.4 with 28 plants). |
-| E2 bed check | Before the cutoff, W2 grew more slowly than W1 in every size trait: heights by 20-24 % of the W1 rate (Holm p < 1e-8), hull volume 19 %, `n_points` 27 %, leaf area 9 % (Holm 0.009) and projected area 8 % (Holm 0.048). Shape traits show no difference. |
+| E2 bed check | Before the cutoff, W2 grew more slowly than W1 in every size trait: heights by 22-24 % of the W1 rate (Holm p < 1e-8), hull volume 19 %, `n_points` 27 %, leaf area 9 % (Holm 0.009) and projected area 8 % (Holm 0.048). Shape traits show no difference. |
 | E3 first traits (plan design, 15 h, Holm) | **`n_points`, `leaf_area_est`, `hull_volume` and `projected_area` on day 4 (2025-09-07)**, one day before the first written symptom of the analysed plants. `height_p95` follows on day 5, the other heights on day 7. 57 control and 49 deficit plants. |
 | E3 sensitivity (all daytime slots) | The same traits and all three heights on day 4. 70 control and 66 deficit plants. |
 | E3 step 3b, lead against teammates | On the same 30 plants, leaf minus air temperature reaches onset on day 4 and the first 3D traits on day 5: **thermal leads 3D by one day**. RGB colour (day 7) comes before any 3D onset on its 18 plants. |
@@ -116,7 +116,7 @@ run.
 
 | Quantity | Ours | 95 % CI | Paper | Rel. diff | Pass |
 |---|---|---|---|---|---|
-| control slope (mm/day) | 4.300 | 3.18 to 5.42 | 4.30 | +0.02 % | yes |
+| control slope (mm/day) | 4.301 | 3.18 to 5.42 | 4.30 | +0.02 % | yes |
 | interaction W2 − W1 (mm/day) | −13.083 | −14.7 to −11.5 | −13.08 | −0.02 % | yes |
 | same model on our `height_p75` above soil, qc_pass runs (87 of 120) | 5.94 / −12.3 | 4.26 to 7.62 / −14.8 to −9.94 | | +38 % / −6 % | not scored |
 
@@ -140,11 +140,11 @@ run.
 | Our flag | ADA label | Precision | Recall | ADA positives | Our flags | Target recall 0.7 |
 |---|---|---|---|---|---|---|
 | `qc_dark` | Dark (≥ 8 of 15 RGB frames) | **0.97** | **0.79** | 472 | 384 | met |
-| `qc_not_centred` | Not Centered (any frame) | 0.37 | 0.11 | 714 | 211 | not met |
+| `qc_not_centred` | Not Centered (any frame) | 0.36 | 0.11 | 714 | 211 | not met |
 | `qc_no_plant` | no plant | 0 | 0 | 1 | 218 | not testable |
 
 - **Dark.** The flags agree well.
-  - Counting "Medium Dark" too gives precision 1.00 but recall 0.58. Our threshold (brightness
+  - Counting "Medium Dark" too gives precision 1.00 but recall 0.57. Our threshold (brightness
     < 10) matches "Dark", not "Medium Dark".
 - **Not centred.** The two flags answer different questions.
   - ADA marks 42 % of the labelled runs, mostly because single RGB frames at the edge of the 3 x 5
@@ -174,7 +174,7 @@ run.
 | hull_volume | cm³ | 44.5 | 33.7 | 2,140 | 48 | yes |
 | canopy_radius | mm | 0.39 | 0.32 | 2.8 | 7.1 | yes |
 | inclination_mean | deg | 1.30 | 1.05 | 7.4 | 5.7 | yes |
-| inclination_sd | deg | 0.66 | 0.53 | 2.4 | **3.6** | yes (borderline) |
+| inclination_sd | deg | 0.66 | 0.53 | 2.3 | **3.6** | yes (borderline) |
 | droop_index | ratio | 0.020 | 0.016 | 0.16 | 8.0 | yes |
 | compactness | ratio | 0.024 | 0.019 | 0.26 | 11 | yes |
 | n_points | count | 101 | 73 | 3,020 | 30 | yes |
@@ -200,9 +200,9 @@ run.
 | height_p75 | −1.45 mm/day | −1.91 to −0.99 | 6e-10 | 5e-9 | 6.6 mm/day | 22 % |
 | height_p95 | −1.87 mm/day | −2.43 to −1.31 | 7e-11 | 7e-10 | 8.0 mm/day | 23 % |
 | n_points | −88 /day | −105 to −71 | 5e-24 | 6e-23 | 322 /day | 27 % |
-| hull_volume | −38 cm³/day | −50 to −27 | 1e-11 | 1e-10 | 202 cm³/day | 19 % |
+| hull_volume | −38 cm³/day | −49 to −27 | 1e-11 | 1e-10 | 202 cm³/day | 19 % |
 | leaf_area_est | −1.56 cm²/day | −2.50 to −0.61 | 0.001 | 0.009 | 16.8 cm²/day | 9 % |
-| projected_area | −0.77 cm²/day | −1.33 to −0.20 | 0.008 | 0.048 | 10.0 cm²/day | 8 % |
+| projected_area | −0.76 cm²/day | −1.33 to −0.20 | 0.008 | 0.048 | 10.0 cm²/day | 8 % |
 | radius, inclination, droop, compactness | | | 0.10-0.74 | 0.48-1 | | no warning |
 
 - Before the cutoff, W2 plants grew about a fifth more slowly in height and volume, and about a
@@ -241,7 +241,7 @@ run.
 | 9 | height_p50 | day 7 (09-10) | day 7 | +2 | −6.5 (−7.3 to −5.7) |
 | 10 | inclination_mean | day 10 | day 5 | +5 | −1.2 (−1.5 to −0.9) |
 | 11 | inclination_sd | none | day 8 | − | +0.6 (+0.4 to +0.8) |
-| 12 | droop_index | none | day 10 | − | −0.8 (−1.3 to −0.5) |
+| 12 | droop_index | none | day 10 | − | −0.8 (−1.2 to −0.5) |
 
 **Sensitivity: daytime slots 09-18 h, plant-day means, 70 control vs 66 deficit plants**
 (`e3_onset_daytime.csv`)
@@ -310,7 +310,7 @@ cluster-free traits do not detect stress earlier than the clustered ones.
   too few for a Holm onset. The colour change (day 7) comes before any 3D onset there.
 - The team's own AUC-based onsets (`derived/detect/onsets.parquet`, all deficit plants of W2
   and W3) give the same order: leaf minus air day 3 (robust rule day 4), `depth_leaf_area_est`
-  day 5, `rgb_ngrdi` day 6.
+  day 4 (W2 alone day 5), `rgb_ngrdi` day 6.
 - On all 144 W1/W2 plants the 3D traits reach onset on day 4 (above). The thermal table covers
   fewer plants, so the like-for-like lead is the one in this table.
 
@@ -326,10 +326,10 @@ cluster-free traits do not detect stress earlier than the clustered ones.
 | Trait | Response | Deficit − control slope (per day) | 95 % CI | p |
 |---|---|---|---|---|
 | height_p50/75/95 | midday depression | −0.04 / +0.03 / +0.19 mm | span 0 | 0.20-0.83 |
-| projected_area | midday depression, all runs | +0.20 cm² | −0.16 to 0.56 | 0.28 |
+| projected_area | midday depression, all runs | +0.20 cm² | −0.16 to 0.55 | 0.28 |
 | projected_area | midday depression, dark runs excluded | −0.39 cm² | −0.80 to 0.03 | 0.067 |
 | leaf_area_est | **midday depression, dark runs excluded** | **−1.21 cm²** | −2.05 to −0.37 | **0.005** (Holm onset day 7) |
-| height_p50 | **overnight recovery** | **+0.42 mm** | 0.19 to 0.65 | **4e-4** (Holm onset day 4) |
+| height_p50 | **overnight recovery** | **+0.42 mm** | 0.18 to 0.65 | **4e-4** (Holm onset day 4) |
 | height_p75 | overnight recovery | +0.50 mm | 0.25 to 0.74 | 7e-5 |
 | projected_area | overnight recovery | −1.14 cm² | −1.51 to −0.78 | 9e-10 (Holm onset day 8) |
 | n_points | overnight recovery | −42.5 | −56.5 to −28.4 | 3e-9 (Holm onset day 7) |
@@ -382,7 +382,7 @@ Sensitivity (pooled W2 r at lag +1, `e5_turgor_variants.csv`):
 | n_points | −0.53 | −0.55 | −0.60 | −0.20 |
 | hull_volume | −0.51 | −0.53 | −0.55 | −0.14 |
 | height_p50 | −0.18 | −0.15 | −0.24 | **−0.41** (p = 4e-11, n = 251) |
-| height_p75 | −0.20 | −0.15 | −0.19 | −0.39 |
+| height_p75 | −0.20 | −0.14 | −0.19 | −0.39 |
 
 **Reading.**
 

@@ -64,9 +64,12 @@ def write(derived, module, name, df):
 
 # ------------------------------------------------------------------ labels and values
 def test_blank_units_never_render_as_nan():
-    assert pv.label_unit("rgb_exg") == "Greenness (ExG)" and pv.unit_text("rgb_exg") == ""
+    assert pv.label_unit("rgb_exg") == "Greenness" and pv.unit_text("rgb_exg") == ""  # its plain name, no "(nan)"
     assert pv.label_unit(TRAIT).endswith("(°C)")
     assert pv.fmt(-2.04, "°C", 1) == "−2.0 °C" and pv.fmt(None, "°C") == "–" and pv.fmt(12, "%", 0) == "+12 %"
+    assert pv.fmt(-0.04, "°C", 1) == "0.0 °C"  # no change is unsigned, never "−0.0"
+    assert pv.value_text("detect_stress_prob", 0.954) == ("95", "%") and pv.value_text(SIZE, None) == ("–", "")
+    assert pv.value_text(TRAIT, 13.24) == ("+13.2", "°C") and pv.value_text(TRAIT, -0.123) == ("−0.12", "°C")
 
 
 def test_modes_follow_the_kind_of_trait():
@@ -192,6 +195,14 @@ def test_export_filters_rows_and_sensor_columns():
     assert d.set_index("column").loc[TRAIT, "unit"] == "°C"
 
 
+def test_export_preview_keeps_a_date_on_one_line():
+    """The preview's dates broke at their hyphens ('2025-' over '08-24') in the narrow first columns."""
+    t = pd.DataFrame({"bed": ["W1"], "date": pd.to_datetime(["2025-08-24"]), "x": [-1.5]})
+    bed, date, x = pv.preview_table(t).children.children[1].children[0].children
+    assert date.children == "2025-08-24" and date.style == {"whiteSpace": "nowrap"}
+    assert bed.style is None and x.children == "−1.5" and x.className == "num"
+
+
 # ------------------------------------------------------------------ 3D canopy: links, leaf-area readout, export
 def leaf(bed, plant, day):
     """Leaf area of the synthetic 3D plants: 100 cm² unless noted."""
@@ -233,6 +244,10 @@ def threed(tmp_path, monkeypatch):
 
 def test_threed_links_carry_bed_and_plant():
     assert pv.threed_href("W2", "J5") == "/threed?bed=W2&plant=J5"
+    assert pv.threed_href("W2", "J5", 9) == "/threed?bed=W2&plant=J5&day=9"  # the day the reader was on
+    assert pv.profile_href("W1", "A2", -3) == "/plant-profile?bed=W1&plant=A2&day=-3"
+    assert pv.bedmap_href("W3", "B3") == "/bed-map?bed=W3&plant=B3"
+    assert [pv.day_arg(d) for d in ("9", "-10", 19, "x", None, 40)] == [9, -10, 19, None, None, None]
     assert pv.span_text(10, 12) == "Day 10–12 · 13–15 Sep"
 
 
@@ -295,11 +310,14 @@ def test_pages_render_and_their_callbacks_run_on_the_real_tables():
         assert value == "B3"  # a deep-linked plant survives the initial bed callback
         options, value = pp.pick_bed("W3", "R7")
         assert value in {o["value"] for o in options}
-        out = bm.show_map("thermal_leaf_ref_dt", 15, 9, False, {"bed": "W2", "plant": "R7"})
-        assert len(out) == 8
+        out = bm.show_map("thermal_leaf_ref_dt", 15, 9, {"bed": "W2", "plant": "R7"})
+        assert len(out) == 6
+        look = [i.children[0] for i in out[3][-1].children[1].children]  # the plants to look at, on this day
+        assert look and all(a.href.startswith("/plant-profile?bed=") and a.href.endswith("&day=9") for a in look)
+        assert all(a.className.startswith("uw-plant-link") for a in look)  # the one plant-link style
         bm.show_side({"bed": "W3", "plant": "B3"}, "depth_projected_area", 15, 9)
         for key in ("traits", "detect/scores_runs"):
-            assert ex.download_csv(1, key, ["W1", "W2", "W3"], "all", ["thermal_", "detect_"], [-10, 19])["content"]
+            assert ex.download_csv(1, key, ["W1", "W2", "W3"], ["thermal_", "detect_"], [-10, 19])["content"]
 
         # 3D canopy: links in, the leaf-area readout, the Home tile and the export table
         import json
@@ -311,25 +329,39 @@ def test_pages_render_and_their_callbacks_run_on_the_real_tables():
         df = pv.traits()
         three = [a for a in pp.actions(df, "W2", "R7") if a.children == "3D canopy"]
         assert len(three) == 1 and three[0].href == "/threed?bed=W2&plant=R7"
-        links = bm.show_side({"bed": "W2", "plant": "R7"}, "depth_projected_area", 15, 9)[-1].children
-        assert "/threed?bed=W2&plant=R7" in [a.href for a in links]
-        card = pp.side(df, "W2", "R7")[1]
-        assert card.className == "uw-card uw-sand" and "Leaf area" in text(card) and "uw-mark" not in text(card)
+        side, links = bm.show_side({"bed": "W2", "plant": "R7"}, "depth_projected_area", 15, 9)
+        assert [a.href for a in links] == [  # the next steps follow the selected plant; the bed map's day goes along
+            "/plant-profile?bed=W2&plant=R7&day=9", "/threed?bed=W2&plant=R7&day=9"
+        ]
+        assert "uw-plant-link" in text(side[0])  # the plant's ID links its profile
+        hrefs = [a.href for a in pp.actions(df, "W2", "R7", 4)]
+        assert hrefs == ["/threed?bed=W2&plant=R7&day=4", "/early-warning?bed=W2&plant=R7&day=4"]
+        tiles = pp.tiles(df, "W2", "R7")
+        leaf, after = tiles[2], tiles[3]
+        assert leaf.className == "uw-tile uw-sand uw-stat-tile" and "Leaf area" in text(leaf)
+        assert "uw-mark" not in text(leaf)
         r7 = tc.windows().set_index(["bed", "plant", "trait"]).loc[("W2", "R7", "leaf_area_est")]
-        assert pv.fmt(r7.trough, "", 0) in text(card) and pv.fmt(r7.rewatered, "", 0) in text(card)
+        assert pv.fmt(r7.trough, "", 0) in text(leaf) and pv.fmt(r7.rewatered, "", 0) in text(after)
         alerts = tc.structure_alerts()
         if alerts.loc[alerts.treatment == "control", "first_irrigate"].notna().any():
-            assert "not used as an alert" in card.title  # the rule flags controls: values only, caveat on hover
-        assert pp.leaf_area_card(df, "W3", "B3", "uw-sand").className == "uw-empty"  # W3 is not in the readout
+            assert "so not an alert" in leaf.title  # the rule flags controls: values only, caveat on hover
+        w3 = tc.windows(beds=tc.SHOWN_BEDS).set_index(["bed", "plant", "trait"])
+        if ("W3", "B3", "leaf_area_est") in w3.index:  # a W3 plant on its own baseline, as 3D canopy shows it
+            assert pv.fmt(w3.loc[("W3", "B3", "leaf_area_est"), "trough"], "", 0) in text(pp.tiles(df, "W3", "B3")[2])
         base = tc.plant_days().groupby(["bed", "plant"])["leaf_area_est_base"].first()
         for bed, plant in base[base.isna()].index[:1]:  # a plant without a baseline, if the table has one
-            card = text(pp.leaf_area_card(df, bed, plant, "uw-sand"))
-            assert "no baseline" in card and "–" in card
+            card = pp.tiles(df, bed, plant)[2]
+            assert "no baseline" in card.title and "–" in text(card)
+        heads = [t.children[0].children[0].children for t in pp.tiles(df, "W2", "R7")][:4]
+        assert heads == ["Peak stress", "First sign", "Leaf area, trough", "After re-watering"]
+        detail, _ = pp.show_detail("W2", "R7", "thermal_leaf_ref_dt", 5)
+        fig = detail.children.figure
+        assert any(s.line.color == C["navy"] and s.x0 == 5 for s in fig.layout.shapes)  # the carried day, in navy
 
         home = sys.modules["pages.home"]
         assert not [p for p in home.GROUPS if p.startswith("/threed-")]
         if any(p["path"] == "/threed" for p in dash.page_registry.values()):  # the 3D canopy page is in
-            tiles = [t for t in home.page_tiles().children if t.children[0].children == "3D"]
+            tiles = [t for t in home.page_links() if t.children[0].children == "3D"]
             assert [t.href for t in tiles] == ["/threed"] and tiles[0].className == "uw-pagetile uw-mint"
         real = dict(dash.page_registry)
         try:  # the registry once the 3D pages are one: Home shows one 3D tile, forest on mint (DESIGN 2.1)
@@ -339,7 +371,7 @@ def test_pages_render_and_their_callbacks_run_on_the_real_tables():
                 real["pages.home"], module="pages.threed", path="/threed", relative_path="/threed",
                 name="3D canopy", order=25, description="3D",
             )
-            tiles = [t for t in home.page_tiles().children if t.children[0].children == "3D"]
+            tiles = [t for t in home.page_links() if t.children[0].children == "3D"]
             assert len(tiles) == 1 and tiles[0].href == "/threed" and tiles[0].className == "uw-pagetile uw-mint"
             assert tiles[0].children[0].style["background"] == C["forest-700"]
         finally:
@@ -347,16 +379,23 @@ def test_pages_render_and_their_callbacks_run_on_the_real_tables():
             dash.page_registry.update(real)
 
         assert "3D canopy · plant-days" in text(ex.layout())
+        names = list(ex.table_names(pv.export_tables()))
+        assert names[:2] == ["traits", pv.THREED_DAYS] and "detect/benchmark" in names  # main first, the rest after
+        assert "value=['W2'], id='ex-beds'" in text(ex.layout(table="detect/onsets", bed="W2"))  # a deep link picks the bed
+        assert ex.grain(pv.read_export("traits"), "traits") == "plant · run"
+        assert ex.grain(pv.read_export("detect/benchmark"), "detect/benchmark") != "plant · run"
+        cols = ex.preview("traits", ["W1"], ["thermal_"], [-10, 19], "columns")[1]
+        assert "description" in text(cols) and "Leaf temperature" in text(cols)  # the dictionary, on screen
         days = [-10, 19]
-        csv = ex.download_csv(1, pv.THREED_DAYS, ["W1", "W2", "W3"], "all", ["depth_"], days)["content"]
+        csv = ex.download_csv(1, pv.THREED_DAYS, ["W1", "W2", "W3"], ["depth_"], days)["content"]
         head = csv.splitlines()[0]
         assert head.startswith("bed,plant,treatment,date,days_since_cutoff") and "depth_leaf_area_est_pct" in head
         assert "depth_droop_index" not in head and "depth_projected_area" not in head  # the three kept traits only
         assert len(csv.splitlines()) == 1 + len(tc.plant_days())
-        tiles, _ = ex.preview(pv.THREED_DAYS, ["W1", "W2"], "all", ["depth_"], days)
+        tiles, _ = ex.preview(pv.THREED_DAYS, ["W1", "W2"], ["depth_"], days)
         n_plants = len(tc.runs()[["bed", "plant"]].drop_duplicates())
-        assert tiles[1].children[1].children == str(n_plants)  # every W1 and W2 plant of the 3D table
-        dictionary = ex.download_dictionary(1, pv.THREED_DAYS, ["W1", "W2"], "all", ["depth_"], days)["content"]
+        assert tiles[1].children[1].children[0].children == str(n_plants)  # every W1 and W2 plant of the 3D table
+        dictionary = ex.download_dictionary(1, pv.THREED_DAYS, ["W1", "W2"], ["depth_"], days)["content"]
         assert "own baseline" in dictionary
         print("pages ok")
         """
@@ -375,14 +414,72 @@ def test_profile_3d_small_multiples_are_the_kept_3d_traits():
     assert kept == ["depth_leaf_area_est", "depth_height_p75", "depth_hull_volume"]
     assert [c for tag, c, _ in pv.HEADLINES if tag == "3D"] == kept
     assert SIZE not in {c for _, c, _ in pv.HEADLINES}
-    pv._SERIES.clear()  # the series cache is keyed by id(df): start clean
-    df = traits()
-    for c in kept:
-        df[c] = df[SIZE]  # 100 on the baseline days −3 and −2, half of it on days 2 and 7 (W3 not imaged)
     for c in kept:
         assert pv.change_unit(c) == "%"  # sizes: % of the plant's own baseline
-        plant = pv.small_multiple(df, "W2", "J5", c).data[-1]
-        assert list(plant.x) == [-3, -2, 2, 7] and list(plant.y) == pytest.approx([0, 0, -50, -50])
+
+
+def test_profile_3d_charts_show_the_3d_canopy_pages_plant_day_values(threed):
+    """One plant, one number on both pages: Plant profile's 3D charts read threed_canopy.plant_days (mean of the
+    QC-pass 9–18 h runs, % of the plant's own baseline), not the 12 h / 15 h median of every run with a value. On
+    the committed tables they differed by up to 38 points (W1 J5 leaf area on day 12: +70 % against +108 %)."""
+    path = threed / "threed" / "traits_runs.parquet"
+    runs = pd.read_parquet(path)
+    day8 = (runs.bed == "W2") & (runs.plant == "J5") & (pd.to_datetime(runs.date) == pd.Timestamp("2025-09-11"))
+    runs.loc[day8 & runs.hour.isin((12, 15)), ["depth_leaf_area_est", "depth_qc_pass"]] = [100.0, False]
+    runs.loc[day8 & (runs.hour == 9), "depth_leaf_area_est"] = 40.0
+    runs.loc[day8 & (runs.hour == 18), "depth_leaf_area_est"] = 44.0
+    runs.to_parquet(path, index=False)  # day 8: the midday runs failed QC and read as if nothing happened
+    tc.clear_caches()
+    df = runs.rename(columns={"days_since_cutoff": "day"})
+    col = "depth_leaf_area_est"
+    p = tc.plant_days(beds=tc.SHOWN_BEDS).set_index(["bed", "plant", "day"])
+    s = pv.series(df, col).set_index(["bed", "plant", "day"])
+    assert s.loc[("W2", "J5", 8), "chg"] == pytest.approx(-58.0)  # (40 + 44) / 2 against its baseline of 100
+    assert s.loc[("W2", "J5", 8), col] == pytest.approx(42.0)
+    pd.testing.assert_series_equal(s["chg"], p.loc[s.index, "leaf_area_est_pct"], check_names=False)
+    plant = pv.small_multiple(df, "W2", "J5", col).data[-1]
+    assert dict(zip(plant.x, plant.y, strict=True))[8] == pytest.approx(-58.0)
+    trough = tc.windows(beds=tc.SHOWN_BEDS).set_index(["bed", "plant", "trait"]).loc[("W2", "J5", "leaf_area_est")]
+    value, n = pv.window_mean(df, "W2", "J5", col, pv.TROUGH)  # the profile's number is the 3D canopy page's trough
+    assert value == pytest.approx(trough.trough) and n == trough.n_trough and pv.TROUGH == (10, 12)
+    band = pv.small_multiple(df, "W2", "J5", col).data[1]  # the control bed's mean, over its plant-day values
+    w1 = p.loc["W1"].groupby("day")["leaf_area_est_pct"].mean()
+    assert list(band.y) == pytest.approx(list(w1.loc[list(band.x)]))
+    # a plant whose baseline runs all failed QC has values but no change: no chart, the "no scan" panel says why
+    assert pv.sensor_state(df, "W2", "D3", col)[0] == "ok" and pv.small_multiple(df, "W2", "D3", col) is None
+    assert "9–18 h" in pv.no_chart_reason(col) and "12 h and 15 h" in pv.no_chart_reason(TRAIT)
+    hover = pv.method_hover(col)
+    assert "mean of its QC-pass runs at 9, 12, 15 and 18 h, as on 3D canopy" in hover and "median" in hover
+    assert "12 h and 15 h runs that pass QC" in pv.method_hover(TRAIT)
+
+
+def test_daily_values_use_only_runs_that_pass_qc():
+    """Master-Plan 6.5: the daily value is the median of the 12 h and 15 h runs that pass QC. The tables keep the
+    values of QC-failed runs (11,200 depth and 1,051 RGB runs on the committed tables)."""
+    df = traits()
+    df["rgb_exg"], df["rgb_qc_pass"] = 0.1, True
+    failed = (df.bed == "W2") & (df.plant == "A2") & (df.date == DATES[2]) & (df.hour == 12)
+    df.loc[failed, ["rgb_exg", "rgb_qc_pass"]] = [9.0, False]
+    d = pv.daily(df, "rgb_exg").set_index(["bed", "plant", "date"])
+    assert d.loc[("W2", "A2", DATES[2]), "rgb_exg"] == pytest.approx(0.1)  # the 15 h run alone
+    assert pv.usable(df, "rgb_exg").sum() == len(df) - 1 and pv.usable(df, TRAIT).all()  # no thermal QC flag: pass
+    df.loc[(df.bed == "W2") & (df.plant == "J5"), "rgb_qc_pass"] = False
+    assert pv.sensor_state(df, "W2", "J5", "rgb_exg")[0] == "noscan"  # values, but no run passed QC
+
+
+def test_bed_map_draws_a_qc_failed_run_as_no_scan_and_says_its_method():
+    """The Bed map keeps one run per square on purpose (run by run, against the same slot's baseline); a run that
+    failed QC is "no scan", and the 3D traits say on hover that the other pages show the daily mean instead."""
+    pv._RUN_CHANGE.clear()  # cached by id(df), which a new frame may reuse
+    df = traits()
+    df["depth_qc_pass"] = True
+    df.loc[(df.bed == "W2") & (df.plant == "J5") & (df.date == DATES[0]) & (df.hour == 12), "depth_qc_pass"] = False
+    state = pv.pot_states(df, SIZE, -3, 12, "W2").set_index("plant").state
+    assert state["J5"] == "noscan" and state["A2"] == "value"  # J5's 12 h run failed QC: its value is not drawn
+    hover = pv.run_hover(TRAIT, 15)
+    assert "one 15 h run" in hover and "at 15 h (median of its 15 h runs" in hover and "daily mean" not in hover
+    leaf = pv.run_hover("depth_leaf_area_est", 12)
+    assert "Plant profile and 3D canopy show the daily mean of the QC-pass 9–18 h runs instead" in leaf
 
 
 def test_trait_pickers_offer_only_the_kept_3d_traits():
@@ -421,11 +518,9 @@ def test_3d_panels_links_readout_and_pickers_on_the_real_tables():
                      for grid in pp.multiples(df, bed, plant) for p in grid.children]
             assert [n for n in names if n in three] == three and "Projected area" not in names, names
         assert [a.children for a in pp.actions(df, "W2", "R7")][0] == "3D canopy"
-        card = pp.leaf_area_card(df, "W3", "B3", "uw-sand")
-        if "W3" not in pv.THREED_BEDS and pv.sensor_state(df, "W3", "B3", "depth_leaf_area_est")[0] == "ok":
+        if pv.sensor_state(df, "W3", "B3", "depth_leaf_area_est")[0] == "ok":
             links = {a.children: a.href for a in pp.actions(df, "W3", "B3")}
             assert links["3D canopy"] == "/threed?bed=W3&plant=B3"  # the 3D canopy page shows W3 plants alone
-            assert card.className == "uw-empty" and " only, so none for W3 B3" in card.title, card.title
 
         def find(c, id_):  # the component with this id in a layout
             if getattr(c, "id", None) == id_:
@@ -441,6 +536,20 @@ def test_3d_panels_links_readout_and_pickers_on_the_real_tables():
             options = find(page.layout(), picker).options
             depth = {o["value"] for o in options if o["value"].startswith("depth_")}
             assert depth == pv.THREED_COLUMNS, (picker, depth)  # the three kept 3D traits, no dropped ones
+
+        # Daily rhythm: QC-pass runs only; a 3D trait by treatment is W1 against W2, as on 3D canopy (W3 not pooled)
+        leaf = dr.rhythm_runs("depth_leaf_area_est", "treatment")
+        assert set(leaf.bed) == {"W1", "W2"} and leaf["depth_qc_pass"].astype(bool).all()
+        assert "W3" in set(dr.rhythm_runs("depth_leaf_area_est", "bed").bed)  # by bed, W3 is its own line
+        assert "W3" in set(dr.rhythm_runs("thermal_leaf_ref_dt", "treatment").bed)  # thermal pools W2 and W3
+        chips = lambda trait, group: [c.children for c in dr.trait_chips(trait, group)]
+        assert "W1 + W2 only" in chips("depth_leaf_area_est", "treatment")
+        assert "W1 + W2 only" not in chips("depth_leaf_area_est", "bed") + chips("thermal_leaf_ref_dt", "treatment")
+        prof, _ = dr.update_rhythm("thermal_leaf_ref_dt", "treatment")  # the daily-metric chart was removed
+        assert [a.text for a in prof.layout.annotations] == ["before", "day 0–3", "day 4–7", "day 8–12", "after"]
+        xs = [v for k, v in prof.layout.to_plotly_json().items() if k.startswith("xaxis")]
+        assert len(xs) == 5 and all(x.get("tickangle") == 0 for x in xs)  # level hour labels on every facet
+        assert [(x.get("title") or {}).get("text") for x in xs].count("h") == 1  # one unit title, not five
         print("3d ok")
         """
     )

@@ -30,7 +30,7 @@ The pipeline writes these files to `--out` (default `data/derived/threed/`):
 Runs that are already in `traits_runs.parquet` are skipped. Delete the parquet files to recompute.
 Tables are checkpointed every `--flush-every` runs.
 
-Tests (91 in `tests/threed`, including the stats tests): `.venv/Scripts/python.exe -m pytest -q tests/threed`.
+Tests (94 in `tests/threed`, including the stats tests): `.venv/Scripts/python.exe -m pytest -q tests/threed`.
 
 ## Geometry facts, checked on real data (plan section 2)
 
@@ -478,7 +478,7 @@ python -m uiwue.threed.run --data-dir data --plant-model runs/leafseg-m2f/best -
 python -m uiwue.threed.run --data-dir data --plant-model runs/leafseg-m2f/best \
     --out data/derived/threed_plantmask --diagnose W1_J5:2025-09-03:15     # figure with the mask
 python scripts/compare_plant_mask.py --new data/derived/threed_plantmask --base data/derived/threed \
-    --plants-from data/derived/threed/results/summary.md --out data/derived/threed_plantmask/compare
+    --plants-from data/derived/threed/results_28plants/summary.md --out data/derived/threed_plantmask/compare
 python scripts/plant_mask_agreement.py --masks data/derived/threed_plantmask \
     --refs data/derived/threed_plantmask/plant_refs.csv --out data/derived/threed_plantmask/compare
 ```
@@ -570,8 +570,8 @@ The batch (2026-11-15):
 
 The baseline is `data/derived/threed` (rim-span-limited fill). It was made with the same code:
 without `--plant-model` the pipeline reproduces it bit for bit (220 runs and 2,724 frames
-checked, 06, 09 and 15 h). The comparison uses the 5,970 runs of the 28 plants in `results/`
-(`scripts/compare_plant_mask.py`, `scripts/plant_mask_agreement.py`; outputs in
+checked, 06, 09 and 15 h). The comparison uses the 5,970 runs of the 28 plants in
+`results_28plants/` (`scripts/compare_plant_mask.py`, `scripts/plant_mask_agreement.py`; outputs in
 `data/derived/threed_plantmask/compare/`).
 - The raw data kept arriving during both batches. W1_B7, outside the 28 plants, has a different
   frame set in 68 runs: its RGB files were written after `data/derived/threed` processed it.
@@ -645,7 +645,7 @@ differ because other runs pass QC.
   `hull_volume` rise.
 
 **E3 onset** (days since irrigation off, `qc_pass` runs of each version; ExG matches
-`results/e3_onset.csv`):
+`results_28plants/e3_onset.csv`):
 
 | Trait | Onset ExG | Onset model | Slope ExG (%/day) | Slope model | Slope on runs passing in both: ExG / model |
 |---|---|---|---|---|---|
@@ -733,7 +733,7 @@ It is committed to git, and `uiwue.core.load_traits()` reads it.
   and four diagnostics: soil distance, overlap fraction, off-centre distance, brightness.
 - Dates run from 2025-08-24, the team scope.
 - The catalogue gives a stress direction per trait from the E3 slopes. `inclination_sd` is 0,
-  because it is below the noise floor.
+  because it was below the noise floor with 28 plants (E1 SNR 2.4).
 
 On 2026-11-14 the table had 3,645 runs from 28 plants (2025-08-24 to 09-19, all five slots),
 was 1.3 MB, and passed `python -m uiwue.core.validate`. Rerun the converter after every

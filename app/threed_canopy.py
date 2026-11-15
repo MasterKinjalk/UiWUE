@@ -587,6 +587,55 @@ def _bed_effects(placebo_key: tuple[str, int] | None, e2_key: tuple[str, int] | 
     return out
 
 
+def midday_dip() -> dict | None:
+    """The 3D team's daily-rhythm test (E4), for Daily rhythm: does drought deepen the midday dip (15 h minus 09 h)?
+
+    Read from ``derived/threed/results/e4_models.csv`` (all QC-pass runs) and ``e4_models_nodark.csv`` (dark runs
+    left out): the deficit − control slope per day of a mixed model ``response ~ day × treatment + VPD + (1 | plant)``
+    on 144 plants. {trait key: {"slope", "ci_low", "ci_high", "p", "unit", "n_plants", "nodark_slope",
+    "nodark_ci_low", "nodark_ci_high", "nodark_p"}} for the three kept traits; None without the table."""
+    folder = Path(core.DERIVED) / "threed" / "results"
+    return _midday(_file_key(folder / "e4_models.csv"), _file_key(folder / "e4_models_nodark.csv"))
+
+
+@lru_cache(maxsize=2)
+def _midday(key: tuple[str, int] | None, nodark_key: tuple[str, int] | None) -> dict | None:
+    e4 = None if key is None else _read_csv(*key)
+    if e4 is None or not {"trait", "response", "slope_interaction"} <= set(e4.columns):
+        return None
+    nodark = None if nodark_key is None else _read_csv(*nodark_key)
+    out = {}
+    for k in TRAITS:
+        r = e4[(e4["trait"] == k) & (e4["response"] == "midday_depression")]
+        if r.empty:
+            continue
+        r = r.iloc[0]
+        d = dict(
+            slope=float(r["slope_interaction"]),
+            ci_low=float(r["ci_low"]),
+            ci_high=float(r["ci_high"]),
+            p=float(r["p_value"]),
+            unit=str(r["unit"]),
+            n_plants=int(r["n_plants"]),
+            nodark_slope=np.nan,
+            nodark_ci_low=np.nan,
+            nodark_ci_high=np.nan,
+            nodark_p=np.nan,
+        )
+        if nodark is not None and "trait" in nodark:
+            n = nodark[(nodark["trait"] == k) & (nodark["response"] == "midday_depression")]
+            if len(n):
+                n = n.iloc[0]
+                d.update(
+                    nodark_slope=float(n["slope_interaction"]),
+                    nodark_ci_low=float(n["ci_low"]),
+                    nodark_ci_high=float(n["ci_high"]),
+                    nodark_p=float(n["p_value"]),
+                )
+        out[k] = d
+    return out or None
+
+
 STALE_AFTER = pd.Timedelta(minutes=10)  # a table written this much later than the onsets is newer than them
 
 
@@ -1285,9 +1334,9 @@ def rgb_frame(bed: str, plant: str, day: int, slot: int | None = None, width: in
     """The RGB frame of a run as a downscaled JPEG data URI (``width`` px wide), or None when it is not on disk.
 
     ``slot`` None takes the run drawn for that day (``cloud_days``; None when the day has no drawable cloud)
-    and the frame its cloud was built from; a given slot takes that QC-pass daytime run. Same lookup as
-    ``threed_data.rgb_thumbnail``: ``data/rgb/<bed>_<plant>/<YYYY_MM_DD>/<HH>/rgb_<frame>.jpg`` with HH the
-    folder (capture) hour, so a re-run at 13 h is found in ``13/``."""
+    and the frame its cloud was built from; a given slot takes that QC-pass daytime run. The file is
+    ``data/rgb/<bed>_<plant>/<YYYY_MM_DD>/<HH>/rgb_<frame>.jpg`` with HH the folder (capture) hour, so a
+    re-run at 13 h is found in ``13/``."""
     run = _run(bed, plant, day, slot)
     if run is None:
         return None

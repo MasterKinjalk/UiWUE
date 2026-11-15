@@ -136,24 +136,27 @@ The user acts on the Irrigation advisor:
     ones.
 - **3D.** [Kinjalk: headline number]
 - **Early warning across sensors** (robust onset, day 0 = 3 Sep):
-  - **Thermal first, and the only sensor in both stressed beds:** leaf minus
-    air temperature on **day 4** (W2 day 4, W3 day 3; day 3–5 over beds and
-    the 12 h and 15 h flyovers alone).
-  - **3D leaf area** on day 5 and **RGB greenness (NGRDI)** on day 6, W2
-    only. W3 has no depth or RGB table. Plant size alone: day 6, early AUC
-    0.51 (chance).
+  - **Thermal first, in both stressed beds:** leaf minus air temperature on
+    **day 4** (W2 day 4, W3 day 3; day 3–5 over beds and the 12 h and 15 h
+    flyovers alone).
+  - **3D leaf area** on day 5 (W2 against W1, 62 + 64 plants) and **RGB
+    greenness (NGRDI)** on day 6 (W2 only: W3 has no RGB table). 63 of the
+    72 W3 plants lost a leaf to the water-content sampling, so W3 is not
+    pooled for 3D. Plant size alone: day 6, early AUC 0.53 (chance).
   - **Against the leaf clip:** thermal leads the median clip-turgor onset by
     1 day (18 imaged deficit clip plants; 4 days in W2, 2 in W3).
-  - **Written symptoms are too sparse to time against:** 8 of 26 imaged
-    stressed plants have a note, the first on day 3, most on day 9; notes are
-    upper bounds.
+  - **Written symptoms are too coarse to time against:** 48 of 144 imaged
+    stressed plants have a note (2 of 72 in W2), the first on day 3, most on
+    day 9; notes were taken on six dates, so each is an upper bound.
 - **One thermal camera is enough** (same 18 plants, days 1–4): thermal alone
-  scores AUC 1.00 (placebo 0.58); adding RGB gives 0.90; adding depth gives
-  0.95–0.96 but the beds then already separate before the cutoff (bed
-  effect). Plant size alone: 0.37.
+  scores AUC 0.96 (placebo 0.53); adding depth gives 1.00, inside thermal's
+  interval and with no bed effect; adding RGB gives 0.90, all three 0.93.
+  Thermal alone is the cheapest setup within 0.05 of the best. Plant size
+  alone: 0.35.
 - **Recovery after re-watering** (median, 5 days on): leaf minus air
   temperature recovers 87 % (26 plants), NGRDI 69 % (9), 3D projected leaf
-  area 12 % (9). Function recovers, structure does not.
+  area 20 % and 3D leaf area 32 % (W2, 35 and 52 plants). Function recovers,
+  structure does not.
 - **Hyperspectral.** [Sam: headline number]
 
 ### Limits, and what deployment would need

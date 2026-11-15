@@ -347,18 +347,9 @@ def test_gap_chart_has_the_bands_the_interval_the_onset_and_the_plant_second():
     assert colours_in(fig) <= TOKENS | token_rgba()
 
 
-def test_onset_strip_lists_the_detect_onsets_earliest_first():
-    o = tc.onsets()
-    fig = tf.onset_figure()
-    marks = fig.data[-1]
-    assert list(marks.x) == list(o["robust_onset_day"][::-1])  # earliest at the top of the strip
-    traces = colours_in({"data": [t.to_plotly_json() for t in fig.data]})
-    assert C["teal-700"] not in traces and C["teal-700"] not in tf.SENSOR_COLOURS.values()  # teal = control here
-    flagged = [s for s, f in zip(marks.marker.symbol, o["bed_effect"][::-1], strict=True) if f]
-    assert flagged and set(flagged) == {"diamond-open"}
-    assert set(marks.marker.color) <= set(tf.SENSOR_COLOURS.values())
-    assert any(n.startswith("3D · Leaf area") for n in marks.y) and any(n.startswith("IR · ") for n in marks.y)
+def test_short_labels_for_the_onset_hover():
     assert tf.short_label("Leaf minus air temperature") == "Leaf − air temp."
+    assert tf.short_label("Projected leaf area") == "Projected area"
 
 
 # ---------------------------------------------------------------- the page as Dash drives it
@@ -528,7 +519,8 @@ def test_stage_shares_one_camera_and_the_card_reads_the_run_drawn(page):
     readouts = [c for c in card._traverse() if getattr(c, "className", None) == "td-readout"]
     chips = {r.children[0].children: "bed effect" in text(r) for r in readouts}
     effects = tc.bed_effects()
-    assert chips == {t.label: effects[k]["chip"] for k, t in tc.TRAITS.items()}
+    assert chips == {t.label: bool(page.trait_chips(k, effects)) for k, t in tc.TRAITS.items()}
+    assert f"/plant-profile?bed=W2&plant=J5&day={state['day']}" in t  # the card's links carry the day shown
     assert isinstance(side, go.Figure) and len(side.data) == 2 and side.layout.showlegend is False
     then_day = f"then · day {state['then']}".replace("-", "−")
     assert f"now · day {state['day']}" in text(key) and then_day in text(key)
@@ -547,7 +539,7 @@ def test_evidence_follows_the_selected_plant(page):
     slope_leaf, slope_height, gap_leaf, gap_height, context, name = page.show_evidence({"bed": "W1", "plant": "J5"})
     for fig in (slope_leaf, slope_height, gap_leaf, gap_height):
         assert any(t.name == "W1 J5" and t.line.color == C["navy"] for t in fig.data)
-    assert name == "W1 J5" and "control" in text(context)
+    assert name == "W1 J5" and context == []  # the treatment is in the card; only W3 gets a chip here
     tiles = page.tiles()
     h = tc.headline()
     t = text(tiles)
@@ -556,14 +548,54 @@ def test_evidence_follows_the_selected_plant(page):
         assert tf.pct(h[trait]["peak_to_trough"]["control"]["mean"]) in t
     assert tf.pct(h["leaf_area_est"]["peak_to_rewatered"]["deficit"]["mean"], 0, "") in t
     o = tc.onsets()
-    assert f"day {o.loc[o['trait'] == 'leaf_area_est', 'robust_onset_day'].iloc[0]:g}" in text(tiles[3])
+    leaf = o.loc[o["trait"] == "leaf_area_est", "robust_onset_day"].iloc[0]
+    thermal = o.loc[(o["sensor"] == "Thermal") & ~o["is_size_baseline"], "robust_onset_day"].iloc[0]
+    size = o.loc[o["is_size_baseline"], "robust_onset_day"].iloc[0]
+    first = text(tiles[3])
+    assert "First seen" in first and f"day {leaf:g}" in first and f"Size only · day {size:g}" in first  # DESIGN 7.6
+    assert page._after(leaf, thermal, "thermal") in first and page._after(5, 4, "thermal") == "1 day after thermal"
+    assert page._after(4, 4, "thermal") == "same day as thermal" and page._after(3, 5, "x") == "2 days before x"
+    for label in ("Height lost", "Leaf area lost", "After re-watering"):
+        assert label in t
     effects = tc.bed_effects()
     for tile, trait in ((tiles[0], "height_p75"), (tiles[1], "leaf_area_est")):
-        assert ("bed effect" in text(tile)) == effects[trait]["chip"]  # the chip where the bed checks flag it
+        assert ("bed effect" in text(tile)) == bool(page.trait_chips(trait, effects))
     info = tc.onsets_info()
     assert ("older table" in text(tiles[3])) == info["stale"]  # never an onset passed off as the new table's
     if info["stale"]:
         assert f"n = {info['n_deficit']} deficit and {info['n_control']} control" in text(tiles[3])
+
+
+def test_a_flagged_trait_says_bed_effect_once(page):
+    """DESIGN 7.4: a trait the bed checks flag carries the chip on every chart that uses it. When every trait on the
+    page is flagged (the committed tables: placebo or E2 flags all three), one header chip names them all: the
+    same chip on every tile, card row and chart said nothing the header does not."""
+    effects = tc.bed_effects()
+    lay = page.layout(bed="W2", plant="J5")
+    head = lay.children[0]
+    cols = [c for c in lay._traverse() if getattr(c, "className", None) == "td-trait-col"]
+    assert len(cols) == 2
+    heads = {getattr(c.children[0].children[1].children, "id", None): text(c.children[0].children[0]) for c in cols}
+    assert set(heads) == {"td-slope-leaf", "td-slope-height"}
+    chips = [c for c in head._traverse() if "uw-chip" in str(getattr(c, "className", ""))]
+    assert len(chips) <= 3  # bed effect (or 1 control bed), method, and for W3 not pooled
+    if page.every_trait_flagged(effects):
+        caveat = next(c for c in chips if c.children == "bed effect")
+        assert all(t.label in caveat.title for t in tc.TRAITS.values()) and "One control bed" in caveat.title
+        assert not any("bed effect" in h for h in heads.values())
+        assert "bed effect" not in text(page.tiles())
+    else:
+        for graph_id, trait in {"td-slope-leaf": "leaf_area_est", "td-slope-height": "height_p75"}.items():
+            assert ("bed effect" in heads[graph_id]) == effects[trait]["chip"], graph_id
+    assert effects["leaf_area_est"]["chip"]  # on the committed tables the E2 check flags leaf area (p = 0.003)
+
+
+def test_next_steps_carry_the_selection(page):
+    state = page.state_for("W2", "J5")
+    links = page.show_next(state)
+    assert [link.children for link in links] == [t for t, _, _ in page.NEXT]
+    assert all(link.href.endswith(f"?bed=W2&plant=J5&day={state['day']}") for link in links)
+    assert links[0].className == "uw-btn uw-btn-primary" and links[1].className == "uw-btn uw-btn-outline"
 
 
 def test_no_cloud_cache_shows_the_empty_state_and_the_charts_still_render(sandbox, page):
@@ -647,7 +679,10 @@ def test_page_renders_through_flask_and_every_first_callback_runs(dash_app):
     client = dash_app.server.test_client()
     assert client.get("/threed").status_code == 200
     found, statuses, deps = render(client, "/threed")
-    assert {"td-then", "td-now", "td-strip", "td-card", "td-side", "td-slope-leaf", "td-gap-height"} <= set(found)
+    assert {"td-then", "td-now", "td-strip", "td-card", "td-side", "td-slope-leaf", "td-gap-height", "td-steps"} <= set(
+        found
+    )
+    assert "td-onset" not in found  # the onset strip is the tile now (Early warning has the full table)
     assert statuses and set(statuses.values()) == {200}, statuses
     assert any("td-then.figure" in o and "td-now.figure" in o for o in statuses)
     client_side = {d["output"] for d in deps if d.get("clientside_function")}
@@ -685,7 +720,7 @@ def test_w3_is_in_the_picker_with_its_own_chips(page):
     lay = ids(page.layout(bed="W3", plant=plant))
     assert lay["td-state"].data["bed"] == "W3" and [o["value"] for o in lay["td-bed"].options] == ["W1", "W2", "W3"]
     chips = text(lay["td-context"])
-    assert "water deficit" in chips and "not pooled" in chips and "left out of every bed number" in chips
+    assert "not pooled" in chips and "left out of every bed number" in chips
     assert "not pooled" not in text(ids(page.layout(bed="W2", plant="J5"))["td-context"])
     out = page.show_evidence({"bed": "W3", "plant": plant})
     assert out[-1] == f"W3 {plant}" and "not pooled" in text(out[-2])

@@ -1,21 +1,26 @@
-"""Methods & limits: how detection results were checked, and what they cannot tell you. (Jack)"""
+"""Methods & limits: how detection results were checked, and what they cannot tell you. (Jack)
+
+The one page where sentences are on screen: every limit is one short entry, its consequence in plain words, under an
+anchor (``/methods#<anchor>``, see ``_jack_common.METHODS_ANCHORS``) that chips and hovers on other pages link to.
+"""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import components
 import pandas as pd
 from _jack_common import (
-    GROUPS,
-    ONE_CONTROL_BED,
     C,
     chip,
+    day_text,
     fmt,
     graph,
     header,
     kept_signal,
     load_result,
+    next_steps,
     not_available,
     panel,
     readout,
@@ -24,8 +29,9 @@ from _jack_common import (
     run_info,
     run_time,
     segmented,
+    stat,
 )
-from dash import Input, Output, callback, html
+from dash import Input, Output, callback, clientside_callback, dcc, html
 
 from uiwue import core
 from uiwue.detect import figures
@@ -33,34 +39,50 @@ from uiwue.detect import figures
 QUESTION = "How were the detection results checked, and what can they not tell you?"
 register_page(__name__, path="/methods", name="Methods & limits", order=90, description=QUESTION)
 
+GROUPS = {"W2": "W2", "W3": "W3", "all": "W2 + W3"}
+
+# How results were checked: (anchor or None, title, what it means)
 RULES = [
-    ("unit = plant", "Models are trained and tested leave-one-plant-out; intervals resample plants, never runs."),
-    ("no date · bed · position", "Models never see date, bed, hour or grid position."),
-    ("own baseline", "Every trait is the change from the plant's own median at the same slot over 30 Aug – 2 Sep."),
-    ("size baseline", "Every result sits beside projected leaf area alone; stressed plants stop growing."),
-    ("placebo first", "The same AUC over 24–29 Aug, all plants watered. Separation there = bed effect, not ranked."),
+    ("plant-unit", "One plant, one vote", "Models are tested on plants they never saw; intervals resample plants."),
+    ("blind-models", "No date, bed or position", "Models never see the date, bed, hour or grid position."),
+    ("own-baseline", "Own baseline", "Every value is the change from the plant's own 30 Aug – 2 Sep median."),
+    ("size-baseline", "Size beside every result", "Plant size alone is shown next to each result: the floor."),
     (
-        "pre-cutoff null",
+        "watered-check",
+        "Watered-day check first",
+        "The same score on 24–29 Aug, all watered; separation there is flagged.",
+    ),
+    ("same-plants", "Same plants", "Sensor setups are compared on the 18 plants that have all three sensors."),
+    (
+        "fit-in-fold",
+        "Fit inside the fold",
+        "Scaling and fitting use training plants only; a missing sensor is never filled.",
+    ),
+]
+# Words used on the detect pages, in plain terms; the technical name in brackets
+WORDS = [
+    (
+        "detection-score",
+        "Detection score (AUC)",
+        "How well a signal separates stressed from watered plants: 0.5 = chance, 1 = perfect.",
+    ),
+    ("onset", "Onset", "First day the score beats the largest score of any watered day, that day and the next."),
+    ("contract-rule", "Contract rule", "The plan's simpler onset: the 95 % lower bound above 0.70 two days running."),
+    ("early-score", "Early score", "The score on each plant's mean over days 1–4."),
+    ("lead-time", "Lead time", "Days between a signal's onset and the leaf clip's turgor onset (the ground truth)."),
+    (
+        "recovery",
+        "Loss regained",
         (
-            "The daily AUC on every watered day (24 Aug – day 0). The robust onset must clear the largest of them, "
-            "and a rule that fires on a watered day is flagged 'day effect'."
+            "Share of the change undone after re-watering (Early warning): 100 % = back to the plant's own "
+            "baseline. 3D canopy reads the same days against each plant's peak."
         ),
     ),
-    ("fit inside fold", "Imputation, scaling and fitting use training plants only; a missing sensor is never imputed."),
-    ("same plants", "Sensor setups are compared on the plant-days that have all sensors (W1 + W2, 18 plants)."),
+    ("placebo", "Placebo", "The detection score on watered days (24–29 Aug), where it should be 0.5."),
+    ("lockbox", "Lock-box", "Plants set aside before any experiment, scored once at the end."),
+    ("ngrdi", "Green–red index (NGRDI)", "(green − red) / (green + red) from the RGB camera: falls as leaves pale."),
+    ("p75", "Height (p75)", "The height below which 75 % of the plant's 3D points lie."),
 ]
-DEFINITIONS = [
-    ("daily value", "Median of the 12 h and 15 h runs that pass the module's QC."),
-    ("AUC", "P(a deficit plant is further in the stress direction than a control plant). 0.5 chance, 1 perfect."),
-    ("rule onset", "First day (day 0 = 3 Sep 2025) whose 95 % lower bound is above 0.70, that day and the next."),
-    ("robust onset", "Rule onset with the bar raised to the largest watered-day AUC (0.5 + its largest distance)."),
-    ("early AUC", "AUC on each plant's mean over days 1–4."),
-    ("lead time", "Median clip-turgor onset of the imaged deficit clip plants minus the robust onset."),
-    ("bed effect", "Placebo AUC whose interval excludes 0.5 and which is at least 0.70 (or at most 0.30)."),
-    ("recovery", "(after − end) / (before − end): 1 = back to its own pre-cutoff value, 0 = none."),
-]
-
-
 SENSOR_SHORT = {"Thermal": "thermal", "Depth": "3D", "RGB": "RGB", "Hyperspectral": "HSI"}  # sensor -> scope label
 PREFIX = {"thermal": "thermal", "3D": "depth", "RGB": "rgb", "HSI": "hsi"}
 
@@ -115,8 +137,15 @@ def _w3(onsets, tables) -> tuple[str, str, bool]:
     sensors = [SENSOR_SHORT[s] for s in SENSOR_SHORT if s in set(onsets["sensor"])]
     w3 = {SENSOR_SHORT.get(s, s) for s in onsets.loc[(onsets["group"] == "W3") & (onsets["n_deficit"] > 0), "sensor"]}
     have, rest = [s for s in sensors if s in w3], [s for s in sensors if s not in w3]
+    # most W3 plants lost a leaf to the water-content sampling: their 3D canopy shrinks for that reason too
+    cut = (
+        " W3's 3D results mix drought and sampling: most W3 plants had a leaf cut for relative water content on one "
+        "of days 1–12 (3D canopy compares W1 with W2 only)."
+        if "3D" in have
+        else ""
+    )
     if not rest:
-        return " · ".join(have), "W3 deficit plants are in every sensor's detection results.", False
+        return " · ".join(have), "W3 deficit plants are in every sensor's detection results." + cut, bool(cut)
     run = f"the detect run of {when}" if (when := run_time(run_info())) else "the detect run"
     why = []
     for s in rest:
@@ -127,7 +156,30 @@ def _w3(onsets, tables) -> tuple[str, str, bool]:
         else:
             why.append(f"{s}: no W3 table")
     tip = f"W3 results: {', '.join(have) or 'none'}. " + "; ".join(why) + ". Those results are W2 only, not replicated."
-    return (" · ".join(have) + " only") if have else "none", tip, True
+    return (" · ".join(have) + " only") if have else "none", tip + cut, True
+
+
+def plants(bed, *ids):
+    """'W2 A6 · A8': the bed once, then each plant's ID as a link to its profile (components.plant_link)."""
+    out = [f"{bed} "]
+    for i, p in enumerate(ids):
+        out += [" · "] if i else []
+        out.append(components.plant_link(bed, p, text=p))
+    return out
+
+
+def entry(anchor, title, value, text, caveat=False, hover=None, extra=()):
+    """One limit or term: its title and value, then what it means in one short sentence. The title links to the
+    entry itself, so its address can be copied."""
+    head = [html.B(html.A(title, href=f"#{anchor}", className="dt-self") if anchor else title)]
+    if value:
+        head.append(html.Span(value, className="dt-entry-value"))
+    return html.Li(
+        [html.Div(head, className="dt-entry-head"), html.Span(text, className="dt-entry-text"), *extra],
+        id=anchor,
+        title=hover,
+        className="dt-entry uw-sand" if caveat else "dt-entry",
+    )
 
 
 def _limits(tables=None):
@@ -141,106 +193,186 @@ def _limits(tables=None):
         r = truth[truth["signal"] == "thermal_leaf_air_dt"]
         rho = r.iloc[0] if len(r) else None
     sym = onsets[onsets["group"] == "all"].iloc[0] if onsets is not None and "n_symptom" in onsets else None
-    w3, w3_tip, w3_caveat = _w3(onsets, tables)
+    rgb = None
+    if onsets is not None:
+        r = onsets[(onsets["group"] == "W2") & (onsets["sensor"] == "RGB") & (onsets["n_deficit"] > 0)]
+        rgb = r.iloc[0] if len(r) else None
+    w3, w3_tip, _ = _w3(onsets, tables)
     items = [
-        ("One control bed", "W1", ONE_CONTROL_BED, True),
-        (
+        entry(
+            "one-control-bed",
+            "One control bed",
+            "W1",
+            "Bed and treatment cannot be separated: a score of 1.00 means the beds differ that day, not certainty.",
+            True,
+            "Intervals resample plants, but plants in a bed share the day's light and air, so the intervals are too "
+            "narrow. The watered-day checks test the beds before the cut.",
+        ),
+        entry(
+            "bed-effect",
             "Beds differ on watered days",
-            f"AUC {fmt(th['null_auc_max'])}" if th is not None else "–",
-            (
-                "Leaf temperature already separates the beds on 2–3 Sep, before any plant was short of water "
-                "(sun, doors, pots). Hence the robust onset; the contract rule's day 2 is not used."
-            ),
+            f"score {fmt(th['null_auc_max'])}" if th is not None else "–",
+            "Leaf temperature already separates the beds on 2–3 Sep. Onsets must beat that, and signals that "
+            "separate the beds when all were watered are flagged and not ranked.",
+            True,
+            "Sun, doors and pots differ by bed. 'Bed effect': the placebo score's interval excludes 0.5 and is at "
+            "least 0.70 (or at most 0.30). 'Day effect': the contract rule fires on a watered day.",
+        ),
+        entry(
+            "w3-sampled",
+            "W3 leaves sampled",
+            w3,
+            "Most W3 plants lost a leaf for water content, so their 3D canopy loss mixes drought and sampling. Pages "
+            "default to W2 against W1.",
+            True,
+            w3_tip,
+        ),
+        entry(
+            "small-rgb",
+            "Few RGB plants",
+            f"{int(rgb['n_deficit'])} · {int(rgb['n_control'])} plants" if rgb is not None else "–",
+            "RGB and the same-plants comparison rest on 18 plants: wide intervals, one plant can move a score.",
+            True,
+            "RGB was imaged on W1 and W2 only; W3 has no RGB.",
+        ),
+        entry(
+            "symptom-notes",
+            "Symptom notes",
+            f"{int(sym['n_symptom'])} / {int(sym['n_imaged'])} plants" if sym is not None else "–",
+            "Written on six dates only, and most plants have none: too coarse for a lead time, so the leaf clip is "
+            "the ground truth.",
+            True,
+            "Notes on 2, 6, 8, 10, 12 and 15 Sep: each date is an upper bound.",
+        ),
+        entry(
+            "hyperspectral",
+            "Hyperspectral",
+            "no table",
+            "No hyperspectral trait table yet, so nothing is claimed for it outside the fusion models.",
             True,
         ),
-        ("W3", w3, w3_tip, w3_caveat),
-        ("Hyperspectral", "no table", "No hyperspectral trait table in derived/ yet; nothing is claimed for it.", True),
-        (
-            "Symptom dates",
-            f"{int(sym['n_symptom'])} / {int(sym['n_imaged'])} plants" if sym is not None else "upper bound",
-            (
-                "Notes on 2, 6, 8, 10, 12, 15 Sep only, so a date is an upper bound; most imaged deficit plants "
-                "have no note. Lead times use the leaf clip instead."
-            ),
-            True,
-        ),
-        (
-            "Clip vs thermal",
+        entry(
+            "clip-vs-thermal",
+            "Leaf clip vs thermal",
             f"ρ {fmt(rho['rho_within_day_deficit'])}" if rho is not None else "–",
+            "Within a day the two rank deficit plants only weakly alike: the lead time compares onset days, not values.",
+            False,
             "Within-day Spearman of leaf − air with the clip shift, deficit plants only"
             + (
                 f" ({int(rho['n_plants_deficit'])} plants); {fmt(rho['rho_within_day'])} with the 3 clip controls."
                 if rho is not None
                 else "."
             ),
-            False,
         ),
-        (
-            "Air sensors at 15 h",
+        entry(
+            "missing-runs",
+            "Missing runs",
+            "~6 %",
+            "5 Sep 06 h and 22 Sep 12–18 h are missing for all cameras; 3D ends 19 Sep 15 h, so 3D recovery is read "
+            "on 18–19 Sep.",
+        ),
+        entry(
+            "microclimate",
+            "Microclimate",
             "+2.9 °C",
-            "W3-end sensor reads warmer; the W1-end sensor is used for every bed.",
-            False,
+            "The W3-end air sensor reads warmer at 15 h, so the W1-end sensor serves every bed. Doors were closed "
+            "around 2 Sep, inside the baseline.",
         ),
-        ("Doors closed", "~2 Sep", "Inside the baseline window; changed the microclimate for every bed.", False),
-        ("Aphids", "W2 A6 · A8", "Black bean aphid noted with wilting.", False),
-        ("Missing runs", "~6 %", "5 Sep 06 h and 22 Sep 12–18 h for all cameras; depth from 19 Sep 15 h.", False),
+        entry("aphids", "Aphids", plants("W2", "A6", "A8"), "Black bean aphid noted with wilting on two W2 plants."),
     ]
-    rows = []
-    for key, val, tip, caveat in items:
+    return html.Ul(items, className="dt-entries")
+
+
+LOCKBOX_MODELS = (  # model in the table -> row label
+    ("fusion_v2", "Fusion v2"),
+    ("fusion_v1dev", "Fusion v1"),
+    ("logistic", "Benchmark"),
+    ("size_only", "Size only"),
+)
+
+
+def _lockbox():
+    """The fusion lock-box: each model's early score and rule onset on the held-out plants, from the table."""
+    lb = load_result("fusion_lockbox_benchmark")
+    if lb is None or lb.empty:
+        return _lockbox_entry(None, not_available("Fusion lock-box"))
+    lb = lb[(lb["group"] == "all") & (lb["plants"] == "all")] if "plants" in lb.columns else lb[lb["group"] == "all"]
+    rows, v2_day = [], None
+    for model, label in LOCKBOX_MODELS:
+        r = lb[(lb["model"] == model) & lb["sensors"].isin(["thermal", "size"])]
+        if r.empty:
+            continue
+        r = r.iloc[0]
+        day0 = pd.notna(r["onset_day"]) and r["onset_day"] <= 0
+        if model == "fusion_v2":
+            v2_day = r["onset_day"]
+        own = r.get("placebo_auc_main")
+        tip = (
+            f"{label}: early score {fmt(r['early_auc'])} (95 % CI {fmt(r['early_ci_low'])}–{fmt(r['early_ci_high'])}), "
+            f"rule onset {day_text(r['onset_day'])}"
+            + (f", own score on 24–29 Aug {fmt(own)}" if pd.notna(own) else "")
+            + f"; {int(r['n_deficit'])} deficit · {int(r['n_control'])} control plants."
+        )
         rows.append(
-            html.Div(
+            html.Tr(
                 [
-                    html.Span(key, style={"flex": "1 1 auto", "fontWeight": 700}),
-                    html.Span(
-                        val,
-                        style={
-                            "fontWeight": 700,
-                            "fontVariantNumeric": "tabular-nums",
-                            "color": C["amber-900"] if caveat else C["ink-display"],
-                        },
+                    html.Td(label),
+                    html.Td(fmt(r["early_auc"]), className="num"),
+                    html.Td(
+                        day_text(r["onset_day"]),
+                        className="num",
+                        style={"color": C["amber-900"], "fontWeight": 700} if day0 else None,
                     ),
                 ],
                 title=tip,
-                className="uw-sand" if caveat else "uw-gray",
-                style={
-                    "display": "flex",
-                    "alignItems": "center",
-                    "gap": "10px",
-                    "minHeight": "36px",
-                    "padding": "0 12px",
-                    "borderRadius": "8px",
-                },
             )
         )
-    return html.Div(rows, style={"display": "flex", "flexDirection": "column", "gap": "6px"})
+    if not rows:
+        return _lockbox_entry(None, not_available("Fusion lock-box"))
+    tbl = html.Div(
+        html.Table(
+            [
+                html.Thead(
+                    html.Tr(
+                        [html.Th("Model"), html.Th("Score", className="num"), html.Th("Rule onset", className="num")]
+                    )
+                ),
+                html.Tbody(rows),
+            ],
+            className="uw-table",
+        ),
+        className="uw-scroll",
+        style={"paddingTop": "8px"},
+    )
+    return _lockbox_entry(v2_day, tbl)
+
+
+def _lockbox_entry(v2_day, body):
+    """The lock-box limit; its anchor stays when the table is missing (the empty state in its place)."""
+    return entry(
+        "fusion-lockbox",
+        "Fusion on held-out plants",
+        day_text(v2_day) if v2_day is not None else "–",
+        "On 45 plants kept out of every experiment, fusion v2 keeps its score but passes the rule on day 0, before "
+        "any deficit: a bed difference, not detection.",
+        True,
+        "45 plants (15 per bed) set aside before any fusion v2 experiment and scored once after the design was frozen. "
+        "One thermal camera; early score over days 1–4; onset is the contract rule.",
+        extra=[body],
+    )
 
 
 def _split():
-    card = lambda kicker, bed, ctl, tint: html.Div(
-        [
-            html.Span(kicker, className="uw-kicker", style={"color": C["slate-600"]}),
-            html.Div(bed, className="uw-readout"),
-            html.Span(f"controls {ctl}", style={"fontSize": "13px", "color": C["slate-600"]}),
-        ],
-        className=f"uw-tile uw-{tint}",
-        style={"flex": "1 1 0", "display": "flex", "flexDirection": "column", "gap": "4px"},
-    )
+    """Where thresholds were set and where they were checked: two stat tiles, the control plants as links."""
     return html.Div(
         [
-            html.Div(
-                [
-                    card("tune", "W2", "A2 · J5 · R7 · B3", "gray"),
-                    card("check, unchanged", "W3", "A8 · R1 · Q6", "mint"),
-                ],
-                style={"display": "flex", "gap": "10px", "flexWrap": "wrap"},
-                title="Thresholds and settings are picked on W2 and checked unchanged on W3; onsets are reported "
-                "for W2 and W3 apart.",
-            ),
-            html.Div(
-                [chip(k, v, "rule") for k, v in RULES], style={"display": "flex", "flexWrap": "wrap", "gap": "6px"}
-            ),
+            stat("Tune", "W2", sub=["controls ", *plants("W1", "A2", "J5", "R7", "B3")], tint="gray"),
+            stat("Check, unchanged", "W3", sub=["controls ", *plants("W1", "A8", "R1", "Q6")], tint="mint"),
         ],
-        style={"display": "flex", "flexDirection": "column", "gap": "12px"},
+        className="uw-tiles",
+        style={"paddingTop": "4px"},
+        title="Thresholds and settings are picked on W2 and checked unchanged on W3; onsets are reported for W2 and "
+        "W3 apart.",
     )
 
 
@@ -261,74 +393,139 @@ def _run_info():
     ]
 
 
+JUMP = (("limits", "Limits"), ("checks", "Checks"), ("words", "Words"), ("scope", "Scope"))
+
+
 def layout(**_):
     pb, tables = load_result("placebo"), _table_plants()
     head = header("Methods & limits", QUESTION, *_run_info())
     placebo = (
         not_available("Placebo")
         if pb is None or pb.empty
-        else graph("ml-placebo", "Placebo AUC per trait, 24 to 29 Aug, all plants watered")
+        else graph("ml-placebo", "Detection score per trait on 24 to 29 Aug, all plants watered")
     )
-    grid = html.Div(
+    checks = html.Section(
         [
-            panel(
-                "Placebo",
-                placebo,
-                hover="AUC before any plant was stressed. Sand = beds differ (≤ 0.30 or ≥ 0.70). Circle fine, "
-                "triangle day effect (rule fires on a watered day), diamond bed effect.",
-                extra=[segmented("ml-group", GROUPS, "all", "Deficit beds")] if pb is not None else [],
-            ),
-            panel("Split", _split()),
-            panel("Scope", _scope(tables)),
-            panel("Known limits", _limits(tables)),
-            panel(
-                "Definitions",
-                html.Div(
-                    [chip(k, v, "rule") for k, v in DEFINITIONS],
-                    style={"display": "flex", "flexWrap": "wrap", "gap": "6px"},
-                ),
-            ),
-            panel(
-                "Data",
-                html.Div(
-                    [
-                        html.A(
-                            "ADA 2025 · osnaData",
-                            href="https://doi.org/10.26249/FK2/DMDLTE",
-                            title="Powell, Franz, Smith & Ihorst (2026), doi:10.26249/FK2/DMDLTE, CC BY 4.0",
-                        ),
-                        html.A(
-                            "Companion code",
-                            href="https://github.com/pippowell/ada2025",
-                            title="github.com/pippowell/ada2025 (MIT)",
-                        ),
-                    ],
-                    style={"display": "flex", "gap": "16px", "flexWrap": "wrap"},
-                ),
+            html.Div(html.H2("Checks"), className="uw-panel-head"),
+            html.Ul([entry(a, t, "", x) for a, t, x in RULES], className="dt-entries"),
+            _split(),
+        ],
+        id="checks",
+        className="uw-panel",
+    )
+    words = html.Section(
+        [
+            html.Div(html.H2("Words"), className="uw-panel-head"),
+            html.Ul([entry(a, t, "", x) for a, t, x in WORDS], className="dt-entries"),
+        ],
+        id="words",
+        className="uw-panel",
+    )
+    limits = html.Section(
+        [
+            html.Div(html.H2("Limits"), className="uw-panel-head"),
+            _limits(tables),
+            html.Ul(_lockbox(), className="dt-entries", style={"paddingTop": "8px"}),
+        ],
+        id="limits",
+        className="uw-panel",
+    )
+    watered = panel(
+        "Watered-day check",
+        placebo,
+        hover="Each trait's detection score on 24–29 Aug, before any plant was short of water: it should sit near "
+        "0.5. Sand: the beds already differ (≤ 0.30 or ≥ 0.70). Circle fine, triangle day effect, diamond bed effect.",
+        extra=[segmented("ml-group", GROUPS, "W2", "Deficit bed")] if pb is not None else [],
+    )
+    scope = html.Section(
+        [
+            html.Div(html.H2("Scope"), className="uw-panel-head"),
+            _scope(tables),
+            html.Div(
+                [
+                    html.A(
+                        "ADA 2025 · osnaData",
+                        href="https://doi.org/10.26249/FK2/DMDLTE",
+                        title="Powell, Franz, Smith & Ihorst (2026), doi:10.26249/FK2/DMDLTE, CC BY 4.0",
+                    ),
+                    html.A(
+                        "Companion code",
+                        href="https://github.com/pippowell/ada2025",
+                        title="github.com/pippowell/ada2025 (MIT)",
+                    ),
+                ],
+                style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "paddingTop": "16px"},
             ),
         ],
-        style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(min(400px, 100%), 1fr))",
-            "gap": "16px",
-        },
+        id="scope",
+        className="uw-panel",
     )
-    return html.Div([head, grid])
+    jump = html.Nav(
+        [html.A(t, href=f"#{a}", className="uw-btn uw-btn-outline") for a, t in JUMP],
+        className="dt-jump",
+        **{"aria-label": "On this page"},
+    )
+    return html.Div(
+        [
+            head,
+            dcc.Store(id="ml-hash", data=1),
+            jump,
+            html.Div(
+                [
+                    limits,
+                    html.Div([watered, checks], style={"display": "flex", "flexDirection": "column", "gap": "16px"}),
+                    words,
+                    scope,
+                ],
+                className="dt-groups",
+            ),
+            next_steps(
+                ("Home", "/", "the experiment and its findings"),
+                ("Early warning", "/early-warning", "which sensor warns first, and by how many days"),
+            ),
+        ]
+    )
 
 
 @callback(Output("ml-placebo", "figure"), Input("ml-group", "value"))
 def _placebo(group):
-    """Placebo AUC per kept trait (load_result drops the noisy 3D traits), the size-only baseline tagged
-    'size' (DESIGN 7.6); automargin keeps the names whole."""
+    """Placebo score per kept trait (load_result drops the noisy 3D traits), the size-only baseline named
+    'Size only' (DESIGN 7.6); automargin keeps the names whole."""
     pb, onsets = load_result("placebo"), load_result("onsets")
     if pb is None:
         return figures.empty_figure("No placebo results")
     if onsets is not None and "is_size_baseline" in onsets:
         size = set(onsets.loc[onsets["is_size_baseline"].fillna(False).astype(bool), "signal"])
-        pb = pb.assign(label=pb["label"].where(~pb["signal"].isin(size), "size · " + pb["label"].astype(str)))
+        pb = pb.assign(label=pb["label"].where(~pb["signal"].isin(size), components.SIZE_ONLY))
     fig = figures.placebo_figure(pb, group)
     fig.update_yaxes(automargin=True)
     return fig
+
+
+# an entry opened from another page's chip (/methods#bed-effect) scrolls into view and is outlined once rendered
+clientside_callback(
+    """
+    function(_) {
+        var mark = function(n) {
+            var h = decodeURIComponent((window.location.hash || '').slice(1));
+            if (!h) { return; }
+            var el = document.getElementById(h);
+            if (!el) { if (n > 0) { setTimeout(function() { mark(n - 1); }, 200); } return; }
+            document.querySelectorAll('.dt-hit').forEach(function(e) { e.classList.remove('dt-hit'); });
+            if (el.classList.contains('dt-entry')) { el.classList.add('dt-hit'); }
+            el.scrollIntoView({block: 'start'});
+        };
+        if (!window._dtHash) {
+            window._dtHash = true;
+            window.addEventListener('hashchange', function() { mark(0); });
+        }
+        setTimeout(function() { mark(20); }, 300);
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("ml-hash", "data"),
+    Input("ml-hash", "data"),
+)
 
 
 if __name__ == "__main__":

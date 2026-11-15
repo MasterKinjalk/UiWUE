@@ -1,12 +1,14 @@
 """Bed map: the three beds as they stand, one pot per grid cell, coloured by change from each plant's baseline.
 
-Click a pot to see its reading and open its profile. Deep link: ``/bed-map?bed=W2&plant=R7`` preselects a pot
-(``&trait=<column>`` picks the signal).
+Top: one tile per bed (its median change that day) and the plants to look at; then the day strip and the beds;
+the selected plant on the right, with its profile and 3D canopy one click away. Deep link:
+``/bed-map?bed=W2&plant=R7&day=9`` preselects a pot and a day (``&trait=<column>`` picks the signal).
 """
 
 import dash
+import pandas as pd
 import profile_views as pv
-from components import C, chip, header, placebo_chip, readout, segmented, select
+from components import C, header, next_links, next_steps, page_href, plant_link, readout, select, stat
 from dash import Input, Output, State, callback, ctx, dcc, html, no_update
 
 from uiwue.core import SLOTS
@@ -22,7 +24,9 @@ def _coverage():
 
 
 COVERAGE = _coverage()
-QUESTION = "Where in the beds does stress show up, run by run?" + (f" {COVERAGE}." if COVERAGE else "")
+QUESTION = "Where in the beds does stress show, on which day, and which plants should I look at?" + (
+    f" {COVERAGE}." if COVERAGE else ""
+)
 dash.register_page(__name__, path="/bed-map", name="Bed map", order=21, description=QUESTION)
 
 DEFAULT_TRAIT, DEFAULT_HOUR, DEFAULT_DAY = "thermal_leaf_ref_dt", 15, 9
@@ -34,6 +38,7 @@ TINT = {
 DAY_MARKS = {d: str(d).replace("-", "−") for d in (-10, -5, 0, 5, 10, 12, 15, 19)}
 ON = {"background": C["navy"], "borderColor": C["navy"], "color": C["surface"]}
 OFF = {"background": C["surface-2"], "borderColor": C["gray-500"], "color": C["ink"]}
+LOOK = 3  # plants to look at
 
 
 def bed_block(bed):
@@ -44,18 +49,8 @@ def bed_block(bed):
                 [
                     html.Span(bed, className="uw-section"),
                     html.Span(kicker, className="uw-kicker", style={"color": C[accent]}),
-                    html.Span(
-                        id=f"bm-count-{bed}", style={"fontSize": "13px", "color": C["ink"], "marginLeft": "auto"}
-                    ),
                 ],
-                className=f"uw-{tint}",
-                style={
-                    "display": "flex",
-                    "alignItems": "baseline",
-                    "gap": "8px",
-                    "padding": "8px 12px",
-                    "borderRadius": "8px",
-                },
+                className=f"pl-bed-head uw-{tint}",
             ),
             html.Div(
                 dcc.Graph(id=f"bm-{bed}", config={"displayModeBar": False}, style={"height": "560px"}),
@@ -77,7 +72,7 @@ def mark_legend():
     return [html.Span([pv.empty_mark(k), t], title=h) for k, t, h in items]
 
 
-def layout(bed=None, plant=None, trait=None, **_):
+def layout(bed=None, plant=None, trait=None, day=None, **_):
     df = pv.traits()
     head = header("Bed map", QUESTION)
     if df is None:
@@ -86,18 +81,14 @@ def layout(bed=None, plant=None, trait=None, **_):
     values = [o["value"] for o in options]
     trait = trait if trait in values else DEFAULT_TRAIT if DEFAULT_TRAIT in values else values[0]
     sel = {"bed": bed, "plant": plant} if bed in pv.BEDS and plant in pv.all_plants() else {"bed": "W2", "plant": "R7"}
+    day = pv.day_arg(day)
     head = header(
         "Bed map",
         QUESTION,
         select("bm-trait", {o["value"]: o["label"] for o in options}, trait, "Signal"),
-        segmented("bm-hour", {h: f"{h:02d} h" for h in SLOTS}, DEFAULT_HOUR, "Run"),
-        html.Button(
-            "Imaged only",
-            id="bm-imaged",
-            className="uw-seg-btn",
-            style=OFF,
-            **{"aria-pressed": "false"},
-            title="hide the pots no sensor imaged",
+        html.Div(
+            select("bm-hour", {h: f"{h:02d} h" for h in SLOTS}, DEFAULT_HOUR, "Run"),
+            title="flyover slot: each square is one run at this hour",
         ),
     )
     day_row = html.Div(
@@ -105,7 +96,16 @@ def layout(bed=None, plant=None, trait=None, **_):
             html.Div(id="bm-daytext", className="uw-day", **{"aria-live": "polite"}),
             html.Button("Play", id="bm-play", className="uw-seg-btn", style=OFF, **{"aria-pressed": "false"}),
             html.Div(
-                dcc.Slider(-10, 19, 1, value=DEFAULT_DAY, marks=DAY_MARKS, id="bm-day", included=False),
+                dcc.Slider(
+                    -10,
+                    19,
+                    1,
+                    value=DEFAULT_DAY if day is None else day,
+                    marks=DAY_MARKS,
+                    id="bm-day",
+                    included=False,
+                    allow_direct_input=False,  # the day chip beside it shows the day
+                ),
                 style={"flex": "1 1 320px", "minWidth": "260px"},
                 title="day since irrigation off (day 0 = 3 Sep 2025)",
             ),
@@ -116,43 +116,36 @@ def layout(bed=None, plant=None, trait=None, **_):
         [
             head,
             dcc.Store(id="bm-sel", data=sel),
-            dcc.Store(id="bm-on", data=False),
             dcc.Interval(id="bm-tick", interval=900, disabled=True),
             html.Div(
                 [
-                    html.Main(
+                    html.Div(id="bm-tiles", className="uw-tiles pl-tiles pl-tiles-3"),
+                    html.Div(
                         [
-                            day_row,
-                            html.Div(
-                                html.Div(
-                                    [bed_block(b) for b in pv.BEDS],
-                                    style={"display": "flex", "gap": "16px", "width": "max-content"},
-                                ),
-                                className="uw-scroll uw-panel",
+                            html.Main(
+                                [
+                                    day_row,
+                                    html.Div(
+                                        html.Div(
+                                            [bed_block(b) for b in pv.BEDS],
+                                            style={"display": "flex", "gap": "16px", "width": "max-content"},
+                                        ),
+                                        className="uw-scroll uw-panel",
+                                    ),
+                                    html.Div(id="bm-legend", className="uw-legend"),
+                                ],
+                                className="uw-main",
                             ),
-                            html.Div(id="bm-legend", className="uw-legend"),
+                            html.Aside(id="bm-side", className="uw-side", **{"aria-label": "Selected plant"}),
                         ],
-                        className="uw-main",
+                        className="uw-row",
                     ),
-                    html.Aside(id="bm-side", className="uw-side", **{"aria-label": "Selected plant"}),
                 ],
-                className="uw-row",
+                className="pl-stack",
             ),
+            next_steps(id="bm-next"),
         ]
     )
-
-
-@callback(
-    Output("bm-on", "data"),
-    Output("bm-imaged", "aria-pressed"),
-    Output("bm-imaged", "style"),
-    Input("bm-imaged", "n_clicks"),
-    State("bm-on", "data"),
-    prevent_initial_call=True,
-)
-def toggle_imaged(_, on):
-    on = not on
-    return on, "true" if on else "false", ON if on else OFF
 
 
 @callback(
@@ -195,37 +188,75 @@ def pick_pot(*clicks):
     return {"bed": trig.removeprefix("bm-"), "plant": custom[0]}
 
 
+def stressed_first(column):
+    """Sort key sign: amber (more stressed) is the high end of the change, or the low end for a trait that falls."""
+    return -1 if pv.direction_of(column) < 0 and pv.mode_of(column) != "raw" else 1
+
+
+def bed_tiles(df, trait, day, hour):
+    """One tile per bed (the median change of its plants this run) and the plants to look at (most stressed)."""
+    unit = pv.change_unit(trait)
+    signed = pv.mode_of(trait) != "raw"
+    digits = 0 if unit == "%" else 1
+    out, values = [], []
+    for b in pv.BEDS:
+        pots = pv.pot_states(df, trait, day, hour, b)
+        v = pots[pots.state == "value"]
+        values.append(v.assign(bed=b))
+        imaged = int((pots.state != "notimaged").sum())
+        tint, kicker, _ = TINT[b]
+        med = v.chg.median() if len(v) else None
+        out.append(
+            stat(
+                f"{b} · {kicker.lower().removeprefix('water ')}",
+                pv.fmt(med, "", digits, signed),
+                unit,
+                tint,
+                f"Median change from each plant's own baseline, {hour:02d} h run; {len(v)} of {imaged} imaged pots "
+                "have a value",
+                sub=f"median of {len(v)} plants",
+            )
+        )
+    v = pd.concat(values, ignore_index=True).dropna(subset=["chg"])
+    top = v.assign(key=v.chg * stressed_first(trait)).nlargest(LOOK, "key")
+    links = [
+        html.Span(
+            [plant_link(r.bed, r.plant, day, "pl-look-id"), html.Small(pv.fmt(r.chg, unit, digits, signed))],
+            className="pl-look-item",
+        )
+        for r in top.itertuples()
+    ]
+    out.append(
+        html.Div(
+            [
+                html.Div(html.Span("Look at"), className="uw-readout-label uw-stat-label"),
+                html.Div(links or "–", className="pl-look"),
+            ],
+            className="uw-tile uw-gray uw-stat-tile pl-look-tile",
+            title=f"The {LOOK} plants furthest to the stressed side this run, every bed",
+        )
+    )
+    return out
+
+
 @callback(
     Output("bm-W1", "figure"),
     Output("bm-W2", "figure"),
     Output("bm-W3", "figure"),
-    Output("bm-count-W1", "children"),
-    Output("bm-count-W2", "children"),
-    Output("bm-count-W3", "children"),
+    Output("bm-tiles", "children"),
     Output("bm-legend", "children"),
     Output("bm-daytext", "children"),
     Input("bm-trait", "value"),
     Input("bm-hour", "value"),
     Input("bm-day", "value"),
-    Input("bm-on", "data"),
     Input("bm-sel", "data"),
 )
-def show_map(trait, hour, day, imaged_only, sel):
+def show_map(trait, hour, day, sel):
     df = pv.traits()
     day = DEFAULT_DAY if day is None else int(day)
     hour = int(hour or DEFAULT_HOUR)
     selected = (sel["bed"], sel["plant"]) if sel else None
-    figs = [pv.bed_figure(df, trait, day, hour, b, selected, bool(imaged_only)) for b in pv.BEDS]
-    counts = []
-    for b in pv.BEDS:
-        n = pv.bed_counts(df, trait, day, hour, b)
-        imaged = 72 - n["notimaged"]
-        counts.append(
-            html.Span(
-                f"{n['value']} of {imaged} imaged",
-                title=f"{n['value']} values · {n['noscan']} no scan · {n['notable']} no table · {n['notimaged']} not imaged",
-            )
-        )
+    figs = [pv.bed_figure(df, trait, day, hour, b, selected, imaged_only=False) for b in pv.BEDS]
     lo, hi = pv.ramp_limits(df, trait, hour)
     unit = pv.change_unit(trait)
     signed = pv.mode_of(trait) != "raw"
@@ -237,33 +268,18 @@ def show_map(trait, hour, day, imaged_only, sel):
                 pv.fmt(hi, unit, 0 if unit == "%" else 1, signed),
                 flip,
             ),
-            title=f"{pv.run_hover(trait, hour)}; amber = more stressed",
+            title=f"{pv.run_hover(trait, hour)} Amber = more stressed.",
         ),
         *mark_legend(),
-        html.Span(
-            [
-                html.Span(
-                    style={
-                        "width": "18px",
-                        "height": "18px",
-                        "boxSizing": "border-box",
-                        "borderRadius": "4px",
-                        "border": f"3px solid {C['navy']}",
-                    },
-                    **{"aria-hidden": "true"},
-                ),
-                "selected",
-            ]
-        ),
-        *placebo_chip(trait),
-        chip("method", pv.run_hover(trait, hour), "rule"),
+        *pv.bed_effect_chip(trait),
     ]
     label, date = pv.day_text(day).split(" · ")
-    return (*figs, *counts, legend, [html.B(label), html.Span(date)])
+    return (*figs, bed_tiles(df, trait, day, hour), legend, [html.B(label), html.Span(date)])
 
 
 @callback(
     Output("bm-side", "children"),
+    Output("bm-next", "children"),
     Input("bm-sel", "data"),
     Input("bm-trait", "value"),
     Input("bm-hour", "value"),
@@ -272,26 +288,25 @@ def show_map(trait, hour, day, imaged_only, sel):
 def show_side(sel, trait, hour, day):
     df = pv.traits()
     if not sel or df is None:
-        return no_update
+        return no_update, no_update
     bed, plant = sel["bed"], sel["plant"]
     day = DEFAULT_DAY if day is None else int(day)
     hour = int(hour or DEFAULT_HOUR)
     pots = pv.pot_states(df, trait, day, hour, bed).set_index("plant")
     r = pots.loc[plant]
     tint, kicker, accent = TINT[bed]
+    imaged = r.state != "notimaged"
+    name = f"{bed} {plant}"
+    steps = next_links(*next_of(df, bed, plant, day, imaged))
     head = html.Div(
         [
-            html.Div(
-                [
-                    html.Span(f"{bed} {plant}", className="uw-stat"),
-                    html.Span(kicker, className="uw-kicker", style={"color": C[accent]}),
-                ],
-                style={"display": "flex", "alignItems": "baseline", "gap": "10px", "flexWrap": "wrap"},
-            ),
+            plant_link(bed, plant, day, "pl-plant-id") if imaged else html.Span(name, className="pl-plant-id"),
+            html.Span(kicker, className="uw-kicker", style={"color": C[accent]}),
         ],
         className=f"uw-card uw-{tint}",
+        style={"flexDirection": "row", "alignItems": "baseline", "gap": "10px", "flexWrap": "wrap"},
     )
-    if r.state == "notimaged":
+    if not imaged:
         return [
             head,
             html.Div(
@@ -300,17 +315,16 @@ def show_side(sel, trait, hour, day):
                 style={"alignItems": "center"},
                 title="no sensor imaged this pot",
             ),
-        ]
-    unit, raw_unit = pv.change_unit(trait), pv.unit_text(trait)
-    signed = pv.mode_of(trait) != "raw"
+        ], steps
+    raw_unit = pv.unit_text(trait)
     if r.state == "value":
         values = html.Div(
             [
-                readout("vs baseline", pv.fmt(r.chg, "", 0 if unit == "%" else 2, signed), unit),
+                readout("vs baseline", *pv.value_text(trait, r.chg)),
                 readout("value", pv.fmt(r[trait], "", 2, False), raw_unit),
             ],
             className="uw-readouts",
-            title=f"{pv.label_unit(trait)} · {pv.day_text(day)} · {hour:02d} h. {pv.run_hover(trait, hour)}",
+            title=pv.run_hover(trait, hour),
         )
     else:
         kind = r.state
@@ -318,25 +332,40 @@ def show_side(sel, trait, hour, day):
             [pv.empty_mark(kind), pv.EMPTY_TEXT[kind]],
             className="uw-empty",
             style={"alignItems": "center"},
-            title=pv.sensor_state(df, bed, plant, trait)[1] or "no usable run this slot",
+            title=pv.NO_BASE
+            if pd.notna(r[trait])
+            else pv.sensor_state(df, bed, plant, trait)[1] or "no usable run this slot",
         )
-    links = [dcc.Link("Open profile", href=pv.profile_href(bed, plant), className="uw-btn uw-btn-primary")]
-    if pv.has_depth(df, bed, plant):
-        links.append(
-            dcc.Link(
-                "3D canopy",
-                href=pv.threed_href(bed, plant),
-                title="this plant's point clouds, leaf area, height and volume against its own baseline",
-                className="uw-btn",
-                style={"border": f"1px solid {C['teal-700']}", "color": C["teal-700"]},
-            )
-        )
+    fig = pv.small_multiple(df, bed, plant, trait, height=140, day=day)
+    aria = f"{pv.label_text(trait)}, {name}, daily change by day, against the control bed"
+    trend = [] if fig is None else [pv.graph_box(fig, aria, 140)]
     return [
         head,
         html.Div(
-            [html.Div(pv.label_text(trait), className="uw-readout-label"), values],
+            [
+                html.Div(pv.label_text(trait), className="uw-readout-label", title=pv.method_hover(trait)),
+                values,
+                *trend,
+            ],
             className="uw-panel",
             style={"display": "flex", "flexDirection": "column", "gap": "8px"},
         ),
-        html.Div(links, style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
-    ]
+    ], steps
+
+
+def next_of(df, bed, plant, day, imaged=True):
+    """The page's next steps for the selected plant: its profile, then it in 3D (or which sensor warns first)."""
+    if not imaged:
+        return [("Early warning", page_href("/early-warning", bed, plant, day), "which sensor warns first")]
+    out = [("Plant profile", pv.profile_href(bed, plant, day), f"every sensor for {bed} {plant}")]
+    if pv.has_depth(df, bed, plant):
+        out.append(
+            (
+                "3D canopy",
+                pv.threed_href(bed, plant, day),
+                f"{bed} {plant} in 3D: leaf area, height and volume against its own baseline",
+            )
+        )
+    else:
+        out.append(("Early warning", page_href("/early-warning", bed, plant, day), "which sensor warns first"))
+    return out

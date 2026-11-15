@@ -62,6 +62,7 @@ h2 { font-size: 15pt; margin: 18pt 0 7pt; padding-bottom: 3pt; border-bottom: 1p
 h3 { font-size: 12.5pt; margin: 14pt 0 5pt; }
 h4, h5, h6 { font-size: 11pt; margin: 11pt 0 4pt; }
 p { margin: 0 0 7pt; orphans: 3; widows: 3; }
+p:has(+ :is(ul, ol, table, pre, .codehilite)) { break-after: avoid; }
 a { color: var(--uw-teal-700); text-decoration: none; }
 hr { border: 0; border-top: 1px solid var(--uw-rule); margin: 16pt 0; }
 hr:has(+ h2) { display: none; }
@@ -71,7 +72,7 @@ li > p { margin: 0 0 3pt; }
 li > ul, li > ol, li > table, li > div, li > pre { margin-top: 2pt; margin-bottom: 4pt; }
 li::marker { color: var(--uw-ink-muted); }
 code, pre { font-family: Consolas, "Cascadia Mono", "Courier New", monospace; }
-code { font-size: 0.9em; background: var(--uw-gray); border-radius: 3px; padding: 0 0.2em; }
+code { font-size: 0.9em; background: var(--uw-gray); border-radius: 3px; padding: 0 0.12em; }
 pre {
   font-size: 8.5pt; line-height: 1.4; margin: 4pt 0 10pt; padding: 6pt 8pt;
   background: var(--uw-surface-2); border: 1px solid var(--uw-rule); border-radius: var(--uw-radius-sm);
@@ -81,15 +82,16 @@ pre code { font-size: inherit; background: none; padding: 0; border-radius: 0; }
 .codehilite :is(.c, .ch, .cm, .cp, .cpf, .c1, .cs) { color: var(--uw-ink-muted); }
 table {
   width: 100%; border-collapse: collapse; margin: 4pt 0 10pt;
-  font-size: 9pt; line-height: 1.3; font-variant-numeric: tabular-nums;
+  font-size: 9.5pt; line-height: 1.3; font-variant-numeric: tabular-nums;
 }
 thead { display: table-header-group; }
 tr { break-inside: avoid; }
-th, td { overflow-wrap: break-word; padding: 3.5pt 6pt; vertical-align: top; text-align: left; }
+th, td { overflow-wrap: break-word; padding: 3pt 6pt; vertical-align: top; text-align: left; }
 th { background: var(--uw-navy); color: var(--uw-surface); font-weight: 700; vertical-align: bottom; }
 td { border-bottom: 1px solid var(--uw-rule); }
 tbody tr:nth-child(even) td { background: var(--uw-surface-2); }
 th code { background: none; color: inherit; padding: 0; }
+td.nw, td:first-child code { white-space: nowrap; }
 img { max-width: 100%; }
 """
 
@@ -108,7 +110,7 @@ PAGE = """<!doctype html>
 """
 
 ITEM_RE = re.compile(r"( *)([-*+]|\d{1,9}[.)])( +|$)")
-FENCE_RE = re.compile(r"( *)(`{3,}|~{3,})\s*([\w+-]*)")
+FENCE_RE = re.compile(r"( *)(`{3,}(?=[^`]*$)|~{3,})\s*([\w+-]*)")
 HEADING_RE = re.compile(r" {0,3}#{1,6}(\s|$)")
 MERMAID_EDGE = re.compile(r"\s*(-\.+->?|={2,}>|-{2,}>|-{3,})\s*(?:\|[^|]*\|)?\s*")
 MERMAID_NODE = re.compile(r'([A-Za-z_][\w-]*)\s*(?:[\[({>]+"?(.*?)"?[\])}]+)?')
@@ -172,6 +174,9 @@ def bridge(text: str) -> str:
     out: list[str] = []
     stack: list[int] = []  # content column of each open list item, outermost first
     blank = True
+    # Python-Markdown reads a block (lines up to a blank line) as a whole: its list items are split only
+    # when the block starts with one, and a block that starts indented belongs to the item above it
+    list_block, block_depth = False, 0
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -186,7 +191,7 @@ def bridge(text: str) -> str:
             i += 1
             tree = mermaid_tree(body) if lang.lower() == "mermaid" else None
             out += ["", f"{mark}text", *tree, mark, ""] if tree else ["", line.strip(), *body, mark, ""]
-            stack, blank = [], True
+            stack, blank, list_block, block_depth = [], True, False, 0
             continue
         stripped = line.lstrip(" ")
         if not stripped:
@@ -195,27 +200,41 @@ def bridge(text: str) -> str:
             continue
         indent = len(line) - len(stripped)
         item = ITEM_RE.match(line)
-        if item and not stack and not blank and item[2][0].isdigit() and int(item[2][:-1]) != 1:
+        if item and not blank and not list_block and item[2][0].isdigit() and int(item[2][:-1]) != 1:
             item = None  # only a bullet or "1." can interrupt a paragraph
         if item:
-            in_list = bool(stack)
             while stack and indent < stack[-1]:
                 stack.pop()
-            if not in_list and not blank:
-                out.append("")  # Python-Markdown needs a blank line before a list
+            if not blank and (not list_block or len(stack) < block_depth):
+                out.append("")  # so this item starts a block of its own
+                blank = True
+            if blank:
+                list_block, block_depth = True, len(stack)
             marker = item[2][:-1] + "." if item[2].endswith(")") else item[2]
             out.append(" " * 4 * len(stack) + marker + " " + line[item.end() :])
             stack.append(indent + len(item[2]) + max(1, len(item[3])))
         else:
-            if stack and (blank or HEADING_RE.match(line)):
+            heading = HEADING_RE.match(line)
+            if stack and (blank or heading):
                 while stack and indent < stack[-1]:
                     stack.pop()
                 if not stack and not blank:
                     out.append("")
+            if blank or heading:
+                list_block, block_depth = False, len(stack)
             # inside a list: 4 spaces per level for Python-Markdown, keeping any extra indent
             out.append(" " * (4 * len(stack) + max(0, indent - stack[-1])) + stripped if stack else line)
         blank = False
     return "\n".join(out) + "\n"
+
+
+def table_cell(m: re.Match) -> str:
+    """A table cell: drop the backslash Python-Markdown keeps on an escaped pipe inside code (GitHub drops
+    it), and keep a short cell, such as a value with its unit, on one line."""
+    tag, attrs, inner = m[1], m[2], m[3].replace("\\|", "|")
+    if tag == "d" and len(html.unescape(re.sub(r"<[^>]+>", "", inner)).strip()) <= 14:
+        attrs += ' class="nw"'
+    return f"<t{tag}{attrs}>{inner}</t{tag}>"
 
 
 class BareUrl(InlineProcessor):
@@ -236,8 +255,7 @@ def build_html(md_path: Path) -> str:
     )
     md.inlinePatterns.register(BareUrl(URL_RE, md), "bare_url", 105)
     body = md.convert(bridge(md_path.read_text(encoding="utf-8-sig")))
-    # an escaped pipe inside code in a table cell keeps its backslash in Python-Markdown, not on GitHub
-    body = re.sub(r"<t([dh])\b.*?</t\1>", lambda m: m[0].replace("\\|", "|"), body, flags=re.DOTALL)
+    body = re.sub(r"<t([dh])\b([^>]*)>(.*?)</t\1>", table_cell, body, flags=re.DOTALL)
     # images resolve against the Markdown's folder, wherever the HTML is written
     body = re.sub(
         r'(<img\b[^>]*\bsrc=")(?![a-zA-Z][\w+.-]*:|/|#)([^"]+)"',
@@ -313,7 +331,10 @@ def main(argv: list[str] | None = None) -> None:
         html_path.write_text(page, encoding="utf-8")
         pdf = print_pdf(edge, html_path, Path(tmp))
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(pdf, out_path)
+        try:
+            shutil.copyfile(pdf, out_path)
+        except PermissionError:
+            raise SystemExit(f"cannot write {out_path}; close it in the PDF viewer and run again") from None
 
     data = out_path.read_bytes()
     pages = len(re.findall(rb"/Type\s*/Page\b", data))

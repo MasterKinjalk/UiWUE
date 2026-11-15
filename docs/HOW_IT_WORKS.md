@@ -8,7 +8,7 @@ chosen, what to watch out for, and where the code is.
 - **Data:** ADA 2025 sugar beet water-deficit dataset [DATA], described in the paper [ADA].
   "[ADA §III-A]" points to a section of that paper.
 - **State described:** branch `main`, 2026-11-15. The result numbers are read from the tables in
-  `derived/` (the detection run finished 2026-11-15 02:05 UTC).
+  `derived/` (the detection run finished 2026-11-15 07:56 UTC, on the 216-plant 3D table).
 - **Day numbering:** day 0 = 3 Sep 2025, the day irrigation of beds W2 and W3 stopped.
 
 ### How each method is described
@@ -392,6 +392,11 @@ in W2, where the camera is higher).
 | `n_points` | number of plant points (how much canopy the camera sees) | count |
 | `cyl_*` | height percentiles, projected area and point count of **all** vegetation inside the cylinder, without clustering | |
 
+The app and the detection run use three of these, `leaf_area_est`, `height_p75` and
+`hull_volume`, plus `projected_area` as the size-only baseline; the others are noisy, saturated
+or redundant and stay in the table and the 3D experiments only (`docs/threed/APP.md`, "What was
+removed").
+
 **Why tilt-corrected area:** the plain `Σ z²/(fx·fy)` is right only for flat leaves facing the
 camera; in the synthetic test it under-reads by 4.7 % at 20° and 8.8 % at 35°.
 
@@ -414,9 +419,11 @@ dates from 24 Aug, the four diagnostics `soil_z_mm`, `clipped_fraction`, `centro
 `brightness` (direction 0), and a catalogue with directions from the E3 slopes
 (`inclination_sd` = 0, below the noise floor).
 
-The batch: 5,970 runs (28 plants, 12 Aug–19 Sep, all slots), 0 errors, 0.48 s per run on one
-core, about 3 minutes on 20 workers; 5,970 cached clouds (frame 7, plant-centred, points within
-15 cm) for the 3D canopy page.
+The first batch: 5,970 runs (28 plants, 12 Aug–19 Sep, all slots), 0 errors, 0.48 s per run on
+one core, about 3 minutes on 20 workers. On 15 Nov the table was extended to all 216 plants: the
+committed `derived/threed/traits_runs.parquet` holds 28,080 runs (24 Aug–19 Sep, all slots,
+16,880 passing QC), and the local cache holds a cloud per run (frame 7, plant-centred, points
+within 15 cm) for the 3D canopy page.
 
 **Refined depth (optional, `--depth-model`)**: replaces each frame's ToF depth with the
 fine-tuned Prompt Depth Anything map (§9.2), resampled to the ToF pixel grid (per pixel: points
@@ -585,9 +592,11 @@ is proven. This cannot be fixed in analysis; the placebo and the pre-cutoff null
 
 ## 6. Detection analyses
 
-`python -m uiwue.detect.run` runs all of these on the merged table (about 2 minutes) and writes
-`derived/detect/`. Signals = every numeric column of a sensor module (`rgb_`, `depth_`,
-`thermal_`, `hsi_`) with a non-zero catalogue direction: 26 traits in the current run.
+`python -m uiwue.detect.run` runs all of these on the merged table (about 5 minutes on the
+216-plant table) and writes `derived/detect/`. Signals = every numeric column of a sensor module
+(`rgb_`, `depth_`, `thermal_`, `hsi_`) with a non-zero catalogue direction, less the noisy 3D
+traits (`uiwue.detect.data.DEPTH_EXCLUDED`, `docs/threed/APP.md`): 14 traits in the current run
+(4 of them 3D: leaf area, height p75, hull volume and projected area, the size baseline).
 
 ### 6.1 Onset per signal (`detect/onsets.py`, `onsets.parquet`, `auc_by_day.parquet`)
 
@@ -650,7 +659,7 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
   | Setup | Features |
   |---|---|
   | RGB | 4: green cover, ExG, NGRDI, hue |
-  | Depth | 16 depth traits with non-zero direction |
+  | Depth | 4: height p75, projected area, leaf area, hull volume (the noisy 3D traits are left out) |
   | Thermal | 4: `leaf_t`, `leaf_t_p10`, `leaf_air_dt`, `leaf_ref_dt` |
   | Thermal 160 × 120 / 80 × 60 | **1**: `leaf_t_r160` or `leaf_t_r80` only |
 
@@ -670,8 +679,8 @@ For each signal and group: `auc_by_day`, `onset_day`, `early_auc`, maximum AUC o
 
 - **Exactly:** a logistic model is trained, leave-one-plant-out, on plant-day rows (days 0–12)
   using every full-resolution trait of every sensor; each held-out plant's **run-level** baseline
-  deltas are then scored. Output `detect_stress_prob` (0–1) for all 5,519 runs of 39 plants;
-  missing sensors are median-imputed.
+  deltas are then scored. Output `detect_stress_prob` (0–1) for all 28,565 runs of 216 plants
+  (every plant with depth runs now; 39 have thermal); missing sensors are median-imputed.
 - **Used by:** the Plant profile page ("Stress probability, latest run").
 
 ### 6.4 Trait against turgor (`detect/truth.py`, `truth_link.parquet`)
@@ -950,9 +959,17 @@ give each sensor's vector plus its change from the plant's healthy days to a sma
 and let it predict whether the plant is under water deficit, how severe, and its turgor loss. Any
 subset of sensors can be given, so one trained model answers "which sensors do we need?".
 
-**Status:** code and tests run on CPU with tiny random encoders (`tests/jack/test_fusion.py`). It
-has not been trained on ADA data; no `derived/detect/fusion_*` table is on `main`. When one is
-pushed, the Sensor comparison page shows it beside the feature models.
+**Status:** trained on ADA data (15 Nov). Its tables are in `derived/detect/fusion_*`
+(`fusion_benchmark` with the frozen, thermal-LoRA and v2 models, `fusion_lockbox_benchmark`,
+`fusion_scores_runs`, `fusion_v2_scores_runs` and others); results in `docs/fusion.md` sections 7
+(stages 1 and 3, on the 39 plants with all four sensors) and 8 (architecture v2, chosen on 171
+development plants and scored once on a 45-plant lock-box). The Sensor comparison page shows the
+fusion rows in a Fusion view of their own, Methods & limits the lock-box, and Plant profile the
+v2 score per plant. The tests still run on CPU with tiny random encoders
+(`tests/jack/test_fusion.py`). The fusion models do not read the 3D trait table: stages 1–3 embed
+the raw depth images (and the other sensors' frames), and v2 uses hand-made thermal features; only
+the size-only baseline reads `depth_projected_area`. So the noisy 3D traits the app leaves out
+never enter them.
 
 #### Inputs (`inputs.py`): fixed physical scalings, nothing fitted on data
 
@@ -1078,8 +1095,8 @@ camera's views from the other robot positions.
 - **Sample preparation** (`prep.py`), one sample per run and RGB frame k:
   - image: undistorted RGB cropped to the ToF footprint (1459 × 1080 px), resized to 518 × 700
     (about 0.9 mm per pixel on the soil);
-  - prompt: the ToF points of frame k (valid 0.15–0.90 m; "flying pixels" with 3 × 3 depth range
-    > 2 cm dropped) projected into RGB camera k and splatted onto a 120 × 162 grid; empty cells
+  - prompt: the ToF points of frame k (valid 0.15–0.90 m; "flying pixels" with a 3 × 3 depth
+    range over 2 cm dropped) projected into RGB camera k and splatted onto a 120 × 162 grid; empty cells
     take the nearest value (the model rescales by the prompt's min and max);
   - supervision: ToF points of the depth frames in the **same robot column** (robot x within
     2 cm), projected into RGB camera k with the corrected robot mapping; a z-buffer (2 px cells,
@@ -1143,34 +1160,42 @@ robust = §5.6a. "Watered max" is the null envelope.
 | Leaf temperature (authors' rule) | 2 | 4 / 5 / 4 | 0.89 | **yes (day −1)** | 0.97 | 0.43 | no |
 | Leaf − control-bed leaf | 2 | 4 / 4 / 4 | 0.92 | **yes (day −1)** | 1.00 | 0.49 | no |
 | Leaf temperature, coolest 10 % | 2 | 4 / 5 / – | 0.92 | **yes (day −1)** | 0.98 | 0.41 | no |
-| Depth leaf area | 5 | 5 / 5 / – | 0.80 | no | 0.50 | 0.33 | no |
+| Depth leaf area | 4 | 4 / 5 / 4 | 0.65 | no | 0.59 | 0.40 | no |
+| Depth hull volume | 4 | 5 / 7 / 4 | 0.76 | no | 0.58 | 0.25 | **yes** |
+| Depth projected area (size baseline) | 5 | 5 / 6 / 5 | 0.61 | no | 0.53 | 0.47 | no |
 | RGB NGRDI | 6 | 6 / 6 / – | 0.78 | no | 0.80 | 0.62 | no |
-| Depth projected area (size baseline) | 6 | 6 / 6 / – | 0.79 | no | 0.51 | 0.38 | no |
+| Depth height p75 | 5 | 7 / 8 / 4 | 0.73 | no | 0.61 | 0.26 | **yes** |
 | RGB green cover | 7 | 7 | 0.77 | no | 0.54 | 0.35 | no |
 | RGB ExG | 4 | 7 | 0.94 | no | 0.85 | 0.91 | **yes** |
-| Depth heights, point count | 5–8 | 8–9 or none | 0.83–0.98 | no | 0.43–0.60 | 0.09–0.24 | **yes** |
 
-Group sizes: thermal 26 deficit / 13 control; depth 14 / 10; RGB 9 / 9 (no W3 plants for depth or
-RGB, so their results are W2 only and not replicated).
+Group sizes: thermal 26 deficit / 13 control; depth 114 / 64 (W2 62, W3 58: the plants with a
+QC-pass 12 or 15 h run and a baseline); RGB 9 / 9 (no W3 plants for RGB, so its results are W2
+only and not replicated). Depth covers all 216 plants since 15 Nov (it was 14 / 10, W2 only); the
+noisy 3D traits are no longer scored. 63 of the 72 W3 plants had a leaf cut for relative water
+content on one of days 1–12, so W3's 3D onsets (day 4 for all three traits) mix drought and sampling; the
+3D canopy page compares W1 with W2 only, and Early warning marks pooled 3D results `W3 sampled`.
 
 **Anchors** (imaged plants only):
 
 - **Leaf clip:** median clip-turgor onset day 5 over 18 imaged deficit clip plants (W2 day 8,
   n 9; W3 day 5, n 9). Leaf − air leads it by **1 day** (W2 4 days, W3 2 days).
-- **Written symptoms:** 8 of 26 imaged deficit plants have a note (W2 2 of 17, W3 6 of 9); the
-  first on day 3 (between 2 and 6 Sep), the median on day 9 (between 10 and 12 Sep). Too sparse,
-  and too coarse, for a lead time. The earlier figure "7 days before visible symptoms" used the
-  median over all 216 plants against the plain-rule day 2 and is withdrawn.
+- **Written symptoms:** 48 of 144 imaged deficit plants have a note (W2 2 of 72, W3 46 of 72;
+  every deficit plant counts as imaged now that depth covers all of them); the first on day 3
+  (between 2 and 6 Sep), the median on day 9 (between 10 and 12 Sep). Too coarse for a lead
+  time: notes were taken on six dates only. The earlier figure "7 days before visible symptoms"
+  used the median over all 216 plants against the plain-rule day 2 and is withdrawn.
 
 **Reading:**
 
-- Thermal is first (robust day 4 = 7 Sep) and the only sensor replicated in both stressed beds.
+- Thermal is first (robust day 4 = 7 Sep), in both stressed beds. Depth now has W3 plants too,
+  but their onsets mix drought and leaf sampling (above); RGB has no W3 table.
 - The plain rule's day 2 for leaf temperature is not usable: the same rule fires on 2 Sep, before
   the cutoff. Leaf − air does not fire on watered days and gives day 3 by the plain rule.
 - **Resolution does not matter for this trait:** the 80 × 60 and 160 × 120 versions of
   `thermal_leaf_t` match full resolution (same onsets, same early AUC).
-- Structure follows on days 5–6 (leaf area, projected area), then heights. Plant size alone is
-  at chance early (early AUC 0.51).
+- Structure follows. W2 against W1: leaf area day 5, projected area day 6, volume day 7 and
+  height day 8 (volume and height with a bed effect). Pooled with W3, leaf area reaches day 4,
+  level with thermal. Plant size alone is near chance early (early AUC 0.53).
 - Per time of day (`onsets_by_slot`): the 15 h run alone gives leaf − air day 4 (W2 4, W3 4); the
   09 h leaf temperature rule fires on day −10, so 09 h single-slot onsets need the robust bar.
 
@@ -1180,22 +1205,26 @@ Same plants (`plant_set = common`): 9 deficit (W2) and 9 control plants with the
 
 | Setup | Early AUC [CI low] | Robust onset | Placebo AUC | Bed effect |
 |---|---|---|---|---|
-| Plant size only | 0.37 [0.12] | 9 | 0.59 | no |
-| RGB | 0.70 [0.41] | 7 | 0.81 | yes |
-| Depth | 0.60 [0.32] | 6 | 0.85 | yes |
-| **Thermal** | **1.00 [1.00]** | **4** | **0.58** | **no** |
-| Thermal (boosted trees) | 0.89 [0.68] | 4 | 0.63 | no |
-| RGB + Thermal | 0.90 [0.67] | 4 | 0.69 | no |
-| Depth + Thermal | 0.95 [0.83] | 4 | 0.83 | yes |
-| RGB + Depth + Thermal | 0.96 [0.85] | 4 | 0.80 | yes |
+| Plant size only | 0.35 [0.10] | 9 | 0.72 | no |
+| RGB | 0.74 [0.47] | 7 | 0.84 | yes |
+| Depth | 0.37 [0.12] | none (rule 7) | 0.65 | no |
+| **Thermal** | **0.96 [0.85]** | **4** | **0.53** | **no** |
+| Thermal (boosted trees) | 0.91 [0.70] | 4 | 0.59 | no |
+| RGB + Thermal | 0.90 [0.67] | 4 | 0.72 | no |
+| Depth + Thermal | 1.00 [1.00] | 4 | 0.59 | no |
+| RGB + Depth + Thermal | 0.93 [0.74] | 4 | 0.64 | no |
 
-Each setup on its own plants (`plant_set = own`, group `all`): thermal 0.99 [0.96] on 26 + 13
-plants (placebo 0.51, but its model curve already separates the beds on a watered day); RGB 0.79
-on 9 + 9 (bed effect); depth 0.63 on 15 + 11 (bed effect); size only 0.49.
+Run of 15 Nov, on the 216-plant 3D table with the four kept depth traits (before: thermal 1.00,
+RGB + depth + thermal 0.96 with a bed effect, size only 0.37). Each setup on its own plants
+(`plant_set = own`, group `all`): thermal 0.99 [0.96] on 26 + 13 plants (placebo 0.51, but its
+model curve already separates the beds on a watered day); RGB 0.79 on 9 + 9 (bed effect); depth
+0.64 on 134 + 70 (bed effect); depth + thermal 0.96 on 22 + 13; size only 0.53.
 
 - **Recommended** (`cheapest_close`, same plants): full thermal with logistic regression.
-- **Adding sensors does not help.** No combination beats thermal alone on the same plants, and
-  every combination with depth inherits the depth bed effect.
+- **Adding depth edges thermal, inside its interval.** On the same plants depth + thermal scores
+  1.00 [1.00] against 0.96 [0.85] for thermal alone, and no depth combination is flagged any more
+  (the noisy 3D traits that carried the bed effect are out of the run); depth alone is at chance
+  (0.37). Thermal alone stays the recommendation: within 0.05 of the best, at the lowest cost.
 - **Do not read 1.00 [1.00] as certainty**: one control bed (§5.6b).
 - **Before the fix**, setups with RGB or depth were scored on plants without those sensors
   (median-imputed) and boosted trees could use missingness, so "RGB + Thermal" was scored on 39
@@ -1209,8 +1238,8 @@ on 9 + 9 (bed effect); depth 0.63 on 15 + 11 (bed effect); size only 0.49.
 | Leaf temperature, coolest 10 % | +0.51 | +0.44 | +0.21 | 21 (18) |
 | Leaf temperature | +0.52 | +0.42 | +0.19 | 21 (18) |
 | Leaf − control-bed leaf | +0.70 | +0.36 | +0.11 | 21 (18) |
-| Depth hull volume | −0.48 | −0.36 | +0.05 | 11 (8) |
-| Depth leaf area | −0.48 | −0.32 | +0.03 | 11 (8) |
+| Depth hull volume | −0.57 | −0.24 | +0.18 | 20 (17) |
+| Depth leaf area | −0.61 | −0.29 | +0.04 | 20 (17) |
 | RGB traits | about 0 | – | – | 2 (1: too few) |
 
 Among stressed plants alone, the trait–turgor link is weak: most of the within-day correlation
@@ -1222,8 +1251,9 @@ day fixed halves it. Part of the paper's correlation is the shared time trend.
 ### 10.4 Recovery (`derived/detect/recovery.parquet`, median over measurable plants)
 
 Leaf − air 0.87 and leaf − control-bed leaf 0.85 (26 plants): leaves cool again within days.
-Median height 1.57 (11 plants, overshoot: plants stand up again); projected area 0.12 and leaf
-area 0.22: lost leaf area is not replaced within a week. The clips do not recover; the clipped
+Median height 2.15 (80 plants, overshoot: plants stand up again and keep growing); hull volume
+0.59 (82); projected area 0.17 (68) and leaf area 0.30 (88): lost leaf area is not replaced
+within a week (W2 alone: height 2.15, leaf area 0.32). The clips do not recover; the clipped
 leaves did not regenerate (protocol).
 
 ### 10.5 Irrigation alerts (`derived/diurnal/schedules.parquet`, recommended schedule per rule)
@@ -1260,16 +1290,22 @@ difference. 15 h is the cleanest slot before the cutoff.
 
 ### 10.7 3D experiments (`docs/threed/RESULTS.md`)
 
+All 216 plants (W1 against W2: 144 plants), from the committed table (28,080 runs from 24 Aug;
+`derived/threed/results/summary.md`, 15 Nov). `docs/threed/RESULTS.md` reports the same re-run
+on the local table from 12 Aug (46,296 runs), so some of its numbers differ slightly
+(`derived/threed/results/README.md` lists where). The earlier 28-plant results are kept in
+`data/derived/threed/results_28plants/`.
+
 | Experiment | Result |
 |---|---|
-| E0a parity | **pass**: control +4.300 mm/day (paper +4.30; 95 % CI 3.18–5.42), interaction −13.083 mm/day (paper −13.08; CI −14.7 to −11.5); p-values equal the published ones. On UiWUE's soil-relative height: +5.34 / −11.0 (+24 % / −16 %) |
-| E0b QC | `qc_dark` precision 0.96, recall 0.79; `qc_not_centred` 0.37 / 0.11 (the flags measure different things) |
-| E1 | 11 of 12 traits reliable (SNR 7.9–71); `inclination_sd` SNR 2.4 |
-| E2 | W2 heights grew 1.1–1.6 mm/day slower than W1 before the cutoff (raw p 0.008–0.019; Holm 0.08–0.15); areas and volume did not differ |
-| E3 plan (15 h, Holm) | `n_points`, `hull_volume` day 6; `leaf_area_est`, `projected_area` day 8; heights only unadjusted (day 6–7) |
-| E3 daytime | `n_points`, `leaf_area_est` **day 4 (7 Sep)**, one day before the first wilting note; heights day 7–8 |
-| E4 | no growing midday height dip; with dark runs excluded, midday loss of projected area deepens by 1.06 cm²/day (p = 0.018) and of leaf area by 2.54 cm²/day (p = 0.004) |
-| E5 | `leaf_area_est` at lag +1 day: pooled W2 rm-r = −0.59 (n = 396, 9 plants); 8 of 9 plants ρ −0.39 to −0.78. Detrended: `height_p50` r = −0.40 (lag +1) |
+| E0a parity | **pass**: control +4.300 mm/day (paper +4.30; 95 % CI 3.18–5.42), interaction −13.083 mm/day (paper −13.08; CI −14.7 to −11.5); p-values equal the published ones. On UiWUE's soil-relative height: +5.94 / −12.3 (+38 % / −6 %) |
+| E0b QC | `qc_dark` precision 0.96, recall 0.90; `qc_not_centred` 0.46 / 0.11 (the flags measure different things) |
+| E1 | all 12 traits reliable (SNR 3.8–45); `inclination_sd` the lowest, 3.8 |
+| E2 | W2 grew more slowly than W1 before the cutoff: heights by 1.8–2.5 mm/day (Holm p < 1e-8), hull volume by 50 cm³/day, leaf area by 2.0 cm²/day (Holm 0.020), projected area by 0.9 cm²/day (Holm 0.20); shape traits did not differ |
+| E3 plan (15 h, Holm) | `n_points`, `leaf_area_est`, `hull_volume`, `projected_area` **day 4 (7 Sep)**, one day before the first written symptom; `height_p95` day 5, the other heights day 7 (57 control, 49 deficit plants) |
+| E3 daytime | the same four and `height_p95`, `height_p75` day 4; `height_p50` day 7 (70 control, 64 deficit plants; `canopy_radius` already separates on day 0) |
+| E4 | no growing midday height dip; with dark runs excluded, the midday loss of leaf area deepens by 1.13 cm²/day (p = 0.009; projected area 0.37, p = 0.085); deficit plants regain 0.41 mm more median height overnight per day (p = 0.0008) |
+| E5 | `leaf_area_est` at lag +1 day: pooled W2 rm-r = −0.59 (n = 334, 9 plants); 8 of 9 plants ρ −0.48 to −0.80 (W2 D3 −0.11). Detrended: `height_p50` r = −0.42 (lag +1) |
 
 ---
 
@@ -1280,24 +1316,35 @@ name, order, and a `description` holding the page's question). Pages read only `
 `uiwue.core` (the 3D canopy page also reads cached clouds), and every page shows an empty state when
 its table is missing.
 
+The nav draws the pages as a path in four groups (`components.NAV`): **See** (Bed map, Plant
+profile, 3D canopy), **Detect** (Early warning, Sensor comparison, Daily rhythm), **Act**
+(Irrigation advisor) and **Data** (Export, Methods & limits); below 1040 px the groups fold into
+one menu button that names the current page. Every page opens with its finding as stat tiles (one
+shared tile, `components.stat`) and ends with one or two next steps along that path
+(`components.next_steps`); a page that shows one plant passes `?bed=&plant=&day=` on to the next,
+and every plant named on a page links to its profile. A signal has one plain name on every page
+(`components.PLAIN`, the catalogue name on hover); plant size alone is always `Size only`; every
+caveat chip links to its entry on Methods & limits (`/methods#<anchor>`).
+
 | Page | What it computes and shows |
 |---|---|
-| **Home** `/` | a table of every derived table (rows, plants, dates); a heatmap of plants with data per sensor and day (`coverage`), with the cutoff marked |
-| **Plant profile** `/plant-profile` | cards: treatment, clip onset, first symptom (with its note), RWC (W3 sampled plants), latest `detect_stress_prob`, 3D leaf area against the plant's baseline at the end of the no-water window and after re-watering (a readout: its −20 % rule also flags a control plant). Charts: the chosen trait's daily value (median of 12/15 h) for the plant against the control bed; clip turgor trace; RWC; mean spectrum by date (when `spectra_runs` exists) |
-| **Bed map** `/bed-map` | the 216 pots in their grid positions, three beds side by side, coloured by any trait at a chosen day and slot; one colour range per trait (2nd–98th percentile over all runs) so days compare; pots without a reading as open rings; clip plants outlined; play button steps through days |
-| **3D canopy** `/threed` | W1 against W2 on three traits (leaf area, height p75, hull volume) as % change from each plant's own baseline (plant-day mean of the QC-pass 9–18 h runs): headline tiles (loss peak → trough, what came back after re-watering, onset against thermal); the chosen plant's cloud then and now (plant points only, one camera and scale) with a side elevation; deficit minus control by day with a plant-bootstrap CI; collapse and recovery per plant; an onset strip against thermal and RGB from `derived/detect`; no synthetic cloud when the cache is missing. Deep link `?bed=W2&plant=J5&day=10`; details in `docs/threed/APP.md` |
-| **Early warning** `/early-warning` | stat tiles: first sensor (robust onset with its range), next sensor, size only, lead vs leaf clip (n), written notes (n); onset dot plot (rule and robust onset per signal, by sensor); daily AUC of one signal with the watered-day envelope and per-slot onsets; recovery bars; CSV table; group switch (W2 + W3, W2, W3) |
-| **Sensor comparison** `/sensor-comparison` | tiles: thermal only, best combination, size only, cheapest close; plant set switch (same plants by default, or each setup's own); AUC per setup with n in the tick label; CSV table; fusion rows appear on the own-plants view when `fusion_benchmark` exists |
-| **Daily rhythm** `/daily-rhythm` | mean ± SEM per slot in five phase bins; a rhythm metric (§7.9) over days by group; the separability heatmap (day × slot AUC); the schedule table per rule; a sky note from `sky_effect` |
-| **Irrigation advisor** `/irrigation` | pick a rule (its recommended schedule pre-selected) and a day; every plant's status on that day as fine / watch / irrigate marks (from `status` with the tuned threshold); the rule's track record on W2 and the held-out W3; a plant's score over time with the threshold line |
-| **Methods & limits** `/methods` | placebo per trait (circle fine, triangle day effect, diamond bed effect); tune W2 / check W3 and the validity rules as chips; scope per sensor; known limits (one control bed, watered-day separation, W3 thermal only, no hyperspectral table, censored symptom dates); definitions on hover; run info |
+| **Home** `/` | the experiment in one row (W1 control, W2 and W3 deficit with their plant counts, the no-water window, day 0–12); the finding as tiles, read live: the first day each sensor tells W2 from W1 (thermal, 3D leaf area, RGB, robust onset from `derived/detect/onsets`, earliest first), `Size only`, and the leaf area the deficit plants lost (peak to trough, with the controls' change and the `bed effect` chip), each a link to the page that shows it; the pages as tiles in the nav's four groups, each saying what the reader learns there; the data coverage of each module (dates, rows, plants) behind a disclosure |
+| **Bed map** `/bed-map` | tiles: the median change per bed on the chosen run, and the three plants furthest to the stressed side (links to their profiles); the 216 pots in their grid positions, three beds side by side, coloured by any stress trait at a chosen day and slot: one QC-pass run per square, as its change from the plant's own baseline at that slot (the 96th percentile of the change sets one colour range per trait and slot, so days compare); dashed marks for no scan (a run that failed QC too) and no table, a dot for not imaged; the selected pot in navy with its value and trend on the right; a play button steps through days; next steps to the selected plant's profile and 3D canopy |
+| **Plant profile** `/plant-profile` | tiles: peak stress probability while dry (with `Size only`), first sign (leaf-clip onset or first written symptom), 3D leaf area at the trough (days 10–12) and after re-watering (days 15–16) against the plant's own baseline (a readout: the −20 % rule also flags control plants); one focal timeline of any trait (daily value: median of the QC-pass 12 and 15 h runs; the three 3D traits take the 3D canopy page's plant-day mean of the QC-pass 9–18 h runs, so both pages show one number) for the plant against its bed and the control bed, with its clip and symptom onsets; one small chart per sensor (thermal, thermal score, the three 3D traits, greenness, leaf clip, stress probability, fusion v2); CSV of the plant's rows; next steps 3D canopy, Early warning |
+| **3D canopy** `/threed` | W1 against W2 on three traits (leaf area, height p75, hull volume) as % change from each plant's own baseline (plant-day mean of the QC-pass 9–18 h runs): tiles (height and leaf area lost, peak → trough; after re-watering against each plant's peak: height comes back, leaf area does not; first seen against thermal, with `Size only`); the chosen plant's cloud then and now (plant points only, one camera and scale) with a side elevation and its plant card; a day strip; collapse and recovery per plant; deficit minus control by day with a plant-bootstrap CI; one `bed effect` chip in the header, as all three traits are flagged; no synthetic cloud when the cache is missing. Deep link `?bed=W2&plant=J5&day=10`; details in `docs/threed/APP.md` |
+| **Early warning** `/early-warning` | opens on W2 against W1 (switch to W3 or W2 + W3); tiles: the first day each sensor's earliest clean signal separates the beds (robust onset), `Size only`, the leaf clip's median turgor onset (the ground truth); onset dot plot per signal by sensor (flagged signals as open diamonds, not ranked); the daily score of one signal with the watered-day range and its onset from each flyover hour alone; `Loss regained`: the share of each signal's change that came back after re-watering (median over plants that changed clearly; leaf area 32 %, height 215 %); all signals as a table behind a disclosure; a `W3 sampled` chip when the group holds W3 |
+| **Sensor comparison** `/sensor-comparison` | tiles: the score (AUC, days 1–4) and onset of thermal alone, thermal + 3D, RGB alone, 3D alone and `Size only`, the best buy (cheapest setup within 0.05 of the best, no bed effect) outlined; the score per setup with its 95 % CI; a Fusion view (fusion v2, the image models, the held-out lock-box plants: day 0, a bed difference) that never mixes with the feature views; plant set, deficit bed and score window behind `Options`; all setups as a table |
+| **Daily rhythm** `/daily-rhythm` | tiles: midday heat (deficit leaves minus the control bed's at 12 h and 06 h, days 8–12), the 3D midday dip (E4: `none` while its interval holds zero), the best flyover with its held-out W3 result and `Size only`; the day profile, mean ± SEM per slot in five phase bins (QC-pass runs; a 3D trait grouped by treatment is W1 against W2, as on 3D canopy); the schedule table per rule (when to image); the separability heatmap (day × slot AUC) with a `bed effect at` chip for slots that already differ on watered days |
+| **Irrigation advisor** `/irrigation` | pick a rule (its recommended schedule pre-selected, its definition on hover) and a day (it opens on day 12, the re-watering); tiles: plants to water now, the median first alert (with `Size only`), false alarms on the watered controls (and watered-day scans above the threshold), the held-out W3 bed; every plant's status as fine / watch / irrigate marks against the threshold, the plants to water first, CSV of that list; the selected plant's score over time with the threshold line |
+| **Export** `/export` | a derived table (the merged run traits, the 3D canopy plant-day table, every table in `detect/` and `diurnal/`) filtered by bed, day range and sensor; tiles: rows, plants, days, columns; the rows, or what each column means (label, unit, direction, source); CSV of the rows shown and of the data dictionary |
+| **Methods & limits** `/methods` | the known limits (one control bed, watered-day separation, W3 leaves sampled, few RGB plants, written symptoms, no hyperspectral table, clip vs thermal, missing runs, microclimate, aphids, the fusion lock-box: 45 held-out plants, scored once), the watered-day check per trait (circle fine, triangle day effect, diamond bed effect), the checks (tune W2 / check W3 and the validity rules), the words used on the detect pages, the scope per sensor; every entry has an anchor (`/methods#bed-effect`) that chips on other pages link to; run info |
 
 **Design rules** (`design/DESIGN.md`, binding, summarised in `CLAUDE.md`): minimal text (methods in
 hover text or chips); one meaning per colour (control sky/teal, deficit sand/amber, baseline mint,
 no-water window sand, selection navy; value on one teal-to-amber ramp, amber = more stressed from
 the catalogue direction); status by shape (circle fine, triangle watch, diamond irrigate; three
 different marks for no scan, no table and not imaged); a `bed effect` chip wherever the placebo
-flags a trait; units on every number and `–` for missing; x axis = days since irrigation off. The
+flags a trait (once per page when every trait on it is flagged); units on every number and `–` for missing; x axis = days since irrigation off. The
 statistics map straight onto the screen: the chip is §5.7, the amber end is the catalogue
 direction, the diamond is §7.4.
 
@@ -1305,16 +1352,17 @@ direction, the diamond is §7.4.
 
 ## 12. Tests and reproducibility
 
-**Tests:** 174 test functions in `tests/`, on synthetic data (no raw images needed).
+**Tests:** 300 test functions in `tests/`, on synthetic data and the committed `derived/` tables
+(no raw images needed).
 
 | Area | Files | What is checked |
 |---|---|---|
 | Contract | `tests/test_contract.py` | the validator on every committed table |
 | Shared statistics | `tests/jack/test_shared_stats.py` | AUC, bootstrap, onset, placebo on built-in effects |
-| Detection, RGB, fusion | `tests/jack/` | benchmark, LOPO, RGB features, fusion model and training on tiny random encoders |
-| 3D | `tests/threed/` (77) | geometry (a synthetic tilted ground plane and disc rendered along real ToF rays: every trait within 4 % without noise; heights and area within 3 % with 5 mm noise), plane fit, segmentation, QC, schema, the statistics recovering built-in effects, parity against ADA's own functions |
+| Detection, RGB, fusion | `tests/jack/` | benchmark, LOPO, RGB features, fusion model and training on tiny random encoders, fusion v2 and the lock-box |
+| 3D | `tests/threed/` (91) | geometry (a synthetic tilted ground plane and disc rendered along real ToF rays: every trait within 4 % without noise; heights and area within 3 % with 5 mm noise), plane fit, segmentation, QC, schema, the statistics recovering built-in effects, parity against ADA's own functions |
 | Other modules | `tests/test_truth.py`, `test_diurnal.py`, `test_spectral.py`, `test_promptda_prep.py` | each module's steps |
-| App | `tests/app/`, `tests/jack/test_pages.py` | every page builds on synthetic or missing tables; callbacks fire |
+| App | `tests/app/`, `tests/jack/test_pages.py`, `test_page_filters.py` | every page builds on synthetic, missing and the committed tables; callbacks fire; one plant shows one 3D number on Plant profile and 3D canopy; no page is wider than a 320 px phone |
 
 **Reproduce:**
 
@@ -1344,8 +1392,8 @@ configs.
 | Paper | UiWUE | Status |
 |---|---|---|
 | Height = 75th percentile of ExG points; LMM slopes +4.30 / −13.08 mm/day [ADA §III-A] | E0a reproduces both slopes and p-values exactly (§8.6) | reproduced |
-| Height against a fixed 0.60 m reference (ADA code) | soil is 0.45–0.52 m away; fitted soil plane per run; slopes +24 % / −16 % | refined |
-| Height plateaus "several days after" the cutoff | height onset day 7–8; area and point count day 4–6 | dated |
+| Height against a fixed 0.60 m reference (ADA code) | soil is 0.45–0.52 m away; fitted soil plane per run; slopes +38 % / −6 % (216 plants) | refined |
+| Height plateaus "several days after" the cutoff | height onset day 5–7; area, volume and point count day 4 (E3, 216 plants) | dated |
 | Calibration by bundle adjustment, 1.1–1.6 px reprojection [ADA §II-D1] | robot-to-depth rotation has robot x with the wrong sign | corrected |
 | 15 depth/RGB images per run [ADA Table I] | a 3 × 5 grid of positions, not repeats | clarified |
 | Leaf temperature = coolest 50 %; leaf − air +0.596 °C/day [ADA §III-B] | same rule; thermal is the earliest signal (robust onset day 4, W2 and W3), placebo clean | extended |
@@ -1400,23 +1448,27 @@ Other definitions to keep apart:
    the cutoff the beds already differ at 06 h (AUC 0.26) and 09 h (0.62), and daily leaf
    temperature separates them on 2–3 Sep (AUC 0.88–0.89); hence the robust onset (§5.6a).
    Plant-bootstrap intervals ignore the shared bed-day effect and are too narrow (§5.6b).
-2. **Few plants per test.** Thermal 13 controls, depth 10, RGB 9; alert thresholds tuned with 4
-   controls; per-bed placebos on 9 deficit plants. Bootstrap intervals are narrow at the
-   boundaries (§5.4).
-3. **Partial coverage.** Thermal 39 plants, depth 28, RGB 18 (no W3 for depth or RGB);
-   hyperspectral and fusion have no results on `main`.
+2. **Few plants per test.** Thermal 13 controls, RGB 9 (depth 64 since 15 Nov); alert thresholds
+   tuned with 4 controls; per-bed thermal placebos on 9 deficit plants. Bootstrap intervals are
+   narrow at the boundaries (§5.4).
+3. **Partial coverage.** Thermal 39 plants, depth all 216, RGB 18 (no W3 for RGB; 63 of 72 W3
+   plants lost a leaf to the water-content sampling, so W3's 3D results mix drought and sampling);
+   hyperspectral has no results; the fusion results are in `derived/detect/fusion_*` (§9.1).
 4. **No correction for many traits** in the shared onset rule; the placebo and the W3 check are
    the safeguards.
-5. **Symptom dates are upper bounds** (scored on six dates) and cover 8 of 26 imaged deficit
-   plants, so no lead time is quoted against them; lead times use the leaf clip (18 plants).
+5. **Symptom dates are upper bounds** (scored on six dates) and cover 48 of 144 imaged deficit
+   plants (2 of 72 in W2), so no lead time is quoted against them; lead times use the leaf clip
+   (18 plants).
 6. **One greenhouse, one variety, one season, six weeks** [ADA §V]; the 2 Sep door closure shifts
    the climate for all beds.
 7. **Fixed watering, no usable soil sensors:** results say when a rule would have fired, not how
    much water it would save.
 8. **Dark runs and closed canopy:** 06 h depth runs use a height-only rule; 22–29 % of
    stress-window depth runs carry `qc_overlap`.
-9. **The fusion model is untested on real data**; its input scalings (27.5 ± 8.75 °C, disparity
-   1.6 ± 0.6 m⁻¹) are assumptions.
+9. **The fusion models' early AUC is partly the bed:** a placebo bed model flags every fusion
+   setup, and on the 45-plant lock-box v2's onset is day 0, which no water deficit explains
+   (`docs/fusion.md` section 8); their input scalings (27.5 ± 8.75 °C, disparity 1.6 ± 0.6 m⁻¹)
+   are assumptions.
 
 ---
 

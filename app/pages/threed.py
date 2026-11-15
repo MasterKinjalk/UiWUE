@@ -22,7 +22,23 @@ import numpy as np
 import pandas as pd
 import threed_canopy as tc
 import threed_figures as tf
-from components import C, chip, day_label, header, mark, not_available, segmented, select
+from components import (
+    C,
+    bed_effect_chip,
+    chip,
+    day_label,
+    header,
+    mark,
+    next_links,
+    next_steps,
+    not_available,
+    page_href,
+    plant_link,
+    segmented,
+    select,
+    size_chip,
+    stat,
+)
 from dash import ALL, Input, Output, State, callback, clientside_callback, ctx, dcc, html, no_update
 
 from uiwue.core import all_plants
@@ -41,24 +57,13 @@ dash.register_page(
 )
 
 METHOD = (
-    "Committed 3D table (derived/threed/traits_runs), W1 control against W2 deficit; W3 plants are shown one by one, "
-    "never pooled. Plant-day value: mean of the plant's QC-pass runs at 9, 12, 15 and 18 h. Baseline: median of its "
-    "plant-day values on days −4 to −1 (30 Aug – 2 Sep); change = % of that baseline. Peak = days 1–3, trough = days "
-    "10–12, re-watered = days 15–16 (re-watered on day 12 at 18:35). Intervals: 2,000 resamples of plants. Cloud: "
-    "plant points of one QC-pass run inside the 85 mm crop cylinder; NOW is the day's most typical run (closest to "
-    "the plant's median over that day and the days either side), THEN the baseline-day run closest to the baseline, "
-    "and the readouts beside them are those runs' own values. Detached edge points (a cluster entering through the "
-    "crop wall, under 10 % of the points, floating at least 15 mm above and away from the rest) are hidden from the "
-    "picture, not from the numbers."
+    "W1 control against W2 deficit; W3 plants are shown one by one, never pooled. Day value: mean of the plant's "
+    "QC-pass runs at 9–18 h, as % change from its median on days −4 to −1. Peak days 1–3, trough 10–12, re-watered "
+    "15–16. Intervals: 2,000 plant resamples. The clouds are one QC-pass run each: NOW the day's most typical run, "
+    "THEN the baseline run closest to the baseline."
 )
-ONE_BED = (
-    "One control bed (W1) and one deficit bed (W2): treatment and bed cannot be separated, and plants in a bed "
-    "share light and air, so intervals that resample plants are too narrow."
-)
-QC_ONLY = (
-    "QC-pass runs only. W2 fails QC more often on days 6–11 and its failed runs are the smaller ones, so the "
-    "loss shown is understated."
-)
+ONE_BED = "One control bed and one deficit bed: treatment and bed cannot be separated."
+QC_ONLY = "QC-pass runs only: W2's failed runs are its smaller plants (days 6–11), so the loss is understated."
 TINT = {
     "W1": ("sky", "CONTROL", "slate-600"),
     "W2": ("sand", "WATER DEFICIT", "amber-900"),
@@ -70,7 +75,11 @@ STATE_TEXT = {
     "sparse": "QC-pass run, but its cloud is too sparse to draw (under 100 plant points or under half the run's)",
     "no scan": "no daytime run passed QC",
 }
-OUTLINED = {"border": f"1px solid {C['teal-700']}", "color": C["teal-700"], "background": C["surface"]}
+SLOPE_PX, GAP_PX = 270, 200  # the collapse chart and the gap chart under it
+NEXT = (  # the page's next steps, at its foot: (text, path, hover); they carry the selection
+    ("Early warning", "/early-warning", "which sensor warns first, and by how many days"),
+    ("Plant profile", "/plant-profile", "every sensor for this plant"),
+)
 
 
 # ---------------------------------------------------------------- selection
@@ -140,21 +149,6 @@ def state_for(bed: str, plant: str, want: int | None = None) -> dict:
 
 
 # ---------------------------------------------------------------- pieces
-def stat_tile(label, value, unit, tint, hover, sub=None, extra=()):
-    """Stat tile (DESIGN 5): label 12, value display 32 with its unit, a secondary value beside it."""
-    return html.Div(
-        [
-            html.Div([label, *extra], className="uw-readout-label td-tile-label"),
-            html.Div(
-                [html.Span([value, html.Small(unit)], className="uw-stat"), html.Span(sub, className="td-tile-sub")],
-                className="td-tile-value",
-            ),
-        ],
-        className=f"uw-tile uw-{tint} td-tile",
-        title=hover,
-    )
-
-
 def tiles() -> list:
     """The page's answer, computed live: height and leaf area lost (peak → trough), what came back, onset."""
     h = tc.headline()
@@ -164,74 +158,79 @@ def tiles() -> list:
     effects = tc.bed_effects()
     for trait, label in (("height_p75", "Height lost"), ("leaf_area_est", "Leaf area lost")):
         d, c = h[trait]["peak_to_trough"]["deficit"], h[trait]["peak_to_trough"]["control"]
-        chips = [bed_effect_chip(trait, effects)] if effects[trait]["chip"] else []
         out.append(
-            stat_tile(
+            stat(
                 label,
                 tf.pct(d["mean"], 0, ""),
                 "%",
                 "sand",
-                f"{tc.TRAITS[trait].label}, days 10–12 against each plant's own days 1–3 (peak → trough). "
-                f"W2 deficit: mean {tf.pct(d['mean'])} over {d['n']} plants, 95 % CI {tf.pct(d['ci_low'], 0, '')} to "
-                f"{tf.pct(d['ci_high'])}, plants {tf.pct(d['min'], 0, '')} to {tf.pct(d['max'])}. W1 control: "
-                f"{tf.pct(c['mean'])} over {c['n']} plants. {QC_ONLY}",
-                sub=html.Span(["control ", html.B(tf.pct(c["mean"]))], className="td-control"),
-                extra=chips,
+                f"{tc.TRAITS[trait].label}, days 10–12 against each plant's own days 1–3: W2 mean {tf.pct(d['mean'])} "
+                f"(95 % CI {tf.pct(d['ci_low'], 0, '')} to {tf.pct(d['ci_high'])}, {d['n']} plants, from "
+                f"{tf.pct(d['min'], 0, '')} to {tf.pct(d['max'])}); W1 control {tf.pct(c['mean'])}. {QC_ONLY}",
+                sub=["control ", html.B(tf.pct(c["mean"]))],
+                chips=trait_chips(trait, effects),
             )
         )
     hr = h["height_p75"]["peak_to_rewatered"]["deficit"]
     ar = h["leaf_area_est"]["peak_to_rewatered"]["deficit"]
     out.append(
-        html.Div(
-            [
-                html.Div("After re-watering", className="uw-readout-label td-tile-label"),
-                html.Div(
-                    [
-                        html.Span([tf.pct(hr["mean"], 0, ""), html.Small("% height")], className="uw-stat"),
-                        html.Span([tf.pct(ar["mean"], 0, ""), html.Small("% leaf area")], className="uw-stat"),
-                    ],
-                    className="td-tile-value td-pairs",
-                ),
-            ],
-            className="uw-tile uw-sand td-tile",
-            title=(
-                "Days 15–16 against each plant's own peak (days 1–3), W2 deficit plants. Height comes back "
-                f"({tf.pct(hr['mean'])}, 95 % CI {tf.pct(hr['ci_low'], 0, '')} to {tf.pct(hr['ci_high'])}, {hr['n']} "
-                f"plants); leaf area does not ({tf.pct(ar['mean'])}, {tf.pct(ar['ci_low'], 0, '')} to "
-                f"{tf.pct(ar['ci_high'])}). Height is the turgor axis, leaf area the lasting damage."
+        stat(
+            "After re-watering",
+            None,
+            tint="sand",
+            hover=(
+                f"Days 15–16 against each plant's own peak (days 1–3), W2: height comes back ({tf.pct(hr['mean'])}, "
+                f"95 % CI {tf.pct(hr['ci_low'], 0, '')} to {tf.pct(hr['ci_high'])}), leaf area does not "
+                f"({tf.pct(ar['mean'])}, {tf.pct(ar['ci_low'], 0, '')} to {tf.pct(ar['ci_high'])}). Early warning "
+                "reads the same event as the share of the loss regained."
             ),
+            sub="vs each plant's peak",
+            pairs=[(tf.pct(hr["mean"], 0, ""), "% height"), (tf.pct(ar["mean"], 0, ""), "% leaf area")],
         )
     )
     out.append(onset_tile())
     return out
 
 
+def _after(day: float, ref: float, what: str) -> str:
+    """'1 day after thermal', '2 days before thermal', 'same day as thermal'."""
+    gap = round(float(day) - float(ref))
+    if gap == 0:
+        return f"same day as {what}"
+    n = abs(gap)
+    return f"{n} day{'s' if n != 1 else ''} {'after' if gap > 0 else 'before'} {what}"
+
+
 def onset_tile():
+    """First seen: the robust onset of 3D leaf area against thermal, with the size-only baseline (DESIGN 7.6);
+    every onset of the strip that used to sit under the charts is on hover (Early warning has the full table)."""
     o = tc.onsets()
     if o is None or o.empty:
-        return html.Div(not_available("Detection onsets"), className="td-tile")
+        return not_available("Detection onsets")
     leaf = o[o["trait"] == "leaf_area_est"]
-    thermal = o[(o["sensor"] == "Thermal") & ~o["is_size_baseline"]]
     if leaf.empty or not np.isfinite(leaf["robust_onset_day"].iloc[0]):
-        return stat_tile("First 3D signal", "–", "", "gray", "no robust onset for leaf area in derived/detect/onsets")
+        return stat("First seen", "–", "", "gray", "no robust onset for leaf area in derived/detect/onsets")
     r = leaf.iloc[0]
-    t = thermal.iloc[0] if len(thermal) else None
-    sub = (
-        html.Span(["thermal ", html.B(f"day {t['robust_onset_day']:g}")])
-        if t is not None and np.isfinite(t["robust_onset_day"])
-        else None
+    thermal = o[(o["sensor"] == "Thermal") & ~o["is_size_baseline"]]
+    t = thermal.iloc[0] if len(thermal) and np.isfinite(thermal["robust_onset_day"].iloc[0]) else None
+    sub = _after(r["robust_onset_day"], t["robust_onset_day"], "thermal") if t is not None else None
+    every = "; ".join(
+        f"{tc.TRAITS[x.trait].label if isinstance(x.trait, str) else tf.short_label(str(x.label))} "
+        f"({'size' if x.is_size_baseline else x.sensor}) day {x.robust_onset_day:g}"
+        for x in o.itertuples()
+        if np.isfinite(x.robust_onset_day)
     )
-    return stat_tile(
-        "3D separates",
+    return stat(
+        "First seen",
         f"day {r['robust_onset_day']:g}",
-        "",
+        day_label(r["robust_onset_day"])[1],
         "gray",
-        f"Leaf area: first day the W2 vs W1 AUC's lower bound clears the largest watered-day AUC, two scored days "
-        f"in a row (robust onset of derived/detect, the Early warning rule); single slots day {r['slot_min']:g} to "
-        f"{r['slot_max']:g}. n = {int(r['n_deficit'])} deficit and {int(r['n_control'])} control plants."
-        + (f" Thermal ({t['label']}) separates first, on day {t['robust_onset_day']:g}." if t is not None else ""),
+        f"Leaf area first separates W2 from W1 on day {r['robust_onset_day']:g} (the Early warning onset rule, "
+        f"{int(r['n_deficit'])} deficit and {int(r['n_control'])} control plants; single runs day {r['slot_min']:g}–{r['slot_max']:g}). "
+        f"All: {every}.",
         sub=sub,
-        extra=onset_chips(),
+        chips=[*onset_chips(), size_chip()],
+        href=page_href("/early-warning"),
     )
 
 
@@ -250,52 +249,60 @@ def onset_chips() -> list:
     ]
 
 
-def bed_effect_chip(trait: str, effects: dict | None = None):
-    e = (effects or tc.bed_effects())[trait]
+def bed_effect_text(trait: str, e: dict) -> str:
+    """Why the bed checks flag a trait, in one line: the placebo, the E2 growth check or both."""
     parts = []
     if e["placebo"]:
-        parts.append(
-            f"placebo AUC {e['placebo_auc']:.2f} (95 % CI {e['placebo_ci_low']:.2f}–{e['placebo_ci_high']:.2f}): "
-            "the future deficit and control plants already differed on 24–29 Aug"
-        )
+        parts.append(f"score {e['placebo_auc']:.2f} on watered days 24–29 Aug")
     if e["e2"]:
-        parts.append(
-            f"before day 0 W2 grew {abs(e['e2_coef']):.1f} {e['e2_unit']} "
-            f"{'slower' if e['e2_coef'] < 0 else 'faster'} than W1 (p = {e['e2_p']:.3f})"
+        p = "p < 0.001" if e["e2_p"] < 0.001 else f"p = {e['e2_p']:.3f}"
+        unit = e["e2_unit"].replace("cm2", "cm²").replace("cm3", "cm³")
+        parts.append(f"W2 grew {abs(e['e2_coef']):.1f} {unit} {'slower' if e['e2_coef'] < 0 else 'faster'} ({p})")
+    return f"{tc.TRAITS[trait].label}: " + ", ".join(parts)
+
+
+def trait_bed_chip(trait: str, effects: dict | None = None):
+    e = (effects or tc.bed_effects())[trait]
+    return bed_effect_chip(bed_effect_text(trait, e) + ".")
+
+
+def every_trait_flagged(effects: dict) -> bool:
+    return all(effects[k]["chip"] for k in tc.TRAITS)
+
+
+def trait_chips(trait: str, effects: dict) -> list:
+    """The ``bed effect`` chip of one trait (DESIGN 7.4), unless every trait on the page is flagged: then the one
+    chip in the header covers them all (``header_chips``), as a chip on every tile and chart would say nothing."""
+    return [trait_bed_chip(trait, effects)] if effects[trait]["chip"] and not every_trait_flagged(effects) else []
+
+
+def header_chips(effects: dict) -> list:
+    """At most two: ``bed effect`` (one control bed; the beds differed before day 0, per flagged trait, when every
+    trait is flagged) and ``method`` (how the numbers are made, and the QC caveat)."""
+    flagged = [bed_effect_text(k, effects[k]) for k in tc.TRAITS if effects[k]["chip"]]
+    if every_trait_flagged(effects):
+        caveat = bed_effect_chip(
+            f"{ONE_BED} So every value is change from the plant's own baseline. " + "; ".join(flagged) + "."
         )
-    return chip("bed effect", f"{tc.TRAITS[trait].label}: " + "; ".join(parts))
-
-
-def treatment_chip(bed: str):
-    tint, text, ink = TINT.get(bed, TINT["W2"])
-    hover = (
-        "W1: watered throughout"
-        if bed == "W1"
-        else f"{bed}: no water from day 0 (3 Sep 11:00) to re-watering on day 12 (15 Sep 18:35)"
-    )
-    return html.Span(
-        text.lower(),
-        title=hover,
-        className="uw-chip uw-chip-context",
-        style={"background": C[tint], "color": C[ink]},
-    )
+    else:
+        caveat = chip("1 control bed", ONE_BED, anchor="one-control-bed")
+    return [caveat, chip("method", f"{METHOD} {QC_ONLY}", "rule", "own-baseline")]
 
 
 def context_chips(bed: str, plant: str) -> list:
-    """The plant's treatment chip; for a W3 plant also the chip that says it is left out of every bed number."""
-    out = [treatment_chip(bed)]
-    if bed == tc.SAMPLED_BED:
-        cut = tc.sampled_leaf(bed, plant)
-        mine = f"This plant: a leaf cut on {tf.day_text(cut)}." if cut is not None else "This plant: no leaf cut."
-        out.append(
-            chip(
-                "not pooled",
-                "W3 is a second deficit bed, shown plant by plant and left out of every bed number, band and onset on "
-                "this page: most of its plants had a leaf cut for relative water content on one of days 1–12 "
-                f"(derived/truth/rwc_leaves), so its canopy loss mixes drought and sampling. {mine}",
-            )
+    """For a W3 plant the chip that says it is left out of every bed number (its treatment is in the card)."""
+    if bed != tc.SAMPLED_BED:
+        return []
+    cut = tc.sampled_leaf(bed, plant)
+    mine = f"This plant: a leaf cut on {tf.day_text(cut)}." if cut is not None else "This plant: no leaf cut."
+    return [
+        chip(
+            "not pooled",
+            "W3 is left out of every bed number, band and onset on this page: most of its plants had a leaf cut for "
+            f"water content on days 1–12, so its loss mixes drought and sampling. {mine}",
+            anchor="w3-sampled",
         )
-    return out
+    ]
 
 
 def phase_of(day: int) -> str:
@@ -398,15 +405,18 @@ def strip(state: dict, days: pd.DataFrame):
     return cells
 
 
-def legend(colour_top: float):
+def legend(colour_top: float, days: pd.DataFrame | None = None):
+    """Key of the strip and the clouds: baseline and no-water days, 'no scan' only when the strip has one, and
+    the height ramp of the points."""
     swatch = lambda cls: html.Span(className=f"uw-swatch {cls}", **{"aria-hidden": "true"})
+    noscan = days is None or (days["state"] == "no scan").any()
     return [
         html.Span([swatch("td-sw-base"), "baseline"], title="30 Aug – 2 Sep (days −4 to −1): the plant's own baseline"),
         html.Span(
             [swatch("td-sw-dry"), "no water"],
             title="W2 without water: day 0 (3 Sep 11:00) to re-watering on day 12 (15 Sep 18:35); W1 watered throughout",
         ),
-        html.Span([mark("no scan"), "no scan"], title="no daytime run passed QC that day"),
+        *([html.Span([mark("no scan"), "no scan"], title="no daytime run passed QC that day")] if noscan else []),
         html.Span(
             [
                 "height 0",
@@ -423,34 +433,9 @@ def legend(colour_top: float):
     ]
 
 
-def onset_key():
-    """Key of the onset strip: 3D in the 3D colour, the thermal and RGB references neutral, size grey; three marks."""
-    sensors = [("Depth", "3D"), ("Thermal", "IR, RGB"), ("size", "size")]
-    return html.Div(
-        [
-            *[
-                html.Span(
-                    [
-                        html.Span(
-                            className="uw-swatch", style={"background": tf.SENSOR_COLOURS[k]}, **{"aria-hidden": "true"}
-                        ),
-                        t,
-                    ]
-                )
-                for k, t in sensors
-            ],
-            html.Span([html.Span(className="td-glyph td-glyph-dot", **{"aria-hidden": "true"}), "onset"]),
-            html.Span(
-                [html.Span(className="td-glyph td-glyph-diamond", **{"aria-hidden": "true"}), "bed effect"],
-                title="the placebo test flags the signal: the beds already differed on 24–29 Aug",
-            ),
-            html.Span(
-                [html.Span(className="td-glyph td-glyph-whisker", **{"aria-hidden": "true"}), "single slots"],
-                title="range of the onsets when the 9, 12, 15 and 18 h runs are scored alone",
-            ),
-        ],
-        className="uw-legend td-onset-key",
-    )
+def next_of(bed: str | None = None, plant: str | None = None, day=None) -> list:
+    """The page's next steps at its foot, (text, href, hover); each carries the selection (?bed=&plant=&day=)."""
+    return [(t, page_href(path, bed, plant, day), hover) for t, path, hover in NEXT]
 
 
 def readout_row(label, value, hover, chips=()):
@@ -503,42 +488,23 @@ def plant_card(state: dict, days: pd.DataFrame):
         if drawn and _finite(row.get(f"{k}_pct")):
             slots = str(row["slots"]).replace(",", ", ")
             hover += f" Day mean of the QC-pass {slots} h runs: {tf.pct(row[f'{k}_pct'])}."
-        chips = [bed_effect_chip(k, effects)] if effects[k]["chip"] else []
-        rows.append(readout_row(t.label, tf.pct(change, 0, ""), hover, chips))
+        rows.append(readout_row(t.label, tf.pct(change, 0, ""), hover, trait_chips(k, effects)))
     head = [
-        html.Span(f"{bed} {plant}", className="uw-section td-plant-id"),
+        plant_link(bed, plant, day, "uw-section td-plant-id", f"{bed} {plant}: every sensor, on its profile"),
         html.Span(kicker, className="uw-kicker", style={"color": C[ink]}),
     ]
     when = tf.day_text(day) if day is not None else "–"
-    what = f"{int(row['slot']):02d} h run" if drawn else "day mean"
+    what = f"the {int(row['slot']):02d} h run drawn as NOW" if drawn else "the day mean (no cloud to draw)"
     return html.Div(
         [
             html.Div(head, className="td-card-head"),
             html.Div(
-                ["vs own baseline · ", html.B(what), " · ", html.B(when)],
+                "vs own baseline",
                 className="uw-readout-label td-when",
-                title="The values of the run drawn as NOW (its own numbers, so the picture and the readouts agree); "
-                "the day's mean over its QC-pass runs is on each readout's hover",
+                title=f"{when}: {what}, as change from the plant's own baseline; each readout's hover has the "
+                "day mean over its QC-pass runs",
             ),
             html.Div(rows, className="td-readouts"),
-            html.Div(
-                [
-                    dcc.Link(
-                        "Profile",
-                        href=f"/plant-profile?bed={bed}&plant={plant}",
-                        className="uw-btn uw-btn-primary",
-                        title=f"every sensor for {bed} {plant}",
-                    ),
-                    dcc.Link(
-                        "Bed map",
-                        href=f"/bed-map?bed={bed}&plant={plant}",
-                        className="uw-btn",
-                        style=OUTLINED,
-                        title=f"{bed} {plant} in its bed",
-                    ),
-                ],
-                className="td-links",
-            ),
         ],
         className=f"uw-card uw-{tint} td-card",
         **{"aria-label": f"{bed} {plant}"},
@@ -589,15 +555,45 @@ def chart_head(title, *extra, hover=None):
     return html.Div([html.H3(title, title=hover), *extra], className="td-chart-head")
 
 
+def trait_column(key: str, label: str, chips: list):
+    """One trait, named once: every plant at peak, trough and re-watered, then the bed gap day by day."""
+    return html.Div(
+        [
+            html.Div(
+                [
+                    chart_head(label, *chips),
+                    graph(
+                        f"td-slope-{key}",
+                        f"{label} of every plant: peak, trough, re-watered, % of its own peak",
+                        height=SLOPE_PX,
+                    ),
+                ]
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        "by day",
+                        className="uw-kicker td-sub",
+                        title="Deficit minus control (W2 − W1), mean change from each plant's own baseline, in "
+                        "percentage points; band: 95 % interval; grey: its range on watered days; dashed: onset",
+                    ),
+                    graph(f"td-gap-{key}", f"{label}, deficit minus control by day, day −10 to 16", height=GAP_PX),
+                ]
+            ),
+        ],
+        className="td-trait-col",
+    )
+
+
 # ---------------------------------------------------------------- page
 def layout(bed=None, plant=None, day=None, date=None, legacy="", **_):
-    head_chips = [chip("1 control bed", ONE_BED), chip("QC-pass only", QC_ONLY), chip("method", METHOD, "rule")]
     sel = resolve(bed, plant) if tc.runs() is not None else None
     if sel is None:
         return html.Div([header("3D canopy", QUESTION), not_available("3D traits")])
     state = state_for(*sel, asked_day(day, date))
     bed, plant = sel
     effects = tc.bed_effects()
+    head_chips = header_chips(effects)
     stepper = html.Div(
         [
             html.Button(
@@ -621,10 +617,8 @@ def layout(bed=None, plant=None, day=None, date=None, legacy="", **_):
             className="td-picker",
         ),
     )
-    onset = tf.onset_figure()
-    # DESIGN 7.4: a flagged trait carries its chip on every chart that uses it, as on the tiles and the plant card
-    leaf_chip = [bed_effect_chip("leaf_area_est", effects)] if effects["leaf_area_est"]["chip"] else []
-    height_chip = [bed_effect_chip("height_p75", effects)] if effects["height_p75"]["chip"] else []
+    # DESIGN 7.4: a flagged trait carries its chip on every chart that uses it (or the header carries one for all)
+    leaf_chip, height_chip = trait_chips("leaf_area_est", effects), trait_chips("height_p75", effects)
     return html.Div(
         [
             head,
@@ -634,7 +628,7 @@ def layout(bed=None, plant=None, day=None, date=None, legacy="", **_):
             dcc.Store(id="td-link"),
             dcc.Store(id="td-url"),
             dcc.Store(id="td-scroll"),
-            html.Div(tiles(), className="uw-tiles td-tiles"),
+            html.Div(tiles(), className="uw-tiles uw-lead td-tiles"),
             html.Div(
                 [
                     html.Div(
@@ -693,146 +687,51 @@ def layout(bed=None, plant=None, day=None, date=None, legacy="", **_):
                 ],
                 className="td-hero",
             ),
-            html.Div(
-                [
-                    html.Section(
-                        [
-                            html.Div(
-                                [
-                                    html.H2(
-                                        "Collapse and recovery",
-                                        title="Every plant against its own peak (days 1–3): trough days 10–12, "
-                                        "re-watered days 15–16. Line: the median plant of the bed; band: the middle "
-                                        "half of its plants; dots: one per plant (click one to show it). W1 against W2; "
-                                        "QC-pass runs only.",
-                                    ),
-                                    html.Span(
-                                        [
-                                            html.Span(
-                                                [html.Span(className="td-key td-key-band td-key-dry"), "deficit"],
-                                                className="td-key-item",
-                                                title="W2: median plant (line) and middle half of the plants (band)",
-                                            ),
-                                            html.Span(
-                                                [html.Span(className="td-key td-key-band td-key-ctrl"), "control"],
-                                                className="td-key-item",
-                                                title="W1: median plant (line) and middle half of the plants (band)",
-                                            ),
-                                            html.Span(
-                                                [html.Span(className="td-key td-key-sel"), html.Span(id="td-sel-name")],
-                                                className="td-key-item",
-                                            ),
-                                        ],
-                                        className="td-keys",
-                                    ),
-                                ],
-                                className="uw-panel-head",
-                            ),
-                            html.Div(
-                                [
-                                    html.Div(
-                                        [
-                                            chart_head("Leaf area", *leaf_chip),
-                                            graph(
-                                                "td-slope-leaf",
-                                                "Leaf area of every plant: peak, trough, re-watered, % of its own peak",
-                                                height=280,
-                                            ),
-                                        ]
-                                    ),
-                                    html.Div(
-                                        [
-                                            chart_head("Height", *height_chip),
-                                            graph(
-                                                "td-slope-height",
-                                                "Height of every plant: peak, trough, re-watered, % of its own peak",
-                                                height=280,
-                                            ),
-                                        ]
-                                    ),
-                                ],
-                                className="td-pair-charts",
-                            ),
-                        ],
-                        className="uw-panel td-collapse",
-                    ),
-                    html.Section(
-                        [
-                            html.Div(
-                                [
-                                    html.H2(
-                                        "Onset",
-                                        title="Day each signal first separates W2 from W1 (robust onset, derived/detect: "
-                                        "the Early warning rule). Whisker: the 9, 12, 15 and 18 h runs scored alone. "
-                                        "Open diamond: bed effect.",
-                                    ),
-                                    *onset_chips(),
-                                ],
-                                className="uw-panel-head",
-                            ),
-                            graph(
-                                "td-onset",
-                                "Onset day of the 3D traits against thermal and RGB, days 0 to 12",
-                                height=250,
-                                figure=onset,
-                            )
-                            if onset is not None
-                            else not_available("Detection onsets"),
-                            onset_key() if onset is not None else None,
-                        ],
-                        className="uw-panel td-onsets",
-                    ),
-                ],
-                className="td-evidence",
-            ),
             html.Section(
                 [
                     html.Div(
-                        html.H2(
-                            "Deficit − control",
-                            title="Mean change from each plant's own baseline, W2 minus W1, in percentage points; band: "
-                            "95 % interval from 2,000 plant resamples. Grey band: the gap's range on watered days "
-                            "(−10 to 0). Navy: the selected plant minus the W1 mean.",
-                        ),
+                        [
+                            html.H2(
+                                "Collapse and recovery",
+                                title="Top: every plant against its own peak (days 1–3) at the trough (days 10–12) and "
+                                "after re-watering (days 15–16); line the bed's median plant, band its middle half, a dot "
+                                "per plant (click one to show it). Below: deficit minus control by day, in percentage "
+                                "points of each plant's baseline, with its 95 % band. W1 against W2.",
+                            ),
+                            html.Span(
+                                [
+                                    html.Span(
+                                        [html.Span(className="td-key td-key-band td-key-dry"), "deficit"],
+                                        className="td-key-item",
+                                        title="W2: median plant and middle half of the plants; below, W2 − W1",
+                                    ),
+                                    html.Span(
+                                        [html.Span(className="td-key td-key-band td-key-ctrl"), "control"],
+                                        className="td-key-item",
+                                        title="W1: median plant and middle half of the plants",
+                                    ),
+                                    html.Span(
+                                        [html.Span(className="td-key td-key-sel"), html.Span(id="td-sel-name")],
+                                        className="td-key-item",
+                                        title="the plant shown above; below, it minus the W1 mean",
+                                    ),
+                                ],
+                                className="td-keys",
+                            ),
+                        ],
                         className="uw-panel-head",
                     ),
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    chart_head("Leaf area", *leaf_chip),
-                                    graph(
-                                        "td-gap-leaf",
-                                        "Leaf area, deficit minus control by day, day −10 to 16",
-                                        height=250,
-                                    ),
-                                ]
-                            ),
-                            html.Div(
-                                [
-                                    chart_head("Height", *height_chip),
-                                    graph(
-                                        "td-gap-height",
-                                        "Height, deficit minus control by day, day −10 to 16",
-                                        height=250,
-                                    ),
-                                ]
-                            ),
+                            trait_column("leaf", "Leaf area", leaf_chip),
+                            trait_column("height", "Height", height_chip),
                         ],
                         className="td-pair-charts",
                     ),
                 ],
-                className="uw-panel td-gaps",
+                className="uw-panel td-collapse",
             ),
-            html.Nav(
-                [
-                    dcc.Link("Early warning", href="/early-warning", className="uw-btn", style=OUTLINED),
-                    dcc.Link("Export", href="/export", className="uw-btn", style=OUTLINED),
-                    dcc.Link("Methods & limits", href="/methods", className="uw-btn", style=OUTLINED),
-                ],
-                className="td-more",
-                **{"aria-label": "Related pages"},
-            ),
+            next_steps(*next_of(bed, plant, state["day"]), id="td-steps"),
         ],
         className="td-page",
     )
@@ -940,7 +839,7 @@ def show_stage(state, view):
             empties.append(None)
     heads = [view_head("then", then, a, state_of(days, then)), view_head("now", now, b, state_of(days, now))]
     classes = [f"td-view-head td-{phase_of(d)}" if d is not None else "td-view-head" for d in (then, now)]
-    return (*figs, *heads, *classes, *empties, legend(colour_top))
+    return (*figs, *heads, *classes, *empties, legend(colour_top, days))
 
 
 def state_of(days: pd.DataFrame, day) -> str:
@@ -1003,6 +902,12 @@ def show_plant(state):
     return strip(state, days), plant_card(state, days), tf.side_figure(a, b, frame, labels), key
 
 
+@callback(Output("td-steps", "children"), Input("td-state", "data"))
+def show_next(state):
+    """The foot links follow the selection, so the next page opens on the same plant and day."""
+    return next_links(*next_of(state["bed"], state["plant"], state.get("day")))
+
+
 @callback(
     Output("td-slope-leaf", "figure"),
     Output("td-slope-height", "figure"),
@@ -1021,10 +926,10 @@ def show_evidence(sel):
             r = o[o["trait"] == k]
             onset[k] = float(r["robust_onset_day"].iloc[0]) if len(r) else None
     return (
-        tf.slope_figure("leaf_area_est", bed, plant),
-        tf.slope_figure("height_p75", bed, plant),
-        tf.gap_figure("leaf_area_est", bed, plant, onset.get("leaf_area_est")),
-        tf.gap_figure("height_p75", bed, plant, onset.get("height_p75")),
+        tf.slope_figure("leaf_area_est", bed, plant, height=SLOPE_PX),
+        tf.slope_figure("height_p75", bed, plant, height=SLOPE_PX),
+        tf.gap_figure("leaf_area_est", bed, plant, onset.get("leaf_area_est"), height=GAP_PX),
+        tf.gap_figure("height_p75", bed, plant, onset.get("height_p75"), height=GAP_PX),
         context_chips(bed, plant),
         f"{bed} {plant}",
     )

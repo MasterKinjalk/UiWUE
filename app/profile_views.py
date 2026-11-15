@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import threed_canopy as tc
-from components import BAND, GRAPH_CONFIG, C, mark_stress_period
+from components import BAND, GRAPH_CONFIG, C, mark_stress_period, page_href, placebo_chip, plain, tech
+from components import bed_effect_chip as _bed_effect_chip
 from dash import dcc, html
 
 from uiwue.core import (
@@ -65,6 +66,7 @@ HEADLINES = (
     ("RGB", "rgb_exg", "Greenness"),
     ("CLIP", "truth_turgor_shift", "Leaf-clip shift"),
     ("MODEL", "detect_stress_prob", "Stress probability"),
+    ("MODEL", "detect_fusion_v2_prob", "Fusion probability"),  # out-of-fold thermal model, 171 development plants
 )
 SIZE_UNITS = {"mm", "cm²", "cm³", "count"}
 RAW_PREFIXES = ("detect_", "diurnal_", "env_")
@@ -106,12 +108,13 @@ def unit_text(column):
 
 
 def label_text(column):
+    """The signal's plain name, the one every page uses (``components.plain``)."""
     r = cat_row(column)
-    return r.label if r is not None and isinstance(r.label, str) else column
+    return plain(column, r.label if r is not None and isinstance(r.label, str) else column)
 
 
 def label_unit(column):
-    """'Leaf temperature (°C)', or 'NGRDI' when the unit is blank (never '(nan)')."""
+    """'Leaf temperature (°C)', or 'Green–red index' when the unit is blank (never '(nan)')."""
     u = unit_text(column)
     return f"{label_text(column)} ({u})" if u else label_text(column)
 
@@ -158,6 +161,8 @@ def fmt(x, unit="", digits=1, sign=True):
     """'+4.7 °C' with a real minus sign, '–' when missing; no unit bracket for a blank unit."""
     if x is None or pd.isna(x):
         return "–"
+    if round(float(x), digits) == 0:
+        x, sign = 0.0, False  # never "−0.0" or "+0": no change is unsigned
     s = (f"{x:+.{digits}f}" if sign else f"{x:.{digits}f}").replace("-", "−")
     return f"{s} {unit}".strip() if unit != "%" else f"{s} %"
 
@@ -294,13 +299,31 @@ def plant_row(bed, plant):
     return r.iloc[0] if len(r) else None
 
 
-def profile_href(bed, plant):
-    return f"/plant-profile?bed={bed}&plant={plant}"
+def _href(path, bed, plant, day=None):
+    """A page link carrying the selection (``?bed=&plant=&day=``); the day only when one is chosen."""
+    return page_href(path, bed, plant, day)
 
 
-def threed_href(bed, plant):
-    """The 3D canopy page with this plant selected."""
-    return f"/threed?bed={bed}&plant={plant}"
+def profile_href(bed, plant, day=None):
+    return _href("/plant-profile", bed, plant, day)
+
+
+def threed_href(bed, plant, day=None):
+    """The 3D canopy page with this plant (and day) selected."""
+    return _href("/threed", bed, plant, day)
+
+
+def bedmap_href(bed, plant, day=None):
+    return _href("/bed-map", bed, plant, day)
+
+
+def day_arg(day):
+    """A ``?day=`` value as an int in the app's day range (−10 to 19), else None."""
+    try:
+        d = int(day)
+    except (TypeError, ValueError):
+        return None
+    return d if X_RANGE[0] < d < X_RANGE[1] else None
 
 
 def has_depth(df, bed, plant):
@@ -310,16 +333,17 @@ def has_depth(df, bed, plant):
     return bed in THREED_LINK_BEDS and bool(cols) and bool(plant_rows(df, bed, plant)[cols].notna().any().any())
 
 
-def headline(df, bed, plant, column):
-    """(value, day) of the plant's change on the last day without water that has a value."""
+TROUGH, REWATERED = tc.TROUGH_DAYS, tc.REWATERED_DAYS  # days 10–12 and 15–16, the 3D canopy page's windows
+
+
+def window_mean(df, bed, plant, column, days):
+    """(mean change, usable days) of the plant over a window of days, as the 3D canopy page's ``windows`` makes its
+    trough and re-watered numbers (mean of the daily change over the days with one); (None, 0) without a value."""
     s = series(df, column)
     if s is None:
-        return None, None
-    m = s[(s.bed == bed) & (s.plant == plant) & (s.day <= END_DAY)].dropna(subset=["chg"])
-    if m.empty:
-        return None, None
-    last = m.sort_values("day").iloc[-1]
-    return float(last.chg), int(last.day)
+        return None, 0
+    m = s.loc[(s.bed == bed) & (s.plant == plant) & s.day.between(*days), "chg"].dropna()
+    return (float(m.mean()) if len(m) else None), len(m)
 
 
 def stress_summary(df, bed, plant):
@@ -406,8 +430,18 @@ def plant_csv_frame(df, bed, plant):
 
 
 # ------------------------------------------------------------------ figures
+def is_prob(column):
+    return column.endswith("_prob")
+
+
+def plot_series(df, column):
+    """`series` as the charts draw it: probabilities in %, as the readouts show them."""
+    s = series(df, column)
+    return s.assign(chg=s.chg * 100) if s is not None and is_prob(column) else s
+
+
 def _base_layout(fig, column, height, aria=None):
-    unit = change_unit(column)
+    unit = "%" if is_prob(column) else change_unit(column)
     fig.update_layout(
         height=height,
         margin=dict(l=48, r=12, t=8, b=32),
@@ -449,9 +483,9 @@ def _band(fig, s, bed_set, color_line, color_band, name):
 
 
 def _plant_line(fig, mine, bed, plant, column):
-    unit = change_unit(column)
     tag = source_of(column)[0]
-    custom = np.c_[[day_text(d) for d in mine.day], [fmt(v, unit, 2, mode_of(column) != "raw") for v in mine.chg]]
+    shown = [f"{v:.0f} %" if is_prob(column) else " ".join(value_text(column, v)) for v in mine.chg]
+    custom = np.c_[[day_text(d) for d in mine.day], shown]
     fig.add_scatter(
         x=mine.day,
         y=mine.chg,
@@ -464,9 +498,10 @@ def _plant_line(fig, mine, bed, plant, column):
     )
 
 
-def small_multiple(df, bed, plant, column, height=190):
-    """The plant's change from baseline (navy) over the control bed's mean ± 1 SD (teal), or None."""
-    s = series(df, column)
+def small_multiple(df, bed, plant, column, height=150, day=None):
+    """The plant's change from baseline (navy) over the control bed's mean ± 1 SD (teal), or None; `day` marks the
+    selected day."""
+    s = plot_series(df, column)
     if s is None:
         return None
     mine = s[(s.bed == bed) & (s.plant == plant)].dropna(subset=["chg"]).sort_values("day")
@@ -475,12 +510,22 @@ def small_multiple(df, bed, plant, column, height=190):
     fig = go.Figure()
     _band(fig, s[~((s.bed == bed) & (s.plant == plant))], ["W1"], C["teal-700"], BAND["control"], "control")
     _plant_line(fig, mine, bed, plant, column)
-    return _base_layout(fig, column, height)
+    fig = _base_layout(fig, column, height)
+    fig.update_layout(yaxis_title=None, margin_l=36)  # the unit sits beside the card's number
+    return mark_day(fig, day)
 
 
-def detail_figure(df, bed, plant, column, height=340):
-    """One trait in full: control bed band, the plant's own deficit bed band (deficit plants), and the plant."""
-    s = series(df, column)
+def mark_day(fig, day):
+    """The selected day (navy, DESIGN 2.2) as a dashed hairline, when a link carried one in."""
+    if day is not None:
+        fig.add_vline(x=day, line_width=1.5, line_dash="dash", line_color=C["navy"])
+    return fig
+
+
+def detail_figure(df, bed, plant, column, height=340, events=()):
+    """One trait in full: control bed band, the plant's own deficit bed band (deficit plants), and the plant.
+    `events`: (day, label) onsets of this plant (leaf clip, first symptom), drawn as navy dashed lines (DESIGN 6)."""
+    s = plot_series(df, column)
     if s is None:
         return None
     mine = s[(s.bed == bed) & (s.plant == plant)].dropna(subset=["chg"]).sort_values("day")
@@ -496,17 +541,31 @@ def detail_figure(df, bed, plant, column, height=340):
     fig.update_layout(showlegend=True, margin=dict(l=48, r=12, t=32, b=32))
     for t in fig.data:
         t.showlegend = not t.name.endswith("SD")
+    for i, (day, label) in enumerate(events):  # a second label sits one line lower, so close days stay apart
+        fig.add_vline(x=day, line_width=1.5, line_dash="dash", line_color=C["navy"])
+        fig.add_annotation(
+            x=day,
+            y=1,
+            yref="paper",
+            xanchor="left",
+            yanchor="top",
+            xshift=4,
+            yshift=-16 * (i % 2),
+            text=label,
+            showarrow=False,
+            font=dict(size=12, color=C["navy"]),
+        )
     return fig
 
 
 CHANGE_TEXT = {
-    "pct": "% change from the plant's own baseline (median 30 Aug – 2 Sep)",
-    "diff": "change from the plant's own baseline (median 30 Aug – 2 Sep)",
-    "raw": "value as computed by the module (no baseline subtraction)",
+    "pct": "% change from the plant's own baseline (median of 30 Aug – 2 Sep)",
+    "diff": "change from the plant's own baseline (median of 30 Aug – 2 Sep)",
+    "raw": "value as the module computes it (no baseline)",
 }
 THREED_DAY_TEXT = (
-    "% change from the plant's own baseline (median of its daily values on days −4 to −1, 30 Aug – 2 Sep); "
-    "daily value = mean of its QC-pass runs at 9, 12, 15 and 18 h, as on 3D canopy"
+    "% change from the plant's own baseline (median of days −4 to −1); daily value = mean of its QC-pass runs at "
+    "9, 12, 15 and 18 h, as on 3D canopy"
 )
 
 
@@ -517,7 +576,9 @@ def method_hover(column):
         how = THREED_DAY_TEXT
     else:
         how = f"{CHANGE_TEXT[mode_of(column)]}; daily median of the 12 h and 15 h runs that pass QC"
-    return f"{label_unit(column)}: {how}; band = control bed W1 mean ± 1 SD; source derived/{module}/"
+    name = tech(column)
+    also = f" ({name})" if name != label_text(column) else ""
+    return f"{label_unit(column)}{also}: {how}. Band: control bed ± 1 SD. Source: {module}/"
 
 
 def run_hover(column, hour):
@@ -525,14 +586,13 @@ def run_hover(column, hour):
     module = source_of(column)[1]
     how = CHANGE_TEXT[mode_of(column)]
     if mode_of(column) != "raw":
-        how = how.replace("(median 30 Aug – 2 Sep)", f"at {hour:02d} h (median of its {hour:02d} h runs 30 Aug – 2 Sep)")
-    out = (
-        f"{label_unit(column)}: {how}; each square is one {hour:02d} h run, a run that failed QC is no scan; "
-        f"source derived/{module}/"
-    )
+        how = how.replace(
+            "(median of 30 Aug – 2 Sep)", f"at {hour:02d} h (median of its {hour:02d} h runs 30 Aug – 2 Sep)"
+        )
+    out = f"{label_unit(column)}: {how}. Each square is one {hour:02d} h run; a run that failed QC is no scan."
     if column in THREED_KEY:
-        out += ". Plant profile and 3D canopy show the daily mean of the QC-pass 9–18 h runs instead"
-    return out
+        out += " Plant profile and 3D canopy show the daily mean of the QC-pass 9–18 h runs instead."
+    return out + f" Source: {module}/"
 
 
 # ------------------------------------------------------------------ marks (HTML)
@@ -597,6 +657,34 @@ def _ramp_colors():
     return [C[k] for k in ("teal-600", "teal-300", "gray", "amber-200", "amber-700", "amber-900")]
 
 
+def value_text(column, value):
+    """(number, unit) for a readout: probabilities as %, size traits as % of baseline, the rest signed in their
+    unit; ('–', '') when missing."""
+    if value is None or pd.isna(value):
+        return "–", ""
+    if column.endswith("_prob"):
+        return f"{value * 100:.0f}", "%"
+    unit = change_unit(column)
+    digits = 0 if unit == "%" else 1 if abs(value) >= 1 else 2
+    return fmt(value, "", digits, mode_of(column) != "raw"), unit
+
+
+def bed_effect_chip(column):
+    """The `bed effect` chip of a trait. The kept 3D traits use the 3D canopy page's own check (W2 against W1,
+    placebo or E2), so both pages flag the same traits; the rest use the app-wide placebo test (W2 + W3)."""
+    if column not in THREED_KEY:
+        return placebo_chip(column)
+    b = tc.bed_effects().get(THREED_KEY[column])
+    if not b or not b["chip"]:
+        return []
+    why = []
+    if b["placebo"]:
+        why.append(f"score {b['placebo_auc']:.2f} on watered days 24–29 Aug")
+    if b["e2"]:
+        why.append("W2 grew apart from W1 before day 0")
+    return [_bed_effect_chip(f"{label_text(column)}: {'; '.join(why)}, as on 3D canopy.")]
+
+
 def graph_box(fig, label, height):
     return html.Div(
         dcc.Graph(figure=fig, config=GRAPH_CONFIG, style={"height": f"{height}px"}),
@@ -643,7 +731,8 @@ def ramp_limits(df, column, hour):
 
 
 def pot_states(df, column, day, hour, bed):
-    """One row per pot of a bed: state (value / noscan / notable / notimaged), change and raw value."""
+    """One row per pot of a bed: state (value / noscan / notable / notimaged), change and raw value. A run with a
+    value but no change (the plant has no baseline at this slot) is "no scan" too: there is nothing to colour."""
     pots = pd.DataFrame({"plant": all_plants()})
     pots[["x", "y"]] = [position(p) for p in pots.plant]
     imaged = set(df[df.bed == bed].plant)
@@ -655,11 +744,14 @@ def pot_states(df, column, day, hour, bed):
     else:
         pots[column], pots["chg"], seen = np.nan, np.nan, set()
     pots["state"] = np.select(
-        [pots[column].notna(), pots.plant.isin(seen), pots.plant.isin(imaged)],
+        [pots.chg.notna(), pots.plant.isin(seen), pots.plant.isin(imaged)],
         ["value", "noscan", "notable"],
         "notimaged",
     )
     return pots
+
+
+NO_BASE = "no baseline at this slot (no QC-pass run on 30 Aug – 2 Sep)"
 
 
 def bed_figure(df, column, day, hour, bed, selected=None, imaged_only=False, height=560):
@@ -684,8 +776,8 @@ def bed_figure(df, column, day, hour, bed, selected=None, imaged_only=False, hei
             y=p.y,
             mode="markers",
             marker=style,
-            customdata=np.c_[p.plant, [bed] * len(p)],
-            hovertemplate=f"{bed} %{{customdata[0]}} · {why[state]}<extra></extra>",
+            customdata=np.c_[p.plant, [bed] * len(p), [NO_BASE if pd.notna(x) else why[state] for x in p[column]]],
+            hovertemplate=f"{bed} %{{customdata[0]}} · %{{customdata[2]}}<extra></extra>",
             name=EMPTY_TEXT[state],
         )
     v = pots[pots.state == "value"]
@@ -861,14 +953,18 @@ def data_dictionary(columns, table_key="traits"):
             rows.append(dict(column=c, **plant_day[c]))
         elif c in cat.index:
             r = cat.loc[c]
+            name = label_text(c)  # the plain name the pages use; the catalogue's own name leads the description
+            what = r.description if isinstance(r.description, str) else ""
+            if name != r.label:
+                what = f"{r.label}: {what}" if what else r.label
             rows.append(
                 dict(
                     column=c,
-                    label=r.label,
+                    label=name,
                     unit=unit_text(c),
                     direction=int(r.direction) if pd.notna(r.direction) else "",
                     source=f"derived/{r.module}/",
-                    description=r.description if isinstance(r.description, str) else "",
+                    description=what,
                 )
             )
         elif c in design:
@@ -920,7 +1016,7 @@ def plant_day_terms(cat):
     }
     for t in tc.TRAITS.values():
         r = cat.loc[t.column] if t.column in cat.index else None
-        label = r.label if r is not None else t.label
+        label = label_text(t.column)
         unit = unit_text(t.column) or t.unit
         direction = int(r.direction) if r is not None and pd.notna(r.direction) else ""
         what = r.description if r is not None and isinstance(r.description, str) else ""
@@ -949,6 +1045,8 @@ def preview_table(t, n=12):
     """First rows as an HTML table: navy header, numbers right-aligned and tabular, '–' for missing."""
     head = t.head(n)
     num = [pd.api.types.is_numeric_dtype(head[c]) for c in head.columns]
+    # a date stays on one line (it broke at its hyphens in the narrow first columns)
+    date = [pd.api.types.is_datetime64_any_dtype(head[c]) for c in head.columns]
 
     def cell(v, is_num):
         if v is None or (not isinstance(v, (list, np.ndarray)) and pd.isna(v)):
@@ -969,7 +1067,16 @@ def preview_table(t, n=12):
                 ),
                 html.Tbody(
                     [
-                        html.Tr([html.Td(cell(v, k), className="num" if k else None) for v, k in zip(row, num)])
+                        html.Tr(
+                            [
+                                html.Td(
+                                    cell(v, k),
+                                    className="num" if k else None,
+                                    style={"whiteSpace": "nowrap"} if d else None,
+                                )
+                                for v, k, d in zip(row, num, date)
+                            ]
+                        )
                         for row in head.itertuples(index=False)
                     ]
                 ),

@@ -40,14 +40,16 @@ comes from the data layer `app/threed_canopy.py`:
 
 | Part | What it shows | Data |
 |---|---|---|
-| Bed tiles | height and leaf area lost, peak to trough; what came back after re-watering; the 3D onset against thermal | `headline()`, `onsets()` |
+| Bed tiles | the shared stat tile (`components.stat`): height and leaf area lost, peak to trough, with the controls' change; after re-watering, height and leaf area against each plant's peak ("height comes back, leaf area does not"); first seen, the 3D onset against thermal with the `Size only · day 6` chip, a link to Early warning (every onset is on its hover) | `headline()`, `onsets()` |
 | The plant, then and now | plant-only point clouds of THEN and NOW with one camera and one scale, soil drawn as a disc with the 85 mm crop ring, a 50 mm scale bar. NOW draws the day's most typical QC-pass run (closest to the plant's per-trait median over that day and the days either side, so one odd run is never the picture); THEN draws the baseline-day run closest to the plant's baseline. Detached edge points are not drawn (below) | `cloud_days()`, `then_run()`, `plant_cloud()`, `axis_ranges()` |
-| Plant card | the three traits of the run drawn as NOW, as change from the plant's baseline, so the numbers describe the picture; the day's mean over its QC-pass runs is on hover. No status mark (the leaf-area rule also flags controls) | `cloud_days()` (`<trait>_run_pct`), `plant_days()` |
+| Plant card | the plant's ID (a link to its profile, carrying the day) and the three traits of the run drawn as NOW, as change from the plant's baseline, so the numbers describe the picture; the day's mean over its QC-pass runs is on hover. No status mark (the leaf-area rule also flags controls) | `cloud_days()` (`<trait>_run_pct`), `plant_days()` |
 | Side view | highest kept plant point per 5 mm of x of the same two runs, THEN dotted and NOW filled: where wilting reads best, and a view that needs no WebGL | `side_profile()` |
 | Deficit − control | per day, the mean change of W2 minus that of W1 (thick amber, drawn on top), with a 95 % plant-bootstrap band and the spread seen on watered days; the chosen plant minus the W1 mean as a thin navy line under it | `gap()`, `plant_days()` |
 | Collapse and recovery | every plant against its own peak (days 1 to 3): trough (days 10 to 12), re-watered (days 15 to 16). Per bed the median plant (line) and the middle half of the plants (band), one dot per plant (click to show it), the chosen plant in navy | `windows()` |
-| Onset | robust onset of the three 3D traits (forest) beside the first thermal and RGB signals and the size baseline (neutral), with a whisker over the 9, 12, 15 and 18 h runs scored alone; an `older table` chip with the n when `derived/detect` predates the 3D table | `onsets()`, `onsets_info()` |
-| `bed effect` chip | on the traits the placebo or the E2 check flags (on the 216-plant table: all three) | `bed_effects()` |
+| Onset | no longer a chart on this page: the first-seen tile carries the leaf-area onset, every 3D, thermal, RGB and size onset is on its hover, and Early warning ranks them all; an `older table` chip with the n when `derived/detect` predates the 3D table | `onsets()`, `onsets_info()` |
+| `bed effect` chip | on the traits the placebo (its W2 rows) or the E2 check flags (on the 216-plant table: all three; leaf area by E2 alone). When every trait on the page is flagged, as now, the page says it once, in the header (`design/DESIGN.md` 7.4); otherwise it sits on every tile, card row and chart of a flagged trait. It links to `/methods#bed-effect` | `bed_effects()` |
+| Header chips | at most two: `bed effect` (or `1 control bed` when not every trait is flagged) and `method` (how the numbers are made, a link to `/methods#own-baseline`); a W3 plant adds `not pooled` (a link to `/methods#w3-sampled`) | `bed_effects()`, `sampled_leaf()` |
+| Next steps | at the foot, carrying the plant and day: Early warning (filled), Plant profile | – |
 
 **Detached edge points** (`stray_mask`, display only). Plant points are clustered by single linkage
 at 12 mm. A cluster is not drawn when it floats over the plant (its lowest point is above the
@@ -96,9 +98,9 @@ W2 distributions. Tables and clouds are cached by path and modification time
 
 | Trait | Label | Unit | Role |
 |---|---|---|---|
-| `depth_leaf_area_est` | Leaf area | cm² | leads: separates first and does not come back |
+| `depth_leaf_area_est` | Leaf area | cm² | leads: separates first and does not come back; carries the `bed effect` chip (E2) |
 | `depth_height_p75` | Height | mm | the reversible (turgor) axis; carries the `bed effect` chip (placebo and E2) |
-| `depth_hull_volume` | Volume | cm³ | secondary; carries the `bed effect` chip (placebo) |
+| `depth_hull_volume` | Volume | cm³ | secondary; carries the `bed effect` chip (placebo and E2) |
 
 On the committed 216-plant table (computed live by the page; numbers as of 15 Nov 2026; mean over
 plants with a 95 % plant-bootstrap interval):
@@ -113,9 +115,10 @@ plants with a 95 % plant-bootstrap interval):
 Height loss spreads widely (−70 % to +44 %; median −36 %): 32 of 68 deficit plants lose more than
 40 %, 13 lose 6 % or less (11 of them grow). 64 of 68 lose at least 33 % of their leaf area. On the
 28-plant table the numbers were −39 % height, −64 % leaf area, −3 % and −54 % after re-watering.
-Robust onsets, W2 against W1 (`derived/detect`, still computed on the 28-plant table, n 14 + 10):
-thermal day 4, leaf area day 5, RGB and volume day 6, height day 9. 3D is about a day behind
-thermal; its part is how much each plant lost and what came back.
+Robust onsets, W2 against W1 (`derived/detect`, recomputed on the 216-plant table on 15 Nov; n
+62 + 64 for 3D): thermal day 4, leaf area day 5, RGB and size day 6, volume day 7, height day 8
+(on the 28-plant table: 4, 5, 6, 6, 9). 3D is about a day behind thermal; its part is how much
+each plant lost and what came back.
 
 ### What was removed, and why
 
@@ -132,6 +135,11 @@ Noisy or redundant signals are left out of the analysis and the page, not hidden
 | trait-against-turgor tab | correlations near 0 once detrended; its table existed on one machine only |
 | the "reliable" badge (E1) | it compared the signal with within-run noise, not with day-to-day repeatability |
 
+The detection run leaves the removed traits out at the source (`uiwue.detect.data.DEPTH_EXCLUDED`),
+and the pages read every detect table through the same definition (`components.kept_trait`). The
+fusion models (`docs/fusion.md`) never read the trait table: they embed the raw depth images, or
+use hand-made thermal features (v2); only their size-only baseline reads `depth_projected_area`.
+
 ### Caveats (on hover and chips on the page)
 
 - One control bed: treatment and bed cannot be separated.
@@ -141,8 +149,10 @@ Noisy or redundant signals are left out of the analysis and the page, not hidden
   QC-pass means understate the loss.
 - Every plant of the 216-plant table has a baseline; a plant without one would keep its rows and
   show `–`.
-- The onsets come from `derived/detect`, last computed on the 28-plant table: the page marks them
-  `older table` with their n until `python -m uiwue.detect.run` is run again.
+- The onsets come from `derived/detect`, recomputed on the 216-plant table. They count 62 deficit
+  and 64 control plants (a QC-pass 12 h or 15 h run and a baseline at that slot). When the 3D
+  table is rewritten after them, the page marks them `older table` with their n until
+  `python -m uiwue.detect.run` is run again.
 - Heights jump between day −3 and day −2; area traits show a day-0 gap in the placebo that is gone
   on days 1 to 3.
 - "Leaf area" is measured inside the fixed 85 mm plant cylinder, not on the whole plant.
@@ -151,26 +161,46 @@ Noisy or redundant signals are left out of the analysis and the page, not hidden
 
 ## Links in and out
 
-- **Plant profile:** the `3D canopy` button opens `/threed?bed=…&plant=…` for every plant with
-  depth data. Its side panel has a `Leaf area · 3D` card with the plant's change from baseline at
-  the end of the no-water window (days 10 to 12) and after re-watering (days 15 to 16), from
-  `threed_canopy.structure_status`. It is a readout, not an alert: on the committed table the
-  structure rule (below −20 % of baseline on two usable days in a row while unwatered) fires for
-  63 of 72 deficit plants (median day 9), but also for 2 of 72 control plants (W1 L3 from day 1,
-  W1 O8 from day 9). The rule's verdict and the live control count are on the card's hover. W3
-  plants link to the page too and are shown on their own; the card stays W1 and W2.
-- **Bed map:** the selected plant's `3D canopy` link opens `/threed?bed=…&plant=…`.
-- **Home:** one `3D canopy` page tile, `forest-700` on `mint` (`design/DESIGN.md` section 2.1).
-- **Early warning:** 3D appears after thermal: `Next · Depth` is leaf area at day 5 against thermal
-  at day 4. Only the kept 3D traits (and projected area as the size baseline) are ranked there.
+- **Plant profile:** its first next step, `3D canopy` at the page's foot, opens
+  `/threed?bed=…&plant=…&day=…` for every plant with depth data. Its three 3D charts read
+  `threed_canopy.plant_days` (`profile_views.threed_series`), so a plant shows the same daily values
+  on both pages; before, Plant profile took the median of the 12 h and 15 h runs, QC-failed ones
+  included (W1 J5's leaf area on day 12 read +70 % there, +108 % here). Its `Leaf area, trough` and
+  `After re-watering` tiles give the plant's leaf-area change from its own baseline at the end of the
+  no-water window (days 10 to 12) and after re-watering (days 15 to 16), from the same windows. They
+  are readouts, not an alert: on the committed table the structure rule (below −20 % of baseline on
+  two usable days in a row while unwatered) fires for 63 of 72 deficit plants (median day 9), but also
+  for 2 of 72 control plants (W1 L3 from day 1, W1 O8 from day 9); the rule's verdict and the live
+  control count are on the tile's hover. W3 plants link to the page too and are shown on their own.
+- **Bed map:** the selected plant's next steps (`Plant profile`, `3D canopy`) open it with the day.
+  Its squares stay one run each, against the same slot's baseline (run by run is the page's
+  question); a run that failed QC is `no scan`, and the hover of a 3D trait says the other pages
+  show the daily mean.
+- **Daily rhythm:** QC-pass runs only; a 3D trait grouped by treatment is W1 against W2, with a
+  `W1 + W2 only` chip (by bed, W3 is its own line). Its per-slot means are raw values, as the hover
+  says. Its `Midday dip · 3D` tile reads E4 (`threed_canopy.midday_dip`): whether drought deepens the
+  15 h − 09 h dip in height. It says `none` while the interval holds zero (now +0.04 mm/day); the
+  hover adds the leaf-area dip once dark runs are left out, when that one is clear.
+- **Home:** the finding tiles `3D sees stress` (leaf area, day 5) and `Leaf area lost` (−61 %, with
+  the `bed effect` chip) link here, and one `3D canopy` page tile, `forest-700` on `mint`
+  (`design/DESIGN.md` section 2.1), sits in the `See` group.
+- **Early warning:** opens on W2 against W1, the comparison this page uses: its `3D` tile is leaf
+  area at day 5 against thermal at day 4, and links here. With W3 in the group (`W3` or `W2 + W3`),
+  63 of whose 72 plants lost a leaf to sampling, leaf area reaches day 4, so the header carries a
+  `W3 sampled` chip (the W2-only onset on hover). Its `Loss regained` panel reads the same
+  re-watering as the share of each signal's change that came back by 18–19 Sep (leaf area 32 %,
+  height 215 %), against the plant's own baseline; this page reads it against each plant's peak
+  (leaf area −49 %, height +6 %). Both say height comes back and leaf area does not. Only the kept 3D
+  traits (and projected area as `Size only`) are ranked there.
 - **Export:** the table `3D canopy · plant-days` replaces the old 3D export: one row per plant and
   day with the three traits, each with its baseline (`_base`) and % change (`_pct`), the run
   counts, and a data dictionary. The merged run table keeps every `depth_` column at run level.
 - **Old links:** `/threed-browser`, `/threed-compare` and `/threed-export` land on the 3D canopy
   page with their query, through the page's `path_template` (`/threed<legacy>`); they have no nav
   entry. (Dash's `redirect_from` would not do: it answers with a fixed 301 and drops the query.)
-- **Out:** the page links to the chosen plant's Plant profile and Bed map, and to Early warning,
-  Export and Methods & limits.
+- **Out:** the next steps at the foot, Early warning and the chosen plant's Plant profile, both
+  carrying the plant and day; the plant's ID in the card links to its profile; the first-seen tile
+  links to Early warning; every caveat chip links to its entry on Methods & limits.
 
 ## Code layout
 
@@ -182,8 +212,8 @@ app/
                       the default plant, clouds, side elevation, RGB frame (pandas, numpy, scipy)
   threed_figures.py   the cloud stage and the other 3D figures
   assets/threed.css   page styles, on the token variables
-  profile_views.py    threed_href, structure_summary and threed_days: the links in, the
-                      Plant profile card and the Export table
+  profile_views.py    threed_href, threed_series, structure_summary and threed_days: the links
+                      in, the Plant profile charts and card, the Export table
 tests/app/test_threed_canopy.py   the data layer, on the committed tables and small sandboxes
 tests/app/test_threed_pages.py    the page
 tests/app/test_profile_pages.py   the links in, the Plant profile card, the Home tile, the Export table

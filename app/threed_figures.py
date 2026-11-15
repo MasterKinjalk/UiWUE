@@ -33,10 +33,6 @@ FRONT_MM = 22.0  # room in front of the disc for the scale bar (its label sits b
 PAD_MM = 34.0  # x and y range beyond the crop cylinder (the scale bar stands there)
 TIP = 1.15  # the frame reaches the highest point, or 1.15 x the 99th percentile when one stray point is higher
 X_DAYS = (-10.5, 16.5)  # day axis of the trait charts: the 3D table runs from day -10 to 16
-# onset strip: the 3D rows in the 3D colour (DESIGN 2.1), the thermal and RGB references neutral; teal-700 means
-# control on this page and plum-700 a single-plant tile, so they name no sensor here (one meaning per colour)
-SENSOR_COLOURS = {"Thermal": C["slate-600"], "Depth": C["forest-700"], "RGB": C["slate-600"], "size": C["gray-500"]}
-SENSOR_TAG = {"Thermal": "IR", "Depth": "3D", "RGB": "RGB"}
 GRAPH_CONFIG = {"displayModeBar": False}
 STAGE_CONFIG = {"displayModeBar": False, "scrollZoom": False}  # rotate only: the scale stays locked
 
@@ -547,7 +543,7 @@ def slope_figure(trait: str, bed: str, plant: str, height: int = 300) -> go.Figu
     return fig
 
 
-# ---------------------------------------------------------------- onset strip
+# ---------------------------------------------------------------- labels
 def short_label(label: str) -> str:
     """'Leaf minus air temperature' -> 'Leaf − air temp.', 'Projected leaf area' -> 'Projected area'."""
     return (
@@ -555,61 +551,3 @@ def short_label(label: str) -> str:
         .replace(" temperature", " temp.")
         .replace("Projected leaf area", "Projected area")
     )
-
-
-def onset_figure(height: int = 250) -> go.Figure | None:
-    """When each signal separates W2 from W1 (robust onset of derived/detect, the Early warning rule), the
-    3D traits beside the first thermal and RGB signal; the whisker spans the onsets of single slots."""
-    o = tc.onsets()
-    if o is None or o.empty:
-        return None
-    o = o.iloc[::-1].reset_index(drop=True)  # earliest at the top
-    names, colours, symbols, hovers = [], [], [], []
-    for r in o.itertuples():
-        size = bool(r.is_size_baseline)
-        tag = "size" if size else SENSOR_TAG.get(r.sensor, r.sensor)
-        label = tc.TRAITS[r.trait].label if isinstance(r.trait, str) else short_label(str(r.label))
-        names.append(f"{tag} · {label}")
-        colours.append(SENSOR_COLOURS["size"] if size else SENSOR_COLOURS.get(r.sensor, C["gray-500"]))
-        symbols.append("diamond-open" if r.bed_effect else "circle")
-        slots = (
-            f"single slots day {r.slot_min:g}–{r.slot_max:g}"
-            if np.isfinite(r.slot_min) and np.isfinite(r.slot_max)
-            else "single slots –"
-        )
-        day = f"day {r.robust_onset_day:g}" if np.isfinite(r.robust_onset_day) else "–"
-        hovers.append(
-            f"{r.label} ({r.sensor}) · robust onset {day} · {slots} · {int(r.n_deficit)} deficit, "
-            f"{int(r.n_control)} control plants"
-            + (" · bed effect: the beds differed before day 0" if r.bed_effect else "")
-            + (" · size only (DESIGN 7.6)" if size else "")
-        )
-    fig = go.Figure()
-    fig.add_vrect(x0=0, x1=tc.STRESS_DAYS[1] + 0.5, fillcolor=C["sand"], line_width=0, layer="below")
-    for i, r in enumerate(o.itertuples()):
-        if np.isfinite(r.slot_min) and np.isfinite(r.slot_max):
-            fig.add_scatter(
-                x=[r.slot_min, r.slot_max],
-                y=[names[i]] * 2,
-                mode="lines",
-                line=dict(color=colours[i], width=2),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-    fig.add_scatter(
-        x=o["robust_onset_day"],
-        y=names,
-        mode="markers",
-        marker=dict(size=13, color=colours, symbol=symbols, line=dict(width=2, color=colours)),
-        hovertext=hovers,
-        hoverinfo="text",
-        showlegend=False,
-    )
-    fig.update_layout(
-        height=height,
-        margin=dict(l=8, r=12, t=8, b=44),
-        hovermode="closest",
-        xaxis=dict(range=[-0.5, 12.9], dtick=2, title=dict(text="day", standoff=4), fixedrange=True),
-        yaxis=dict(automargin=True, fixedrange=True, showgrid=False, tickfont=dict(size=13)),
-    )
-    return fig

@@ -21,7 +21,7 @@ Two levels of rule:
 
 | Element | Rule | Example |
 |---|---|---|
-| Page title | a short noun phrase, nothing under it | `3D browser`, `Early warning` |
+| Page title | a short noun phrase, nothing under it | `3D canopy`, `Early warning` |
 | The page's question | in `dash.register_page(description=...)` and as the `title` (hover) of the `<h1>`, never as visible text | "Which signal detects stress first?" |
 | Buttons, tabs, toggles | 1 or 2 words | `Compare`, `RGB`, `vs control bed` |
 | Legend entries | 1 or 2 words, or a value | `fine`, `no scan`, `+8 °C` |
@@ -32,6 +32,16 @@ Two levels of rule:
 
 No paragraphs, no subtitles, no instructions ("click a plant to…") and no sentences in cards. When
 a page needs explanation, put it in the chat reply, the PR description or `docs/`, not on screen.
+
+**One name per signal.** A signal reads by the same plain name on every page, from one dictionary,
+`components.PLAIN` (`Leaf − air temperature`, `Leaf area`, `Height`, `Green–red index`, `Projected leaf
+area`, ...); the catalogue's technical name (`Canopy height, p75`, `NGRDI`) goes on hover
+(`components.tech`). A signal missing from `PLAIN` reads by its catalogue label. Labels are in sentence
+case (`Leaf area lost`, `Water now`), never all lower case.
+
+**Finding first.** Every page opens with its answer in numbers a person can repeat: a row of stat tiles
+(section 5) above the page's one focal figure. Methods & limits is the one exception: its first entries
+are the limits.
 
 ## 2. Colour (MUST)
 
@@ -133,20 +143,24 @@ Reuse these. Do not invent a new pattern for a need one of them already covers.
 
 | Component | Spec | Mockup |
 |---|---|---|
-| Nav | `UiWUE` wordmark (display 21) and page links (sans 14). The current page is `ink-display` bold with a 3 px `teal-700` underline. | `Nav.dc.html` |
+| Nav | `UiWUE` wordmark (display 21), then the pages as a path in four groups, `See` (Bed map, Plant profile, 3D canopy), `Detect` (Early warning, Sensor comparison, Daily rhythm), `Act` (Irrigation advisor) and `Data` (Export, Methods & limits): a caps kicker (11, its question on hover) over a row of links (sans 14, what the page answers on hover). The current page is `ink-display` bold with a 3 px `teal-700` underline and `aria-current="page"`. Below 1040 px the groups fold into one 44 px menu button that names the current page; the open menu lists the same groups, the current page marked by a 3 px `teal-700` left edge on `surface-2`; it closes after a pick and on Escape. A nav link carries `?bed=&plant=&day=` to a page that shows one plant. (`components.NAV`, `app/app.py`, `assets/nav.js`) | `Nav.dc.html` (drawn before the groups) |
 | Page header | title, then context chips, then a spacer, then controls aligned right | every page |
 | Segmented group | buttons with `aria-pressed`. The selected one is `teal-700` with white text; a mode switch that is on (Compare, Group by) is `navy` with white text; the rest are `surface-2` with a `gray-500` border. | Bed map, 3D browser |
 | Day strip | 46 × 48 cells, with the day number in display 17 and the date in 11 under it. Baseline days `mint`, no-water days `sand`, the selected day `navy`. | Bed map |
-| Stat tile | label 12 / value display 28–37 / unit 12 on a role tint | Early warning, Export |
+| Stat tile | the one tile of every page (`components.stat`): label 12 in sentence case with at most one or two chips, value display 32 (28 on a phone) with its unit 12 beside it (the unit drops under the value as a whole when the tile is narrow), an optional second line 13; two values side by side with `pairs`. Tints: `sand` deficit, `sky` control, `mint` neutral, `gray` sensor results; the best of a set gets a 2 px `teal-700` edge. **Link variant** (`href`): the whole tile is a link to the page that shows the number, marked by a `›` in its top-right corner and a `teal-700` edge on hover; its chips are plain text there. **Missing:** `stat_missing`, a 2 px dashed `rule` edge and `–`, the reason on hover. In a `uw-tiles` grid; on a phone two to a row, an odd last tile takes the row. | Early warning, Export |
 | Readout row | label · value (display 24) · unit; the method goes on hover | Bed map panel |
 | Bed grid | rows A–R down, columns 1–8 across, staggered, three beds side by side. Never sort or pack it. | Bed map |
 | Context chip | caps 12, tinted: `WATER DEFICIT` on `sand` in `amber-900` | 3D browser |
-| Caveat chip | `sand` with `amber-900` bold text; the detail goes on hover (`bed effect`, `W1 + W2 only`) | Bed map, Irrigation |
-| Rule chip | outlined in `gray-500` (`AUC rule`); the definition goes on hover | Early warning |
+| Caveat chip | `sand` with `amber-900` bold text; the detail goes on hover in plain words (`bed effect`, `W1 + W2 only`). A caveat with an entry on Methods & limits is a link to it (`components.chip(..., anchor=)`, `/methods#bed-effect`), underlined on hover. | Bed map, Irrigation |
+| Rule chip | outlined in `gray-500` (`method`, `Size only · day 6`); the definition goes on hover, and it links to its Methods entry when it has one | Early warning |
 | Source tag | 11 px bold caps: `3D`, `IR`, `RGB`, `HSI`, `CLIP` | Trait explorer, Sensors |
 | Empty state | 2 px dashed `rule` box with the module name and "no table yet" | Profile, Home |
 | Evidence grid | signals × days 0–12, cells on the evidence ramp, onset as a white dot with an `amber-700` ring | Early warning |
-| Actions | one filled `teal-700` link per panel; the rest outlined in `teal-700`. Links carry bed, plant, date and hour. | every page |
+| Actions | one filled `teal-700` link per panel (`uw-btn uw-btn-primary`); the rest outlined in `teal-700` (`uw-btn uw-btn-outline`), never an inline style. Links carry bed, plant, date and hour. | every page |
+| Next steps | the page's one or two next pages, at its foot (`components.next_steps`): the first filled, the second outlined, along the nav's path See → Detect → Act → Data. They carry `?bed=&plant=&day=` to a page that shows one plant (`components.page_href`), and follow the selection when it changes. Export and Methods end the path and point back to Home. | every page but Home, whose page tiles are its next steps |
+| Plant link | a plant's ID (`W2 R7`) in display type is a link to its profile carrying the day (`components.plant_link`): no underline until hover, then a 1 px underline in `navy`. Every plant named on a page is one. | every page |
+| Disclosure | a rarely used option or a long list behind one native `details` / `summary` (a 44 px control, `▸` closed, `▾` open), closed by default, a 1 px `rule` edge (`components.details`): `All signals`, `Options`, `Data coverage`. | Early warning, Sensor comparison, Home |
+| Hover tip | every `title` shows in one box (`assets/nav.js`): `surface`, 1 px `gray-500` edge, radius 8, sans 13/18, at most 320 px wide; on hover after 250 ms, on keyboard focus, and on a tap of a chip. One or two plain sentences. | every page |
 
 ## 6. Charts: Plotly and Dash (MUST)
 
@@ -171,7 +185,8 @@ Reuse these. Do not invent a new pattern for a need one of them already covers.
 
 ```python
 UIWUE = dict(
-    paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+    paper_bgcolor="#ffffff",
+    plot_bgcolor="#ffffff",
     font=dict(family='Calibri, "Source Sans 3", "Segoe UI", system-ui, sans-serif', size=13, color="#1e2a24"),
     colorway=["#1c7293", "#c98300", "#2e6b4f", "#6b3f7a", "#8a959c"],
     xaxis=dict(gridcolor="#cfe0d4", linecolor="#8a959c", zeroline=False, ticks=""),
@@ -194,10 +209,17 @@ for non-plant points and no axes.
 3. Keep the method next to the number, on hover: flyover hour, threshold, baseline window, rule
    and source table.
 4. Show limits where the result is shown. A trait flagged by the placebo gets the `bed effect` chip
-   on every chart that uses it.
+   on every chart that uses it. When every trait on a page is flagged, the page says it once instead:
+   one `bed effect` chip in the header (3D canopy, whose three traits are all flagged) or on the chart
+   that ranks them (`all flagged` on Sensor comparison's fusion view); a chip on every tile and chart
+   would say nothing a reader does not already know. The chip links to `/methods#bed-effect`.
 5. Keep the three kinds of "nothing" distinct: no usable scan, no table, position not imaged.
-6. Next to every detection result, show the size-only baseline (`depth_projected_area`, tagged
-   `size`).
+6. Next to every detection result, show the size-only baseline (`depth_projected_area`), always
+   named `Size only`, W2 against W1. Where a page ranks sensors in tiles (Home, Early warning, Sensor
+   comparison) it is the last sensor tile and the row `Size only` in the chart; where a page shows one
+   detection result (Plant profile's peak stress, 3D canopy's first seen, Daily rhythm's best flyover,
+   Irrigation advisor's first alert) it is the rule chip `Size only · day 6` beside that number
+   (`components.size_chip`, a link to `/methods#size-baseline`).
 
 ## 8. Accessibility (MUST)
 
@@ -213,22 +235,26 @@ for non-plant points and no axes.
 ## 9. Page layouts (SHOULD)
 
 One mockup per page in master plan section 7. Use it as the starting layout and adapt it when the
-data needs something else.
+data needs something else. The table below is the app as it is now (15 Nov 2026), in the nav's order;
+every page opens with stat tiles and ends with its next steps (section 5). **Where the mockups no longer
+match:** every mockup predates the grouped nav, the shared stat tile, the next-steps row and the plain
+signal names; `Home`, `Irrigation`, `Rhythm`, `Profile`, `Main`, `EarlyWarning`, `Sensors` and `Browser3D`
+also differ in layout as noted in the table. The mockups are kept as drawn; this table wins.
 
-| Page | Mockup | Owner | Layout |
-|---|---|---|---|
-| Home | `Home.dc.html` | Yuming | bed stat tiles, table coverage timeline, page tiles |
-| 3D browser | `Browser3D.dc.html` | Kinjalk | views A and B, colour-by, Compare, height-over-time chart; trait table A/B/Δ on the right |
-| Trait explorer | `Traits.dc.html` | Kinjalk | trait chips, treatment chart with bands, onset; stat tiles on the right |
-| Early warning | `EarlyWarning.dc.html` | Jack | 4 stat tiles, evidence grid with symptom columns, placebo column |
-| Sensor comparison | `Sensors.dc.html` | Jack | 3 stat tiles, setup table with AUC cells and onset bars |
-| Daily rhythm | `Rhythm.dc.html` | Yuming | hour × day heatmap with a score toggle; flyover plan cards on the right |
-| Irrigation advisor | `Irrigation.dc.html` | Yuming | rule picker, day stepper, status counts, plant list against the threshold; W3 check on the right |
-| Plant profile | `Profile.dc.html` | Sam | per-sensor small multiples, spectrum; status and event timeline on the right |
-| Export | `Export.dc.html` | Kinjalk | filters on the left; counts and a contract-column preview on the right; CSV and method downloads |
-| Bed map | `Main.dc.html` | Sam | signal switch, day strip, three bed grids; plant panel on the right |
-| Methods & limits | `Methods.dc.html` | Jack | placebo, split, scope, confounds |
-| (kit) | `System.dc.html` | – | colours, marks, type, parts |
+| Page | Group | Mockup | Layout now | Differs from the mockup |
+|---|---|---|---|---|
+| Home | – | `Home.dc.html` | title; experiment row (W1, W2, W3 with plant counts, the no-water window); finding tiles (first day each sensor sees stress, `Size only`, leaf area lost), each a link to its page; page tiles in the nav's four groups, each with what the page answers; data coverage behind a disclosure | coverage timeline moved behind a disclosure; finding tiles replace the bed tiles |
+| Bed map | See | `Main.dc.html` | signal and run pickers; tiles (median per bed, the three plants to look at, each a plant link); day chip, play and slider; the three bed grids; selected plant on the right (ID, value, trend); next steps Plant profile, 3D canopy | the plant's actions moved to the next steps |
+| Plant profile | See | `Profile.dc.html` | bed and plant pickers with a stepper; tiles (peak stress with `Size only`, first sign, leaf area at the trough, after re-watering); one focal timeline with a trait picker; one small chart per sensor; next steps 3D canopy, Early warning | no right-hand status column: the tiles say it |
+| 3D canopy (was 3D browser) | See | `Browser3D.dc.html` (drawn for the 3D browser; see `docs/threed/APP.md`) | tiles (height lost, leaf area lost, after re-watering against each plant's peak, first seen with `Size only`); then and now clouds, plant card and side view on the right; day strip; collapse and recovery, deficit − control by day; next steps Early warning, Plant profile | onset strip removed (first seen tile; Early warning has every onset) |
+| Early warning | Detect | `EarlyWarning.dc.html` | deficit-bed switch; tiles (first day per sensor, `Size only`, leaf clip); onset by signal; daily score of one signal; loss regained after re-watering on the right; all signals behind a disclosure; next steps Sensor comparison, Daily rhythm | onset dot chart instead of the evidence grid |
+| Sensor comparison | Detect | `Sensors.dc.html` | sensors / fusion switch; tiles (score per setup with its onset, best buy, `Size only`); detection score per setup; options and all setups behind disclosures; next steps Daily rhythm, Irrigation advisor | dot chart with intervals instead of the setup table |
+| Daily rhythm | Detect | `Rhythm.dc.html` | tiles (midday heat, 3D midday dip, best flyover with `Size only`); day profile; when to image on the right; separation by hour × day below; next steps Irrigation advisor, Early warning | day profile leads; the heatmap moved below |
+| Irrigation advisor | Act | `Irrigation.dc.html` | rule picker (its definition on hover), day stepper, caveat chips; tiles (water now, first alert with `Size only`, false alarms, held-out W3); every plant against the threshold, the plants to water first, CSV; the selected plant's scans; next steps Export, Methods & limits | the W3 check and track record are tiles, not a side column |
+| Export | Data | `Export.dc.html` | download buttons in the header; filters on the left; tiles (rows, plants, days, columns); rows or column meanings; next steps Methods & limits, Home | – |
+| Methods & limits | Data | `Methods.dc.html` | jump links; limits (sand when they limit a claim), watered-day check, checks, words, scope; every entry has an anchor that chips on other pages link to; next steps Home, Early warning | grouped entries instead of four cards |
+| Trait explorer | – | `Traits.dc.html` | not built: Plant profile and 3D canopy cover it | – |
+| (kit) | – | `System.dc.html` | colours, marks, type, parts | – |
 
 The numbers in the mockups are real values from the tables, as of 2026-11-14. The onset days were
 computed for the mockups with the master plan's 6.6 rule. They are not output from `uiwue.stats`.

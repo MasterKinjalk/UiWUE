@@ -1,0 +1,35 @@
+/* Early warning, Sensor comparison, Methods & limits (app/pages/early_warning.py, sensor_comparison.py,
+   methods.py). Token variables only (design/tokens.css); the shared parts (stat tile, chips that link to
+   Methods, next steps, disclosure, buttons) are in uiwue.css. */
+
+.dt-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-2); }
+
+/* loss regained after re-watering (Early warning) */
+.dt-recovery { display: flex; flex-direction: column; gap: var(--uw-space-2); }
+.dt-recovery .uw-kicker { padding-top: var(--uw-space-1); }
+.dt-rec-row { display: flex; align-items: center; gap: var(--uw-space-3); min-height: 28px; }
+.dt-rec-name { flex: 1 1 auto; min-width: 0; }
+.dt-rec-row .uw-bar { flex: 0 0 72px; }
+
+/* options behind one control (Sensor comparison) */
+.dt-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--uw-space-3) var(--uw-space-5); padding: var(--uw-space-2) 0 var(--uw-space-2); }
+.dt-options .uw-label { gap: var(--uw-space-2); }
+
+/* Methods & limits: grouped entries, each a limit and its consequence; an entry opened by a link is marked */
+.dt-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: var(--uw-space-4); align-items: start; }
+.dt-entries { display: flex; flex-direction: column; gap: var(--uw-space-2); margin: 0; padding: 0; list-style: none; }
+.dt-entry { scroll-margin-top: var(--uw-space-4); display: flex; flex-direction: column; gap: 2px; padding: var(--uw-space-2) var(--uw-space-3); border-radius: var(--uw-radius-md); background: var(--uw-surface-2); }
+.dt-entry.uw-sand { background: var(--uw-sand); }
+.dt-entry-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--uw-space-3); }
+.dt-entry-head b { color: var(--uw-ink-display); }
+.dt-entry-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--uw-ink-display); }
+.dt-entry.uw-sand .dt-entry-value { color: var(--uw-amber-900); }
+.dt-entry-text { font-size: 13px; line-height: 18px; color: var(--uw-ink); }
+.dt-entry:target, .dt-entry.dt-hit { outline: 2px solid var(--uw-navy); outline-offset: 2px; }
+.dt-entry a.dt-self { color: inherit; text-decoration: none; }
+.dt-entry a.dt-self:hover { text-decoration: underline; }
+.dt-jump { display: flex; flex-wrap: wrap; gap: var(--uw-space-2); padding-bottom: var(--uw-space-4); }
+
+@media (max-width: 700px) {
+  .dt-rec-row .uw-bar { flex-basis: 96px; }
+}

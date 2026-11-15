@@ -17,7 +17,8 @@ if str(APP) not in sys.path:  # the shell has app/ on the path; a page run alone
     sys.path.insert(0, str(APP))
 
 import components
-from components import C, chip, graph, header, panel, readout, segmented, select
+from components import C, chip, details, graph, header, next_steps, panel, readout, segmented, select, stat
+from components import stat_missing as missing_tile
 
 from uiwue.detect.data import DEPTH_EXCLUDED, DEPTH_EXCLUDED_PREFIX
 from uiwue.detect.data import load_result as _load_result
@@ -47,10 +48,52 @@ def keep_signals(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df[df["signal"].map(kept_signal)].reset_index(drop=True)
 
 
+def short(signal, label="") -> str:
+    """The signal's plain name, the one every page uses (``components.plain``)."""
+    return components.plain(signal, label)
+
+
 def load_result(name: str) -> pd.DataFrame | None:
     """A derived/detect table (None if missing) without the dropped 3D traits. The filter runs on read,
-    so every ranking, count and 'best signal' pick on a page is computed after it."""
-    return keep_signals(_load_result(name))
+    so every ranking, count and 'best signal' pick on a page is computed after it. Jargon labels read plain."""
+    df = keep_signals(_load_result(name))
+    if df is not None and {"signal", "label"} <= set(df.columns):
+        df = df.assign(label=[components.plain(s, lbl) for s, lbl in zip(df["signal"], df["label"], strict=True)])
+    return df
+
+
+# Plain words for the headline number of the detect pages; the technical name and its meaning go on hover
+SCORE_HOVER = (
+    "Detection score (AUC): how well the signal separates stressed from watered plants; 0.5 = chance, 1 = perfect."
+)
+ONSET_HOVER = "Onset: the first day the score beats the largest score seen on any watered day, that day and the next."
+
+
+# Anchors on Methods & limits: one per limit or term, so a chip or hover on any page can point to it
+METHODS_ANCHORS = (
+    "one-control-bed",
+    "bed-effect",
+    "w3-sampled",
+    "small-rgb",
+    "symptom-notes",
+    "hyperspectral",
+    "missing-runs",
+    "microclimate",
+    "fusion-lockbox",
+    "detection-score",
+    "onset",
+    "size-baseline",
+    "recovery",
+    "lead-time",
+)
+
+
+methods_href = components.methods_href
+
+
+def chip_link(text, hover, anchor, kind="caveat"):
+    """A chip that is also a link to its entry on Methods & limits (``components.chip`` with an anchor)."""
+    return chip(text, hover, kind, anchor)
 
 
 def run_info() -> dict:
@@ -68,10 +111,8 @@ def run_time(info: dict) -> str:
 
 
 ONE_CONTROL_BED = (
-    "One control bed (W1). Intervals resample plants, but plants in a bed share the day's light and air, "
-    "so bed and treatment cannot be separated and the intervals are too narrow: read 1.00 [1.00, 1.00] as "
-    "'the beds differ that day', not as certainty. The placebo and the pre-cutoff check test the beds when "
-    "all plants were watered."
+    "One control bed (W1): bed and treatment cannot be separated, so read a score of 1.00 as 'the beds differ "
+    "that day', not as certainty. The watered-day checks test the beds before the cut."
 )
 
 
@@ -112,61 +153,31 @@ def signed_days(x) -> str:
     return components.signed(x, "d", 0)
 
 
-def tile(label, value, unit="", tint="gray", hover=None, extra=()):
-    """Stat tile (DESIGN 5): label 12 / value display 32 / unit 12 on a role tint. When the tile is too
-    narrow for both, the unit moves under the value as a whole, instead of running out of the tile."""
-    stat = (
-        html.Div(
-            [
-                html.Span(value, style={"whiteSpace": "nowrap"}),
-                html.Small(unit, style={"whiteSpace": "nowrap", "lineHeight": "16px", "marginLeft": 0}),
-            ],
-            className="uw-stat",
-            style={"display": "flex", "flexWrap": "wrap", "alignItems": "baseline", "columnGap": "4px"},
-        )
-        if unit
-        else html.Div(value, className="uw-stat")
-    )
-    return html.Div(
-        [
-            html.Div([label, *extra], className="uw-readout-label", style={"display": "flex", "gap": "8px"}),
-            stat,
-        ],
-        className=f"uw-tile uw-{tint}",
-        title=hover,
-    )
-
-
-def missing_tile(label, why):
-    return html.Div(
-        [html.Div(label, className="uw-readout-label"), html.Div("–", className="uw-stat")],
-        className="uw-tile uw-empty",
-        title=why,
-        style={"display": "block"},
-    )
-
-
 def bed_effect_chip(row) -> list:
     """'bed effect' when the placebo flags the signal, 'day effect' when the onset rule
     already fires on watered days; the numbers go on hover."""
     out = []
-    if bool(row.get("bed_effect", False)):
+
+    def _on(key):  # a missing flag (a table without that check, e.g. the fusion rows) is not a flag
+        v = row.get(key, False)
+        return bool(v) if pd.notna(v) else False
+
+    if _on("bed_effect"):
         out.append(
-            chip(
-                "bed effect",
-                f"Placebo (24–29 Aug, all watered): AUC {fmt(row.get('placebo_auc'))}, "
-                f"95 % CI {fmt(row.get('placebo_ci_low'))}–{fmt(row.get('placebo_ci_high'))}. "
-                "The beds already differed; not ranked.",
+            components.bed_effect_chip(
+                f"Score {fmt(row.get('placebo_auc'))} on watered days 24–29 Aug (95 % CI "
+                f"{fmt(row.get('placebo_ci_low'))}–{fmt(row.get('placebo_ci_high'))}; 0.5 = no difference): not ranked."
             )
         )
-    if bool(row.get("fires_before_cutoff", False)):
+    if _on("fires_before_cutoff"):
         fire = row.get("precutoff_fire_day", np.nan)
         out.append(
-            chip(
+            chip_link(
                 "day effect",
-                "The onset rule already fires on watered days"
+                "The contract rule already fires on a watered day"
                 + (f" ({day_text(fire)})" if pd.notna(fire) else "")
-                + f". Largest watered-day AUC {fmt(row.get('null_auc_max'))}; the robust onset must clear it.",
+                + f"; the onset must beat the largest watered-day score, {fmt(row.get('null_auc_max'))}.",
+                "bed-effect",
             )
         )
     return out
@@ -186,12 +197,14 @@ def table(df, columns: dict, page_size: int = 15, id=None, export: str | None = 
     d = df[list(columns)].copy()
     numeric = []
     for c in d.columns:
+        flags = d[c].dropna()
         if d[c].dtype.kind == "f":
             d[c] = d[c].round(2)
             numeric.append(c)
         elif d[c].dtype.kind in "iu":
             numeric.append(c)
-        elif d[c].dtype.kind == "b":
+        elif d[c].dtype.kind == "b" or (len(flags) and flags.map(lambda v: isinstance(v, bool | np.bool_)).all()):
+            # a flag column read as objects (two tables concatenated, one without the flag) is still yes / no
             d[c] = d[c].map({True: "yes", False: "no"})
     d = d.astype(object).where(d.notna(), "–")
     kw = {"id": id} if id else {}
@@ -244,19 +257,26 @@ __all__ = [
     "DEPTH_KEPT",
     "DEPTH_SIZE",
     "GROUPS",
+    "METHODS_ANCHORS",
     "ONE_CONTROL_BED",
+    "ONSET_HOVER",
+    "SCORE_HOVER",
     "C",
     "bed_effect_chip",
     "chip",
+    "chip_link",
     "day_text",
+    "details",
     "fmt",
     "graph",
     "header",
     "keep_signals",
     "kept_signal",
     "load_result",
+    "methods_href",
     "min_width",
     "missing_tile",
+    "next_steps",
     "not_available",
     "panel",
     "readout",
@@ -266,8 +286,9 @@ __all__ = [
     "run_time",
     "segmented",
     "select",
+    "short",
     "signed_days",
     "source_tag",
+    "stat",
     "table",
-    "tile",
 ]

@@ -9,6 +9,7 @@ app, a notebook, or an exported PNG for the video. Colours are the design tokens
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -76,6 +77,16 @@ MODEL_SYMBOL = {
     "fusion": "star",  # main track (uiwue.fusion): frozen encoders
     "fusion+lora_hsi": "hexagram",
     "fusion+lora_thermal": "star-diamond",
+    "fusion_v2": "pentagon",  # hand-made thermal features, 6 h window (docs/fusion.md section 8)
+}
+MODEL_LABEL = {"fusion": "frozen", "fusion+lora_thermal": "thermal LoRA", "fusion_v2": "v2"}  # legend, 1-2 words
+# Benchmark models keep teal and navy; of the fusion models only the chosen one (v2) is highlighted (DESIGN 6)
+MODEL_COLOUR = {
+    "logistic": C["teal-700"],
+    "boosted": C["navy"],
+    "fusion": C["gray-500"],
+    "fusion+lora_thermal": C["plum-700"],
+    "fusion_v2": C["teal-700"],
 }
 TEMPLATE = "plotly_white"
 STRESS_END_DAY = 12  # rewatered 15 Sep 18:35
@@ -190,7 +201,7 @@ def auc_curves(
         m = meta.loc[sig]
         main = sig == first
         colour = C["teal-700"] if main else C["gray-500"]
-        name = "size" if m["is_size_baseline"] else str(m["label"])
+        name = "Size only" if m["is_size_baseline"] else str(m["label"])
         if main:
             fig.add_trace(
                 go.Scatter(
@@ -214,7 +225,7 @@ def auc_curves(
                 marker=dict(size=5),
                 customdata=np.c_[s["ci_low"], s["ci_high"], s["n_deficit"], s["n_control"], dates],
                 hovertemplate=(
-                    "day %{x} · %{customdata[4]}<br>AUC %{y:.2f} (95 % CI %{customdata[0]:.2f}–%{customdata[1]:.2f})"
+                    "day %{x} · %{customdata[4]}<br>score %{y:.2f} (95 % CI %{customdata[0]:.2f}–%{customdata[1]:.2f})"
                     "<br>%{customdata[2]} deficit · %{customdata[3]} control plants"
                     f"<extra>{name}</extra>"
                 ),
@@ -229,20 +240,23 @@ def auc_curves(
         )
     # every 4th day from day 0 (cut-off) through day 12 (re-watered): level labels that fit a phone-width chart
     fig.update_xaxes(title="day", range=[-10.5, 18.5], zeroline=False, tick0=0, dtick=4, tickangle=0)
-    fig.update_yaxes(title="AUC", range=[0, 1.08])
+    fig.update_yaxes(title="score", range=[0, 1.08])
     return _theme(fig, 380)
 
 
-def onset_ranking(onsets: pd.DataFrame, group: str = "all", include_bed_effect: bool = True) -> go.Figure:
+def onset_ranking(
+    onsets: pd.DataFrame, group: str = "all", include_bed_effect: bool = True, rule: bool = True
+) -> go.Figure:
     """Dot plot: robust onset (filled) and the contract-rule onset (open) per signal,
-    coloured by sensor; flagged signals drawn as open diamonds."""
+    coloured by sensor; flagged signals drawn as open diamonds. ``rule=False`` leaves the rule
+    markers out (the rule onset is then only on the robust marker's hover)."""
     o = ranked(onsets, group)
     if not include_bed_effect:
         o = o[~flagged(o)]
     if o.empty:
         return empty_figure("No onset results")
     o = o.iloc[::-1]
-    names = [("size · " if s else "") + str(lbl) for lbl, s in zip(o["label"], o["is_size_baseline"], strict=True)]
+    names = ["Size only" if s else str(lbl) for lbl, s in zip(o["label"], o["is_size_baseline"], strict=True)]
     colours = [
         SENSOR_COLOURS["size"] if s else SENSOR_COLOURS.get(x, C["gray-500"])
         for s, x in zip(o["is_size_baseline"], o["sensor"], strict=True)
@@ -250,16 +264,18 @@ def onset_ranking(onsets: pd.DataFrame, group: str = "all", include_bed_effect: 
     rob = o["robust_onset_day"] if "robust_onset_day" in o.columns else o["onset_day"]
     fig = go.Figure()
     fig.add_vrect(x0=0, x1=REWATER_DAY, fillcolor=C["sand"], line_width=0, layer="below")
-    fig.add_trace(
-        go.Scatter(
-            x=o["onset_day"],
-            y=names,
-            mode="markers",
-            name="rule",
-            marker=dict(symbol="circle-open", size=11, color=colours, line=dict(width=2)),
-            hovertemplate="%{y}<br>contract rule: day %{x}<extra></extra>",
+    if rule:
+        fig.add_trace(
+            go.Scatter(
+                x=o["onset_day"],
+                y=names,
+                mode="markers",
+                name="rule",
+                marker=dict(symbol="circle-open", size=11, color=colours, line=dict(width=2)),
+                hovertemplate="%{y}<br>contract rule: day %{x}<extra></extra>",
+            )
         )
-    )
+    rule_day = [f"day {int(d)}" if pd.notna(d) else "–" for d in o["onset_day"]]
     fig.add_trace(
         go.Scatter(
             x=rob,
@@ -269,10 +285,13 @@ def onset_ranking(onsets: pd.DataFrame, group: str = "all", include_bed_effect: 
             marker=dict(
                 symbol=np.where(flagged(o), "diamond-open", "circle"), size=13, color=colours, line=dict(width=2)
             ),
-            customdata=np.c_[o["null_auc_max"] if "null_auc_max" in o else np.full(len(o), np.nan), o["placebo_auc"]],
+            customdata=np.c_[
+                o["null_auc_max"] if "null_auc_max" in o else np.full(len(o), np.nan), o["placebo_auc"], rule_day
+            ],
             hovertemplate=(
-                "%{y}<br>robust onset: day %{x}<br>bar: largest watered-day AUC %{customdata[0]:.2f}"
-                "<br>placebo AUC %{customdata[1]:.2f}<extra></extra>"
+                "%{y}<br>onset day %{x}<br>bar: largest watered-day score %{customdata[0]:.2f}"
+                + ("" if rule else "<br>contract rule: %{customdata[2]}")
+                + "<br>score on watered 24–29 Aug %{customdata[1]:.2f}<extra></extra>"
             ),
         )
     )
@@ -299,11 +318,24 @@ def recovery_summary(rec: pd.DataFrame | None, signals=None, group: str = "all")
 # --------------------------------------------------------------------------- #
 # Sensor comparison
 # --------------------------------------------------------------------------- #
-def setup_tick(sensors: str, n_deficit, n_control) -> str:
+def setup_tick(sensors: str, n_deficit=None, n_control=None) -> str:
     """Tick label of a setup: one source tag per line ('RGB<br>+ 3D<br>+ IR 160'), then the plant counts
-    ('9 · 9'), so the labels of fifteen setups stay apart; the full setup name is in the hover."""
+    ('9 · 9'), so the labels of fifteen setups stay apart; the full setup name is in the hover. Without counts
+    (the models of the setup ran on different plants) the tag lines alone; each point's counts are on hover."""
     tags = [SETUP_TAG.get(s, s) for s in str(sensors).split("+")]
-    return "<br>".join([tags[0], *(f"+ {t}" for t in tags[1:]), f"{int(n_deficit)} · {int(n_control)}"])
+    n = [] if n_deficit is None or pd.isna(n_deficit) else [f"{int(n_deficit)} · {int(n_control)}"]
+    return "<br>".join([tags[0], *(f"+ {t}" for t in tags[1:]), *n])
+
+
+def _onset_text(sub: pd.DataFrame) -> list[str]:
+    """'robust onset day 4', or 'rule onset day 1' for a row without the robust onset (the fusion tables), or
+    'no onset'."""
+    rob = sub["robust_onset_day"] if "robust_onset_day" in sub else pd.Series(np.nan, index=sub.index)
+    out = []
+    for r, o in zip(rob, sub["onset_day"], strict=True):
+        kind, day = ("robust", r) if pd.notna(r) else ("rule", o)
+        out.append(f"{kind} onset day {int(day)}" if pd.notna(day) else "no onset")
+    return out
 
 
 def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "early_auc") -> go.Figure:
@@ -317,12 +349,16 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
         fig.add_hline(y=r[metric], line_dash="dash", line_color=SENSOR_COLOURS["size"], line_width=1)
     fig.add_hline(y=0.5, line_color=C["rule"], line_width=1)
     rest = b[~b["is_size_baseline"].astype(bool)].copy()
+    # the counts go in the tick only when every model of the setup ran on the same plants (the fusion view mixes
+    # 26 · 13 image-encoder plants with v2's 114 · 57 in one setup)
+    same = rest.groupby("setup")[["n_deficit", "n_control"]].nunique().max(axis=1) <= 1
     rest["tick"] = [
-        setup_tick(s, d, c) for s, d, c in zip(rest["sensors"], rest["n_deficit"], rest["n_control"], strict=True)
+        setup_tick(s, d, c) if same.get(name, True) else setup_tick(s)
+        for name, s, d, c in zip(rest["setup"], rest["sensors"], rest["n_deficit"], rest["n_control"], strict=True)
     ]
     order = rest.drop_duplicates("setup").sort_values("cost_rank")
     ticks = dict(zip(order["setup"], order["tick"], strict=True))
-    colour = {"logistic": C["teal-700"], "boosted": C["navy"]}
+    colour = MODEL_COLOUR
     for model, sub in rest.groupby("model"):
         sub = sub.set_index("setup").reindex(order["setup"]).dropna(subset=["model"]).reset_index()
         flag = flagged(sub).to_numpy()
@@ -333,7 +369,7 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
                 x=[ticks[s] for s in sub["setup"]],
                 y=sub[metric],
                 mode="markers",
-                name=model,
+                name=MODEL_LABEL.get(model, model),
                 marker=dict(
                     size=12,
                     color=colour.get(model, C["plum-700"]),
@@ -350,7 +386,7 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
                     color=C["gray-500"],
                 ),
                 customdata=np.c_[
-                    sub["robust_onset_day"] if "robust_onset_day" in sub else sub["onset_day"],
+                    _onset_text(sub),
                     sub["placebo_auc"],
                     np.where(flag, "flagged", "clean"),
                     sub["setup"],
@@ -358,7 +394,7 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
                     sub["n_control"].astype(int),
                 ],
                 hovertemplate=(
-                    "%{customdata[3]}<br>AUC %{y:.2f}<br>robust onset day %{customdata[0]}"
+                    "%{customdata[3]}<br>AUC %{y:.2f}<br>%{customdata[0]}"
                     "<br>placebo AUC %{customdata[1]:.2f} · %{customdata[2]}"
                     "<br>%{customdata[4]} deficit · %{customdata[5]} control plants<extra>" + model + "</extra>"
                 ),
@@ -368,6 +404,121 @@ def cost_performance(bench: pd.DataFrame, group: str = "all", metric: str = "ear
     fig.update_yaxes(title="AUC", range=[0.3, 1.04])
     fig = _theme(fig, 420)
     fig.update_layout(margin=dict(l=56, r=16, t=24, b=96))
+    return fig
+
+
+def _onset_plain(sub: pd.DataFrame) -> list[str]:
+    """'onset day 4' (the robust bar) or 'no onset' for a benchmark row; 'rule onset day 2' for a fusion row,
+    whose table has the contract rule only."""
+    rob = sub["robust_onset_day"] if "robust_onset_day" in sub else pd.Series(np.nan, index=sub.index)
+    out = []
+    for m, r, o in zip(sub["model"].astype(str), rob, sub["onset_day"], strict=True):
+        if m.startswith("fusion"):
+            out.append(f"rule onset day {int(o)}" if pd.notna(o) else "no rule onset")
+        else:
+            out.append(f"onset day {int(r)}" if pd.notna(r) else "no onset")
+    return out
+
+
+def setup_label(setup: str) -> str:
+    """'RGB + 3D + Thermal 160×120': the benchmark's setup name with the source tag a reader sees elsewhere."""
+    return re.sub(r"(\d)x(\d)", r"\1×\2", str(setup).replace("Depth", "3D").replace("Hyperspectral", "HSI"))
+
+
+def setup_scores(
+    bench: pd.DataFrame,
+    group: str = "all",
+    metric: str = "early_auc",
+    models=("logistic",),
+    size_models=("logistic",),
+    highlight: str | None = None,
+) -> go.Figure:
+    """One row per sensor setup, best at the top: each model's score as a dot with its 95 % CI, open when the
+    placebo or the pre-cutoff check flags it. Plant size alone is a dashed grey line (the floor, DESIGN 7.6),
+    chance (0.5) a hairline. ``highlight`` (a setup name) is drawn in teal, the rest in grey (DESIGN 6)."""
+    b = bench[bench["group"] == group]
+    size = b[b["is_size_baseline"].astype(bool) & b["model"].isin(size_models)]
+    rest = b[~b["is_size_baseline"].astype(bool) & b["model"].isin(models)].copy()
+    if rest.empty:
+        return empty_figure("No setups for this selection")
+    order = rest.groupby("setup")[metric].max().sort_values(kind="stable")  # bottom to top
+    labels = {s: setup_label(s) for s in order.index}
+    fig = go.Figure()
+    fig.add_vline(x=0.5, line_color=C["gray-500"], line_width=1)  # chance; the axis title says so
+    for _, r in size.iterrows():
+        fig.add_vline(x=r[metric], line_dash="dash", line_color=SENSOR_COLOURS["size"], line_width=1.5)
+        fig.add_annotation(
+            x=r[metric],
+            y=1,
+            yref="paper",
+            yanchor="bottom",
+            xanchor="right" if r[metric] < 0.5 else "left",
+            text="Size only",
+            showarrow=False,
+            font=dict(size=12, color=C["ink-muted"]),
+        )
+    err = metric == "early_auc"
+    many = len(models) > 1
+    for model, sub in rest.groupby("model", sort=False):
+        sub = sub.set_index("setup").reindex(order.index).dropna(subset=["model"]).reset_index()
+        flag = flagged(sub).to_numpy()
+        if many:
+            col = MODEL_COLOUR.get(model, C["gray-500"])
+            colours = [col] * len(sub)
+        else:
+            colours = [C["teal-700"] if highlight is None or s == highlight else C["gray-500"] for s in sub["setup"]]
+        sym = MODEL_SYMBOL.get(model, "circle") if many else "circle"
+        fig.add_trace(
+            go.Scatter(
+                x=sub[metric],
+                y=[labels[s] for s in sub["setup"]],
+                mode="markers",
+                name=MODEL_LABEL.get(model, model),
+                showlegend=many,
+                marker=dict(
+                    size=14,
+                    color=colours,
+                    symbol=[sym + ("-open" if f else "") for f in flag],
+                    line=dict(width=2.5, color=colours),
+                ),
+                error_x=dict(
+                    type="data",
+                    symmetric=False,
+                    array=(sub["early_ci_high"] - sub[metric]) if err else None,
+                    arrayminus=(sub[metric] - sub["early_ci_low"]) if err else None,
+                    visible=err,
+                    thickness=1.5,
+                    width=0,
+                    color=C["gray-500"],
+                ),
+                customdata=np.c_[
+                    _onset_plain(sub),
+                    sub["placebo_auc"],
+                    np.where(flag, " · flagged", ""),
+                    [labels[s] for s in sub["setup"]],
+                    sub["n_deficit"].astype(int),
+                    sub["n_control"].astype(int),
+                ],
+                hovertemplate=(
+                    "%{customdata[3]}<br>score %{x:.2f}<br>%{customdata[0]}"
+                    "<br>score on watered 24–29 Aug %{customdata[1]:.2f}%{customdata[2]}"
+                    "<br>%{customdata[4]} deficit · %{customdata[5]} control plants<extra>"
+                    + MODEL_LABEL.get(model, model)
+                    + "</extra>"
+                ),
+            )
+        )
+    fig.update_xaxes(
+        title="detection score",
+        range=[0, 1.04],
+        tickvals=[0, 0.25, 0.5, 0.75, 1],
+        ticktext=["0", "0.25", "0.5<br>chance", "0.75", "1<br>perfect"],
+        tickangle=0,
+        title_standoff=8,
+    )
+    fig.update_yaxes(title=None, categoryorder="array", categoryarray=[labels[s] for s in order.index], automargin=True)
+    fig = _theme(fig, max(240, 34 * len(order) + 96))
+    fig.update_layout(margin=dict(l=8, r=16, t=40, b=72))
     return fig
 
 
@@ -412,10 +563,10 @@ def placebo_figure(placebo: pd.DataFrame, group: str = "all") -> go.Figure:
                     color=C["gray-500"],
                 ),
                 customdata=np.c_[q["placebo_ci_low"], q["placebo_ci_high"]],
-                hovertemplate="%{y}<br>placebo AUC %{x:.2f} (95 % CI %{customdata[0]:.2f}–%{customdata[1]:.2f})"
+                hovertemplate="%{y}<br>score %{x:.2f} (95 % CI %{customdata[0]:.2f}–%{customdata[1]:.2f})"
                 + f"<extra>{label}</extra>",
             )
         )
-    fig.update_xaxes(title="AUC, 24–29 Aug", range=[0, 1])
+    fig.update_xaxes(title="score, 24–29 Aug", range=[0, 1])
     fig.update_yaxes(title=None, categoryorder="array", categoryarray=list(p["name"]))
     return _theme(fig, max(280, 24 * len(p) + 90))
