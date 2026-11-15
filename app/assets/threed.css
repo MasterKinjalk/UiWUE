@@ -1,0 +1,29 @@
+/* Styles for the 3D phenotyping pages (app/pages/threed_*.py). Loaded by Dash from app/assets/. */
+
+/* dbc.RadioItems shown as a joined button group (hour buttons on the 3D Browser) */
+.radio-group .form-check {
+  padding-left: 0;
+  margin: 0;
+}
+.radio-group .btn-group > .form-check:not(:last-child) > .btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.radio-group .btn-group > .form-check:not(:first-child) > .btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+
+/* keep the slider marks small so 40 dates fit */
+#tb-date .dash-slider-mark,
+#tb-date .rc-slider-mark-text {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* compact tables in the side panel and result card */
+#tb-side table td,
+#tb-side table th {
+  padding: 0.1rem 0.3rem;
+}
